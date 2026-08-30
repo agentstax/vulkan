@@ -10,7 +10,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func main() {
@@ -67,12 +66,12 @@ func run() (err error) {
 	producerA, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 	must(err)
 	go func() {
-		must(producerA.Run(ctx, group, "abandonedroutinesnapshotlab", topic.SchemaVersion(1), "session-a"))
+		must(producerA.Run(ctx, group, "abandonedroutinesnapshotlab", 1, "session-a"))
 	}()
 	producerB, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 	must(err)
 	go func() {
-		must(producerB.Run(ctx, group, "abandonedroutinesnapshotlab", topic.SchemaVersion(1), "session-b"))
+		must(producerB.Run(ctx, group, "abandonedroutinesnapshotlab", 1, "session-b"))
 	}()
 
 	producerA.RecordAbandoned(topicId, group, 1, 1) // matched pair, cleared by A

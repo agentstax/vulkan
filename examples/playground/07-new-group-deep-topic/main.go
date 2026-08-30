@@ -22,7 +22,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type OrderPlaced struct {
@@ -30,7 +29,8 @@ type OrderPlaced struct {
 	Total   int64  `json:"total_cents"`
 }
 
-func (OrderPlaced) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (OrderPlaced) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

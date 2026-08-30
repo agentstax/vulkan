@@ -29,14 +29,13 @@ import (
 	consumergroupjanitorcontroller "github.com/agentstax/vulkan/pkg/consumergroup/janitor/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type labMessage struct {
 	Note string
 }
 
-func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+func (labMessage) SchemaVersion() int { return 1 }
 
 const groupName = "bindinglab.group"
 

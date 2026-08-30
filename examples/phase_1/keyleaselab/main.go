@@ -37,7 +37,6 @@ import (
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 	"github.com/google/uuid"
@@ -50,7 +49,7 @@ type Rec struct {
 	Version int    `json:"version"`
 }
 
-func (Rec) SchemaVersion() topic.SchemaVersion { return 1 }
+func (Rec) SchemaVersion() int { return 1 }
 
 var (
 	ds      *iDatastore.PostgresDatastore

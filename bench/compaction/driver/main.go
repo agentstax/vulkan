@@ -29,14 +29,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type benchMessage struct {
 	Note string
 }
 
-func (benchMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+func (benchMessage) SchemaVersion() int { return 1 }
 
 const (
 	phaseWarmup int32 = iota

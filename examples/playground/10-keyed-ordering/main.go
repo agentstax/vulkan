@@ -29,7 +29,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -38,7 +37,8 @@ type BalanceChanged struct {
 	Delta     int64  `json:"delta_cents"`
 }
 
-func (BalanceChanged) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (BalanceChanged) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

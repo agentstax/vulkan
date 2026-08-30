@@ -8,8 +8,9 @@ ledger was created; dates come from the phase git tags.
 ## 2026-08-30 — schema version moves onto the message row [0618]
 
 - `message_log_<id>.schema_version` is written from the Message type's
-  own `SchemaVersion()` (`topic.Versioned` constrains `NewProducer` /
-  `NewConsumer`; `topic.SchemaVersionOf` reads it); `topic_config` is
+  own `SchemaVersion() int` (`topic.Versioned` constrains `NewProducer` /
+  `NewConsumer`; `topic.SchemaVersionOf` reads it; the `topic.SchemaVersion`
+  type is gone); `topic_config` is
   `UNIQUE (name)`. `RegisterTopic` / `GetTopic` / `DestroyTopic` /
   `Producer.Register` / `Consumer.Register` / `GetGroup` /
   `DestroyGroup` / `TopicMetrics` / `MigrateTopic` and the CLI's

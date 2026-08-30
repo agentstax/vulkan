@@ -43,7 +43,7 @@ type RankedRecord struct {
 	Label string `json:"label"`
 }
 
-func (RankedRecord) SchemaVersion() topic.SchemaVersion { return 1 }
+func (RankedRecord) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

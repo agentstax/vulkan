@@ -8,8 +8,9 @@ import (
 // topic name can't contain '*' as it's the binding wildcard
 var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
-// SchemaVersion is the payload's compatibility version, written on every
-// message row from the Message type's own SchemaVersion method.
+// Versioned is what every Message type declares: the payload's
+// compatibility version, written on every message row it produces. A
+// value receiver, so the zero value answers.
 //
 // Bump only on a BREAKING change to Message:
 // - a field has a different type
@@ -17,16 +18,12 @@ var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 // - a field has been removed
 //
 // A consumer group reads only rows at its Message type's version.
-type SchemaVersion int64
-
-// Versioned is what every Message type declares: the version its payload
-// is. A value receiver, so the zero value answers.
 type Versioned interface {
-	SchemaVersion() SchemaVersion
+	SchemaVersion() int
 }
 
 // SchemaVersionOf reads the version a Message type declares.
-func SchemaVersionOf[Message Versioned]() SchemaVersion {
+func SchemaVersionOf[Message Versioned]() int {
 	var message Message
 	return message.SchemaVersion()
 }

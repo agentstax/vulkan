@@ -28,7 +28,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
@@ -37,7 +36,8 @@ type WebhookEvent struct {
 	Kind    string `json:"kind"`
 }
 
-func (WebhookEvent) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (WebhookEvent) SchemaVersion() int { return 1 }
 
 var webhookNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 

@@ -51,7 +51,6 @@ import (
 	consumermessage "github.com/agentstax/vulkan/pkg/consumergroup"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
@@ -70,7 +69,7 @@ type V1Order struct {
 	Cents int64  `json:"cents"`
 }
 
-func (V1Order) SchemaVersion() topic.SchemaVersion { return 1 }
+func (V1Order) SchemaVersion() int { return 1 }
 
 // V2Order adds Currency -- the change the bridge exists to carry forward;
 // rows the bridge itself writes default it to "USD".
@@ -80,7 +79,7 @@ type V2Order struct {
 	Currency string `json:"currency"`
 }
 
-func (V2Order) SchemaVersion() topic.SchemaVersion { return 2 }
+func (V2Order) SchemaVersion() int { return 2 }
 
 func main() {
 	if err := run(); err != nil {
@@ -300,7 +299,7 @@ func waitForCommitted(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 	return nil
 }
 
-func versionHealth(all []*admin.VersionHealth, version topic.SchemaVersion) *admin.VersionHealth {
+func versionHealth(all []*admin.VersionHealth, version int) *admin.VersionHealth {
 	for _, h := range all {
 		if h.Version == version {
 			return h

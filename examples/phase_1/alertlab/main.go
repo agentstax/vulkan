@@ -55,7 +55,7 @@ type labMessage struct {
 	Value string
 }
 
-func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+func (labMessage) SchemaVersion() int { return 1 }
 
 var (
 	ds     *iDatastore.PostgresDatastore

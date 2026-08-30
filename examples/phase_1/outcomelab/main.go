@@ -36,7 +36,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
@@ -50,7 +49,7 @@ type Payment struct {
 	Branch string `json:"branch"` // "ok" | "retry" | "declined" | "settles-later"
 }
 
-func (Payment) SchemaVersion() topic.SchemaVersion { return 1 }
+func (Payment) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

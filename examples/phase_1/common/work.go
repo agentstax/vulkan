@@ -1,7 +1,6 @@
 package common
 
 import (
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
@@ -16,7 +15,7 @@ type Work struct {
 	SleepMs int `json:"sleep_ms,omitempty"`
 }
 
-func (Work) SchemaVersion() topic.SchemaVersion { return 1 }
+func (Work) SchemaVersion() int { return 1 }
 
 func NewWork(age int, email string) (*Work, error) {
 	uuid, err := uuid.NewV7()

@@ -16,7 +16,7 @@ type OrderPlacedV2 struct {
 	Total   Money  `json:"total"`
 }
 
-func (OrderPlacedV2) SchemaVersion() topic.SchemaVersion { return 2 }
+func (OrderPlacedV2) SchemaVersion() int { return 2 }
 
 orders, err := producer.NewProducer[OrderPlacedV2](ds, nil)
 must(err)

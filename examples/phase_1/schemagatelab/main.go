@@ -30,7 +30,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/migrate"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -171,4 +170,4 @@ func die(msg string) {
 
 func mustOwner(o *common.Owner, err error) *common.Owner { must(err); return o }
 
-func (event) SchemaVersion() topic.SchemaVersion { return 1 }
+func (event) SchemaVersion() int { return 1 }

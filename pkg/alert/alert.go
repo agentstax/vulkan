@@ -3,7 +3,6 @@ package alert
 import (
 	"errors"
 	"fmt"
-	"github.com/agentstax/vulkan/pkg/topic"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
@@ -49,7 +48,7 @@ type Alert struct {
 	Metadata map[string]any `json:"metadata"` // context about the report itself
 }
 
-func (Alert) SchemaVersion() topic.SchemaVersion { return 1 }
+func (Alert) SchemaVersion() int { return 1 }
 
 // AlertOptions are NewAlert's optional fields.
 type AlertOptions struct {

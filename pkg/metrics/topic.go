@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // TopicName is __system.metrics
@@ -16,7 +15,7 @@ type TopicSnapshot struct {
 
 // SchemaVersionSnapshot is one payload version's presence in a topic's log.
 type SchemaVersionSnapshot struct {
-	Version         topic.SchemaVersion     `json:"version"`
+	Version         int                     `json:"version"`
 	Messages        int64                   `json:"messages"`
 	CompactionHeads int64                   `json:"compaction_heads"` // keys whose current head is at this version
 	Groups          []GroupSchemaVersionLag `json:"groups"`

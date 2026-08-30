@@ -215,7 +215,7 @@ documentation; the latter want a surface that has stopped moving.
 - **Upcaster for skipped schema versions** (after [0618] ships): a
   consumer group today skips rows whose `schema_version` differs from
   its Message type's. An optional per-consumer decoder --
-  `ConsumerConfig.Upgrade` shaped roughly `map[topic.SchemaVersion]
+  `ConsumerConfig.Upgrade` shaped roughly `map[int]
   func(json.RawMessage) (*Message, error)` -- would let one group read
   older rows through a user-written converter instead of a bridge
   re-produce. Plugs into the claim predicate (versions with an

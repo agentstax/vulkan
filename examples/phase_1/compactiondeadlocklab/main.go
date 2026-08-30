@@ -31,7 +31,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -40,7 +39,7 @@ type labMessage struct {
 	Note string
 }
 
-func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+func (labMessage) SchemaVersion() int { return 1 }
 
 const (
 	hotKeyCount          = 8

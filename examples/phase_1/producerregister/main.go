@@ -17,7 +17,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
@@ -25,7 +24,7 @@ type Message struct {
 	Data string
 }
 
-func (Message) SchemaVersion() topic.SchemaVersion { return 1 }
+func (Message) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

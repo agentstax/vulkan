@@ -35,7 +35,6 @@ import (
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/google/uuid"
@@ -135,7 +134,7 @@ func run() (err error) {
 	startConsumer := func(label string) {
 		abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 		must(err)
-		go func() { must(abandonedEvents.Run(runCtx, g.Name, tp.Name, topic.SchemaVersion(1), label)) }()
+		go func() { must(abandonedEvents.Run(runCtx, g.Name, tp.Name, 1, label)) }()
 
 		provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, 1, abandonedEvents, cfg)
 		must(err)

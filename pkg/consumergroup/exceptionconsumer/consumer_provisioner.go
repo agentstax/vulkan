@@ -17,7 +17,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
@@ -37,7 +36,7 @@ type ExceptionConsumerProvisioner[Message any] struct {
 // the assembled consumer -- see the package doc.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewExceptionConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion topic.SchemaVersion, metrics *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerProvisioner[Message], error) {
+func NewExceptionConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion int, metrics *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerProvisioner[Message], error) {
 	if cfg == nil {
 		cfg = &ExceptionConsumerConfig{}
 	}

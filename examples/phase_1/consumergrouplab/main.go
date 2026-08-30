@@ -46,7 +46,7 @@ type labMessage struct {
 	N int `json:"n"`
 }
 
-func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+func (labMessage) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

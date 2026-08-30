@@ -138,7 +138,7 @@ func run() (err error) {
 	abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
 	go func() {
-		must(abandonedEvents.Run(ctx, group, tp.Name, topic.SchemaVersion(1), "shutdowntruncationlab-session"))
+		must(abandonedEvents.Run(ctx, group, tp.Name, 1, "shutdowntruncationlab-session"))
 	}()
 
 	step("WORKER claims all 3, shutdown fires after message 2 -- message 3 never attempted")

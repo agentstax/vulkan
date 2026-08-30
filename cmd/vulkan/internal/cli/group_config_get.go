@@ -83,9 +83,9 @@ type groupConfigLine struct {
 // groupConfigDocument is group config get's json result: each declared key
 // with the worker row it came from, as the table renders them.
 type groupConfigDocument struct {
-	Topic   string                    `json:"topic"`
-	Group   string                    `json:"group"`
-	Keys    []groupConfigLineDocument `json:"keys"`
+	Topic string                    `json:"topic"`
+	Group string                    `json:"group"`
+	Keys  []groupConfigLineDocument `json:"keys"`
 }
 
 type groupConfigLineDocument struct {

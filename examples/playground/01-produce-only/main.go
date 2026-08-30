@@ -25,7 +25,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type OrderPlacedV1 struct {
@@ -33,7 +32,8 @@ type OrderPlacedV1 struct {
 	Total   int64  `json:"total_cents"`
 }
 
-func (OrderPlacedV1) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (OrderPlacedV1) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

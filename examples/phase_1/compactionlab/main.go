@@ -59,7 +59,7 @@ type KeyedRecord struct {
 	Deleted bool   `json:"deleted,omitempty"`
 }
 
-func (KeyedRecord) SchemaVersion() topic.SchemaVersion { return 1 }
+func (KeyedRecord) SchemaVersion() int { return 1 }
 
 // set by main from RegisterGroup -- helpers are id-keyed
 var cursorGroupID int64

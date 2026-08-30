@@ -29,7 +29,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/systemmanager"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -37,7 +36,8 @@ type OrderPlaced struct {
 	OrderId string `json:"order_id"`
 }
 
-func (OrderPlaced) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (OrderPlaced) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

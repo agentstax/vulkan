@@ -20,7 +20,7 @@ import (
 type BaseConsumer[Message any] struct {
 	Owner         *common.Owner
 	Topic         *topic.Topic
-	SchemaVersion topic.SchemaVersion
+	SchemaVersion int
 	Config        *BaseConsumerConfig
 	Logger        logging.Logger
 	Metrics       *metricsproducer.MetricsProducer

@@ -6,7 +6,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/metrics/controller/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // overdueThreshold: how long a cron job may sit due and unproduced before it
@@ -146,7 +145,7 @@ func toSchemaVersionSnapshot(count *datastore.SchemaVersionCountData, lags []dat
 		})
 	}
 	return metrics.SchemaVersionSnapshot{
-		Version:         topic.SchemaVersion(count.SchemaVersion),
+		Version:         int(count.SchemaVersion),
 		Messages:        count.Messages,
 		CompactionHeads: count.CompactionHeads,
 		Groups:          groups,

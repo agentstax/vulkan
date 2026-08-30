@@ -19,7 +19,6 @@ import (
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -107,7 +106,7 @@ func run() (err error) {
 	abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 	must(err)
 	go func() {
-		must(abandonedEvents.Run(ctx, group, tp.Name, topic.SchemaVersion(1), "abandonedeventslab-session"))
+		must(abandonedEvents.Run(ctx, group, tp.Name, 1, "abandonedeventslab-session"))
 	}()
 
 	var calls atomic.Int64

@@ -490,7 +490,7 @@ func die(msg string) {
 // output exactly as it does json.RawMessage's.
 type rawPayload []byte
 
-func (rawPayload) SchemaVersion() topic.SchemaVersion { return 1 }
+func (rawPayload) SchemaVersion() int { return 1 }
 
 func (p rawPayload) MarshalJSON() ([]byte, error) { return p, nil }
 

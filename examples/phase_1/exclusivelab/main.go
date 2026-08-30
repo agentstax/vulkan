@@ -68,7 +68,7 @@ type Rec struct {
 	Version int    `json:"version"`
 }
 
-func (Rec) SchemaVersion() topic.SchemaVersion { return 1 }
+func (Rec) SchemaVersion() int { return 1 }
 
 var (
 	ds      *iDatastore.PostgresDatastore
@@ -745,7 +745,7 @@ func abandonedEventProducer(ctx context.Context) *metricsproducer.MetricsProduce
 	events, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
 	go func() {
-		must(events.Run(ctx, "exclusivelab", "exclusivelab", topic.SchemaVersion(1), "exclusivelab-session"))
+		must(events.Run(ctx, "exclusivelab", "exclusivelab", 1, "exclusivelab-session"))
 	}()
 	return events
 }

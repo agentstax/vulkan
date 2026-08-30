@@ -25,7 +25,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
@@ -38,7 +37,8 @@ type InventoryReservedV1 struct {
 	Sku     string `json:"sku"`
 }
 
-func (InventoryReservedV1) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (InventoryReservedV1) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {
@@ -126,4 +126,5 @@ func run() error {
 	return nil
 }
 
-func (OrderPlacedV1) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (OrderPlacedV1) SchemaVersion() int { return 1 }

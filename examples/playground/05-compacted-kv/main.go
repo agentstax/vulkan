@@ -36,7 +36,6 @@ import (
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
@@ -46,7 +45,8 @@ type DeviceConfig struct {
 	Restarts int    `json:"restarts"`
 }
 
-func (DeviceConfig) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (DeviceConfig) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

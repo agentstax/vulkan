@@ -13,7 +13,6 @@ import (
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -29,7 +28,7 @@ type ConsumerInstance[Message any] struct {
 	metrics      *metricsproducer.MetricsProducer
 	consumers    *consumergroupcontroller.ConsumerGroupController
 	topicName    string
-	topicVersion topic.SchemaVersion
+	topicVersion int
 	bindings     []string
 	declaredAt   time.Time
 	permit       *concurrency.Permit // held for the length of a Consume call
@@ -38,7 +37,7 @@ type ConsumerInstance[Message any] struct {
 // cfg arrives already resolved by NewConsumer -- Register is the only caller,
 // so there is nothing left to default or validate here.
 // bindings and declaredAt are Register's declaration, re-attempted by Consume.
-func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, metrics *metricsproducer.MetricsProducer, consumers *consumergroupcontroller.ConsumerGroupController, topicName string, topicVersion topic.SchemaVersion, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, metrics *metricsproducer.MetricsProducer, consumers *consumergroupcontroller.ConsumerGroupController, topicName string, topicVersion int, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}

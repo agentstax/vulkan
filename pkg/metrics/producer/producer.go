@@ -13,7 +13,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	iProducer "github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 const pendingGoRoutineEventsLimit = 256
@@ -95,7 +94,7 @@ func NewMetricsProducer(ds *datastore.PostgresDatastore, cfg *ProducerConfig) (*
 // and the session counters. No last flush on cancel, the stopped log line
 // carries the final totals. Each call registers its own producer instances,
 // so Run is callable again after it returns.
-func (p *MetricsProducer) Run(ctx context.Context, group string, topicName string, version topic.SchemaVersion, sessionId string) error {
+func (p *MetricsProducer) Run(ctx context.Context, group string, topicName string, version int, sessionId string) error {
 	events, err := p.producer.Register(ctx, metrics.TopicName)
 	if err != nil {
 		return err

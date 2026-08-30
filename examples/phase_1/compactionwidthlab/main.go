@@ -30,7 +30,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
@@ -46,7 +45,7 @@ type Record struct {
 	Key string `json:"key"`
 }
 
-func (Record) SchemaVersion() topic.SchemaVersion { return 1 }
+func (Record) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

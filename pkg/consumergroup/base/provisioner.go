@@ -34,12 +34,12 @@ type BaseProvisioner[Message any] struct {
 	consumerFunc func(ctx context.Context, message *Message) error
 
 	// the version the group's Message type declares; the claim reads only rows at it
-	schemaVersion topic.SchemaVersion
+	schemaVersion int
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion topic.SchemaVersion, metrics *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
+func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion int, metrics *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

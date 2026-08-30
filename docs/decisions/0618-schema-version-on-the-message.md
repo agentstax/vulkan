@@ -31,7 +31,9 @@ nothing.
   payload is. `topic_config.schema_version` is deleted; `UNIQUE (name)`.
 - The Message type declares its version: `Producer[Message
   topic.Versioned]` / `Consumer[Message topic.Versioned]` where
-  `type Versioned interface { SchemaVersion() SchemaVersion }`. Every
+  `type Versioned interface { SchemaVersion() int }` -- a plain int,
+  the method name already says what it is, so the old `SchemaVersion`
+  type is deleted. Every
   produce writes `Message.SchemaVersion()` into the row. It is the only
   source -- no config override.
 - A consumer group claims only rows whose `schema_version` equals its

@@ -31,7 +31,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type TranscodeRequested struct {
@@ -39,7 +38,8 @@ type TranscodeRequested struct {
 	Minutes int    `json:"minutes"`
 }
 
-func (TranscodeRequested) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (TranscodeRequested) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {

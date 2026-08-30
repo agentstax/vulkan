@@ -72,7 +72,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	UserId string `json:"user_id"`
    }
 
-   func (WelcomeEmail) SchemaVersion() topic.SchemaVersion { return 1 }
+   func (WelcomeEmail) SchemaVersion() int { return 1 }
 
    func main() {
    	ctx := context.Background()
@@ -142,7 +142,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	UserId string `json:"user_id"`
    }
 
-   func (WelcomeEmail) SchemaVersion() topic.SchemaVersion { return 1 }
+   func (WelcomeEmail) SchemaVersion() int { return 1 }
 
    func main() {
    	ctx, stop := common.LifecycleContext(nil)

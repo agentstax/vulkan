@@ -29,7 +29,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type PaymentRequestedV1 struct {
@@ -37,7 +36,8 @@ type PaymentRequestedV1 struct {
 	Card    string `json:"card"` // "declined" | "gateway-down" | "settles-later" | anything else succeeds
 }
 
-func (PaymentRequestedV1) SchemaVersion() topic.SchemaVersion { return 1 }
+// increment on breaking changes
+func (PaymentRequestedV1) SchemaVersion() int { return 1 }
 
 var (
 	errCardDeclined = errors.New("card declined")
