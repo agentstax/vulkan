@@ -60,7 +60,6 @@ import (
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/google/uuid"
 )
 
 type Rec struct {
@@ -796,7 +795,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], ke
 	if policy != "" {
 		opts.Message = &common.MessageOptions{Concurrency: policy}
 	}
-	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, opts)
 	must(err)
@@ -805,7 +804,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], ke
 // publishUncompacted produces a Exclusive message with a key and no Compaction --
 // every version is kept, deliveries serialize on the key.
 func publishUncompacted(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, producer.ProduceOptions{
 		MessageKey: key,
@@ -815,7 +814,7 @@ func publishUncompacted(ctx context.Context, wpInstance *producer.ProducerInstan
 }
 
 func publishUnkeyed(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], version int) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*Rec, error) {
 		return &Rec{Version: version}, nil
 	}, producer.ProduceOptions{})
 	must(err)

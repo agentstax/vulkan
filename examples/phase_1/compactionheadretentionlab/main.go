@@ -30,7 +30,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
-	"github.com/google/uuid"
 )
 
 const (
@@ -178,7 +177,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 		opts.MessageKey = key
 		opts.Compaction = compaction
 	}
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, opts)
 	must(err)

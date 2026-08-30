@@ -35,7 +35,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const scalePartitionSize = int64(10)
@@ -113,7 +112,7 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{MessageKey: "hot-key", Compaction: compaction})
 			must(err)

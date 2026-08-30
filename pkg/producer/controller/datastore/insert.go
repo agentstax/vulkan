@@ -8,7 +8,6 @@ import (
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -19,12 +18,14 @@ const produceInTxSavepoint = "sp_produce_in_tx"
 
 // ProduceFunc runs inside the append's transaction and returns the payload to
 // store -- its writes commit or roll back with the message.
-type ProduceFunc[Message topic.Versioned] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*Message, error)
+// idempotencyKey is the resolved key for this produce; supplying that string
+// on a later call dedups against this one.
+type ProduceFunc[Message topic.Versioned] func(ctx context.Context, tx Tx, idempotencyKey string) (*Message, error)
 
 // runInsert runs produceFunc + the claim-protected message insert against an
 // already-open tx.
 func (d *ProducerDatastore) runInsert[Message topic.Versioned](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
-	payload, err := produceFunc(ctx, tx, data.IdempotencyKey)
+	payload, err := produceFunc(ctx, tx, data.IdempotencyKey.String())
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +45,7 @@ func (d *ProducerDatastore) runInsertSavepoint[Message topic.Versioned](ctx cont
 		return nil, err
 	}
 
-	payload, err := produceFunc(ctx, tx, data.IdempotencyKey)
+	payload, err := produceFunc(ctx, tx, data.IdempotencyKey.String())
 	if err != nil {
 		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
 		return nil, err

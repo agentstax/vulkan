@@ -73,8 +73,8 @@ Suffix `1` throughout — the topic's id from the catalog.
   each. Beside the `payload`: `routing_key`, `message_key`,
   `compaction_rank` (NULL unless the message opted into compaction),
   and a sparse `options` document.
-- **`idempotency_key_1`** — produce dedup. The key uuid is the primary
-  key; rows expire on a TTL sweep.
+- **`idempotency_key_1`** — produce dedup. The caller's key, resolved
+  to a uuid, is the primary key; rows expire on a TTL sweep.
 - **`compaction_head_1`** — one row per compacted message key naming
   the key's winning message id, upserted in the same transaction as
   every compacted produce.

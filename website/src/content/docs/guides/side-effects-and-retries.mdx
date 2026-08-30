@@ -31,7 +31,7 @@ err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx)
 	sendEmailConfirmation("jamie@example.com") // fires NOW, mid-transaction
 
 	_, err := receipts.ProduceInTx(ctx, tx,
-		func(context.Context, producer.Tx, uuid.UUID) (*ReceiptRequested, error) {
+		func(context.Context, producer.Tx, string) (*ReceiptRequested, error) {
 			return &ReceiptRequested{OrderId: orderId}, nil
 		}, producer.ProduceOptions{})
 	return err
@@ -70,7 +70,7 @@ Make the email a message:
 
 ```go
 _, err := emails.ProduceInTx(ctx, tx,
-	func(context.Context, producer.Tx, uuid.UUID) (*EmailRequested, error) {
+	func(context.Context, producer.Tx, string) (*EmailRequested, error) {
 		return &EmailRequested{To: "jamie@example.com", Template: "payment-received"}, nil
 	}, producer.ProduceOptions{})
 ```
@@ -91,14 +91,9 @@ the rerun dedup-safe by supplying your own idempotency key: unset keys
 mint fresh per call, so a naive rerun produces the message twice.
 
 ```go
-key, err := uuid.NewV7()
-if err != nil {
-	return err
-}
-
-// persist key alongside the work before the first attempt
+// any stable string works as the key -- here the order id already is one
 produced, err := instance.Produce(ctx, &OrderCreated{OrderId: order.Id},
-	producer.ProduceOptions{IdempotencyKey: key})
+	producer.ProduceOptions{IdempotencyKey: "order-created-" + order.Id})
 if err != nil {
 	return err
 }
@@ -109,7 +104,11 @@ if produced.Duplicate {
 
 `Duplicate == true` means an earlier call — or an earlier attempt of
 this one, after a commit whose outcome you never learned — already
-produced under the same key. Prefer time-ordered keys (UUIDv7): random
-v4 keys slow throughput down considerably. A caller-supplied key also
-locks that key for the length of the transaction it runs in, so keep
-transactions that reuse keys short.
+produced under the same key. The key is an opaque string: one that
+parses as a UUID is stored verbatim, anything else is hashed to a
+deterministic UUID first, so the same string always lands on the same
+claim row. If you mint keys yourself on a hot path, prefer UUIDv7
+strings — random-shaped keys cost extra WAL once the claim table is
+millions of rows deep. A caller-supplied key also locks that key for
+the length of the transaction it runs in, so keep transactions that
+reuse keys short.

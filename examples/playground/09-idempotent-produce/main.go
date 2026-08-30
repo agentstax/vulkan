@@ -3,15 +3,10 @@
 // A webhook receiver: the upstream retries on any non-2xx, so the same
 // event arrives more than once and must be stored once.
 //
-// Concepts held before domain code (9): the produce set from scenario 01,
-// plus IdempotencyKey as a uuid.UUID, the v7-not-v4 performance note, and
-// ProduceResult.Duplicate.
+// Concepts held before domain code (8): the produce set from scenario 01,
+// plus IdempotencyKey as an opaque string and ProduceResult.Duplicate.
 //
 // Traps hit:
-//   - The key is a uuid.UUID, but the caller's natural key is the
-//     upstream's event id (a string). The user must derive a UUID from it
-//     deterministically (uuid.NewSHA1 over a namespace) -- and that yields
-//     a v5, exactly the random-shaped key the docs warn against.
 //   - Duplicate is a field on a success result, not an error; a caller
 //     that only checks err treats the duplicate as a fresh produce.
 //   - A caller-supplied key opts the call out of batching (documented in
@@ -28,7 +23,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/google/uuid"
 )
 
 type WebhookEvent struct {
@@ -38,8 +32,6 @@ type WebhookEvent struct {
 
 // increment on breaking changes
 func (WebhookEvent) SchemaVersion() int { return 1 }
-
-var webhookNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 func main() {
 	if err := run(); err != nil {
@@ -83,7 +75,7 @@ func run() error {
 	for range 2 {
 		event := &WebhookEvent{EventId: "evt_123", Kind: "charge.succeeded"}
 		produced, err := webhooks.Produce(ctx, event, producer.ProduceOptions{
-			IdempotencyKey: uuid.NewSHA1(webhookNamespace, []byte(event.EventId)),
+			IdempotencyKey: event.EventId,
 		})
 		if err != nil {
 			return err

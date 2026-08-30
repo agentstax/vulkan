@@ -31,7 +31,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const largePartitionSize = int64(1000000) // never rolls -- partition churn isn't what's being measured
@@ -168,7 +167,7 @@ func timeSequential(ctx context.Context, wpInstance *producer.ProducerInstance[c
 			opts.MessageKey = key
 			opts.Compaction = compaction
 		}
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, opts)
 		must(err)
@@ -199,7 +198,7 @@ func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label
 			for i := range perGoroutine {
 				compaction, err := producer.NewCompactionOptions(0)
 				must(err)
-				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, producer.ProduceOptions{MessageKey: keyFn(g, i), Compaction: compaction})
 				must(err)

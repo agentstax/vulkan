@@ -1,13 +1,8 @@
 # Public API
 
-doc decision indexing
-- is our decision index doing anything? grep and python search is quite powerful
-- can we make our index more like a search engine ie a list of keywords or tags -> loaded in to context on startup
 need metric / alert example playground scenarios
 
 ---
-- User side idempotency keys should be string, internals can be UUID
-
 - hide RegisterSystem calls
 - improve comments on New*
 - where to put consumer.ConsumerConfig ie NewConsumer or Register, same pattern for producer etc
@@ -45,9 +40,6 @@ need metric / alert example playground scenarios
 - System manager is a good concept for eventual helm chart deploys but needing to know about that concept now is strange
   and we want things to just 'work'
 
-09 Need to rethink if we want users converting string to uuid or just pass string
-- if we do go string direction should store both string version and uuid version in db for easy lookups
-
 10 why do we need the run group with the atomic CAS? feels odd
 
 11 gonna ignore this one for now, we just don't have a good solution yet but have it on roadmap
@@ -57,6 +49,10 @@ need metric / alert example playground scenarios
 SEO for markdown - tags
 
 Have specific 'proposal' pages. Like the idea of having an issue and doc proposal page where people can comment and give thoughts etc
+
+doc decision indexing
+- is our decision index doing anything? grep and python search is quite powerful
+- can we make our index more like a search engine ie a list of keywords or tags -> loaded in to context on startup
 
 # Other
 

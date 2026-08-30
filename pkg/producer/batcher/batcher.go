@@ -61,7 +61,7 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 	if err != nil {
 		return nil, fmt.Errorf("minting idempotency key for topic %d: %w", b.topicId, err)
 	}
-	options.IdempotencyKey = idempotencyKey
+	options.IdempotencyKey = idempotencyKey.String()
 
 	operation := newBatchOperation(message, options)
 

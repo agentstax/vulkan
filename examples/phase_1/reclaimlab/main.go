@@ -34,7 +34,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const (
@@ -102,7 +101,7 @@ func run() (err error) {
 
 	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	for range seedRows {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

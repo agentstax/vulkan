@@ -37,7 +37,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const (
@@ -179,7 +178,7 @@ func run() (err error) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], routingKey string) string {
-	produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})
 	must(err)

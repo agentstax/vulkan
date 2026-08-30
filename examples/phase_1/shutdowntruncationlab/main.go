@@ -52,7 +52,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/google/uuid"
 )
 
 const group = "phase9.shutdowntruncationlab"
@@ -233,7 +232,7 @@ func run() (err error) {
 
 func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int) {
 	for range n {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

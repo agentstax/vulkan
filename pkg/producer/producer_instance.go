@@ -69,8 +69,8 @@ func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Messag
 
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
-	if options.IdempotencyKey != uuid.Nil {
-		passthrough := func(context.Context, Tx, uuid.UUID) (*Message, error) { return message, nil }
+	if options.IdempotencyKey != "" {
+		passthrough := func(context.Context, Tx, string) (*Message, error) { return message, nil }
 		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, options)
 		if err != nil {
 			return nil, err
@@ -203,7 +203,7 @@ func (p *ProducerInstance[Message]) toAppend(item *ProduceItem[Message]) (*contr
 	if item == nil {
 		return nil, errors.New("item must not be nil")
 	}
-	if item.Options.IdempotencyKey != uuid.Nil {
+	if item.Options.IdempotencyKey != "" {
 		return nil, errors.New("IdempotencyKey is not supported in a batch -- produce keyed messages individually")
 	}
 
@@ -213,6 +213,6 @@ func (p *ProducerInstance[Message]) toAppend(item *ProduceItem[Message]) (*contr
 	if err != nil {
 		return nil, err
 	}
-	options.IdempotencyKey = idempotencyKey
+	options.IdempotencyKey = idempotencyKey.String()
 	return controller.NewAppend(item.Message, options)
 }

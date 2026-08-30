@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/google/uuid"
 )
 
 // ProduceOptions holds per-message knobs that are optional and rarely set --
@@ -39,16 +38,21 @@ type ProduceOptions struct {
 	Compaction *CompactionOptions
 
 	// IdempotencyKey - protects a retried AppendMessage (after a blip) from double-publishing.
-	// Default: uuid.Nil (a fresh key is generated per call, protecting only
+	// Default: "" (a fresh key is generated per call, protecting only
 	// against retries within that one call).
 	//
 	// Supply your own for protection across your OWN retries too -- e.g. your
 	// process crashes and restarts before learning whether a publish landed,
-	// and you call Produce again with the same key. Try to use a time-ordered key
-	// (UUIDv7): random (v4) keys slow throughput down considerably.
+	// and you call Produce again with the same key. Any stable string works:
+	// one that parses as a UUID is stored verbatim, anything else is hashed
+	// to a deterministic UUID first, so the same string always dedups.
 	// A caller-supplied key routes the call to a per-call transaction, never a batch.
-	// Ex: a UUIDv7 persisted alongside the work before the first Produce attempt.
-	IdempotencyKey uuid.UUID
+	//
+	// Minting keys yourself on a hot path: prefer time-ordered UUIDv7 strings --
+	// random-shaped keys (a hash, a v4) cost extra WAL once the claim table
+	// holds millions of unexpired rows.
+	// Ex: "evt_9f2c" from a webhook; a UUIDv7 persisted alongside the work.
+	IdempotencyKey string
 
 	// Message - per-message MessageOptions: what this message REQUESTS from
 	// whoever consumes it (work timeout, redelivery policy, concurrency).

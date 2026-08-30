@@ -25,7 +25,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/google/uuid"
 )
 
 type OrderPlacedV1 struct {
@@ -92,7 +91,7 @@ func run() error {
 
 	// one topic: the message's own transaction carries the business write
 	produced, err := orders.ProduceFunc(ctx,
-		func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderPlacedV1, error) {
+		func(ctx context.Context, tx producer.Tx, _ string) (*OrderPlacedV1, error) {
 			if _, err := tx.Exec(ctx, `INSERT INTO playground_orders (id) VALUES ($1) ON CONFLICT DO NOTHING`, "ord-2"); err != nil {
 				return nil, err
 			}
@@ -109,13 +108,13 @@ func run() error {
 			return err
 		}
 		if _, err := orders.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderPlacedV1, error) {
+			func(ctx context.Context, tx producer.Tx, _ string) (*OrderPlacedV1, error) {
 				return &OrderPlacedV1{OrderId: "ord-3"}, nil
 			}, producer.ProduceOptions{}); err != nil {
 			return err
 		}
 		_, err := inventory.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*InventoryReservedV1, error) {
+			func(ctx context.Context, tx producer.Tx, _ string) (*InventoryReservedV1, error) {
 				return &InventoryReservedV1{OrderId: "ord-3", Sku: "sku-9"}, nil
 			}, producer.ProduceOptions{})
 		return err

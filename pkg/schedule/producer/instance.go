@@ -12,7 +12,6 @@ import (
 	scheduleproducercontroller "github.com/agentstax/vulkan/pkg/schedule/producer/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/google/uuid"
 )
 
 // scans schedule_config for due rows at the row's poll_rate while a heartbeat
@@ -136,14 +135,14 @@ func (i *ScheduleProducerInstance) produceDue(ctx context.Context, id int64) err
 			return err
 		}
 
-		passthrough := func(context.Context, producer.Tx, uuid.UUID) (*schedule.StoredMessage, error) {
+		passthrough := func(context.Context, producer.Tx, string) (*schedule.StoredMessage, error) {
 			return stored, nil
 		}
 		produced, err := target.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
 			RoutingKey:     row.Name,
 			MessageKey:     row.Name,
 			Compaction:     compaction,
-			IdempotencyKey: schedule.IdempotencyKey(scheduledTime, row.Id),
+			IdempotencyKey: schedule.IdempotencyKey(scheduledTime, row.Id).String(),
 			Message: &common.MessageOptions{
 				Concurrency: row.Concurrency,
 				Timeout:     row.Timeout,

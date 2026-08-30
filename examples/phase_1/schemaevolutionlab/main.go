@@ -52,14 +52,9 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const group = "phase14a.schemaevolutionlab.bridge"
-
-// bridgeNamespace seeds the bridge's UUIDv5 idempotency keys -- fixed so a
-// given source message id always derives the same key, run to run.
-var bridgeNamespace = uuid.MustParse("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d")
 
 var keys = []string{"user:1", "user:2", "user:3", "user:4", "user:5"}
 
@@ -249,8 +244,10 @@ func liveWrite(ctx context.Context, wp *producer.ProducerInstance[V2Order], key 
 	return err
 }
 
-func bridgeIdempotencyKey(sourceID int64) uuid.UUID {
-	return uuid.NewSHA1(bridgeNamespace, []byte(strconv.FormatInt(sourceID, 10)))
+// bridgeIdempotencyKey derives the bridge's key from the source message id,
+// so a restarted bridge re-producing the same source message dedups.
+func bridgeIdempotencyKey(sourceID int64) string {
+	return "bridge." + strconv.FormatInt(sourceID, 10)
 }
 
 // newBridgeConsumer builds a fresh Consumer instance on the bridge's group --

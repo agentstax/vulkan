@@ -42,7 +42,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -243,7 +242,7 @@ func run() (err error) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wp *producer.ProducerInstance[common.Work], routingKey string) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})
 	must(err)

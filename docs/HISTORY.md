@@ -5,6 +5,17 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-30 — IdempotencyKey is a caller string [0622]
+
+`ProduceOptions.IdempotencyKey` went from `uuid.UUID` to `string`: ""
+mints a fresh v7 as before, a string that parses as a UUID passes
+verbatim, any other string hashes to a deterministic UUIDv5 under a
+namespace frozen in producer/controller. `ProduceFunc` closures now
+receive the resolved key as a string. Schema untouched; the original
+string is never stored. Playground 09 lost its derive-a-UUID trap;
+guides and ~35 labs/playgrounds swept. Affected labs 6/6, conventions
+green.
+
 ## 2026-08-30 — a schedule is a producer on a cron expression; "cron job" renamed "schedule" [0621]
 
 - Third API handle, the producer/consumer mirror: `scheduler.NewScheduler(ds,

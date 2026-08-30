@@ -36,7 +36,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
-	"github.com/google/uuid"
 )
 
 const largePartitionSize = int64(1_000_000) // never rolls -- partition churn isn't what's being measured
@@ -172,7 +171,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 				case <-stop:
 					return
 				default:
-					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 						return common.NewWork(30, "admin@example.com")
 					}, producer.ProduceOptions{})
 					must(err)
@@ -256,7 +255,7 @@ func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstanc
 		}
 		wg.Go(func() {
 			for range count {
-				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, producer.ProduceOptions{})
 				must(err)

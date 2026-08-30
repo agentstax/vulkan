@@ -54,7 +54,7 @@ return the payload; both commit together, or neither does.
 ```go
 func CreateOrder(ctx context.Context, instance *producer.ProducerInstance[OrderCreated], order Order) error {
 	_, err := instance.ProduceFunc(ctx,
-		func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderCreated, error) {
+		func(ctx context.Context, tx producer.Tx, _ string) (*OrderCreated, error) {
 			if _, err := tx.Exec(ctx,
 				`INSERT INTO orders (id, total) VALUES ($1, $2)`, order.Id, order.Total); err != nil {
 				return nil, err
@@ -76,9 +76,9 @@ Three details about the closure's arguments:
   `CopyFrom` — the statement surface of a pgx transaction. For anything
   beyond that, `tx.Raw()` returns the underlying `pgx.Tx` (an escape
   hatch, not the default path).
-- The `uuid.UUID` argument is the idempotency key this produce will
-  dedup on. Persist it alongside your work if you plan to retry across
-  a crash — more in
+- The string argument is the idempotency key this produce will dedup
+  on. Persist it alongside your work if you plan to retry across a
+  crash — more in
   [Side Effects & Retries](/guides/side-effects-and-retries/).
 - The payload comes back from the closure, not from a captured
   variable — so it can be built from what your own statements returned
@@ -98,7 +98,7 @@ workaround (send-after-commit hooks, with their own failure window).
 
    ```go
    _, err := instance.ProduceFunc(ctx,
-   	func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderCreated, error) {
+   	func(ctx context.Context, tx producer.Tx, _ string) (*OrderCreated, error) {
    		if _, err := tx.Exec(ctx, `INSERT INTO orders (id) VALUES ($1)`, "order-9"); err != nil {
    			return nil, err
    		}
@@ -137,13 +137,13 @@ err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx)
 
 	// produce LAST -- see the lock note below
 	if _, err := invoices.ProduceInTx(ctx, tx,
-		func(context.Context, producer.Tx, uuid.UUID) (*InvoicePaid, error) {
+		func(context.Context, producer.Tx, string) (*InvoicePaid, error) {
 			return &InvoicePaid{OrderId: orderId}, nil
 		}, producer.ProduceOptions{}); err != nil {
 		return err
 	}
 	_, err := receipts.ProduceInTx(ctx, tx,
-		func(context.Context, producer.Tx, uuid.UUID) (*ReceiptRequested, error) {
+		func(context.Context, producer.Tx, string) (*ReceiptRequested, error) {
 			return &ReceiptRequested{OrderId: orderId}, nil
 		}, producer.ProduceOptions{})
 	return err

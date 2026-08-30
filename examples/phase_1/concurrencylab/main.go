@@ -38,7 +38,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const slowMs = 1000
@@ -249,7 +248,7 @@ func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName
 
 func seedSleep(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], sleepMsList []int) {
 	for _, ms := range sleepMsList {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			work, err := common.NewWork(30, "admin@example.com")
 			if err != nil {
 				return nil, err

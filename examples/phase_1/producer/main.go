@@ -12,7 +12,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 func main() {
@@ -72,7 +71,7 @@ func run() error {
 
 	// WORK
 	for range *countPtr {
-		produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err

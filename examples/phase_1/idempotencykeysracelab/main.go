@@ -101,13 +101,13 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
-	key := uuid.Must(uuid.NewV7())
+	key := uuid.Must(uuid.NewV7()).String()
 
 	var wg sync.WaitGroup
 	var duplicateCount atomic.Int64
 	for range n {
 		wg.Go(func() {
-			produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+			produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{IdempotencyKey: key})
 			must(err)
@@ -158,8 +158,8 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *iDatastore.Postgres
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			key := uuid.Must(uuid.NewV7())
-			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+			key := uuid.Must(uuid.NewV7()).String()
+			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{IdempotencyKey: key})
 			must(err)

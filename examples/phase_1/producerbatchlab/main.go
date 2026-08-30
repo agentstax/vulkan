@@ -139,7 +139,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 	fmt.Printf("  ✓ calls genuinely shared transactions (%d shared txns, largest batch %d)\n", sharedTxns, largestBatch)
 
 	// caller-keyed calls leave the batch: same key twice = one message
-	key := uuid.Must(uuid.NewV7())
+	key := uuid.Must(uuid.NewV7()).String()
 	for range 2 {
 		work, err := common.NewWork(31, "keyed@example.com")
 		must(err)
@@ -215,7 +215,7 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 
 	// caller keys are single-Produce-only; an empty batch is a usage error
 	keyedPayload := rawPayload(`{"seq": 0}`)
-	if _, err := producer.NewProduceItem(&keyedPayload, producer.ProduceOptions{IdempotencyKey: uuid.Must(uuid.NewV7())}); err == nil {
+	if _, err := producer.NewProduceItem(&keyedPayload, producer.ProduceOptions{IdempotencyKey: uuid.Must(uuid.NewV7()).String()}); err == nil {
 		die("NewProduceItem accepted a caller IdempotencyKey")
 	}
 	if _, err := wpInstance.ProduceBatch(ctx); err == nil {
@@ -368,7 +368,7 @@ func throughputScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 		return err
 	})
 	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, producer.Tx, uuid.UUID) (*common.Work, error) { return work, nil }, producer.ProduceOptions{})
+		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, producer.Tx, string) (*common.Work, error) { return work, nil }, producer.ProduceOptions{})
 		return err
 	})
 

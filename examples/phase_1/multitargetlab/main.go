@@ -42,7 +42,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var fn = func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+var fn = func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 	return common.NewWork(30, "admin@example.com")
 }
 
@@ -129,7 +129,7 @@ func rollbackOnFailureScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpB.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			return nil, wantErr
 		}, producer.ProduceOptions{})
 		return err
@@ -225,8 +225,8 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
 	defer cleanupB()
 
-	keyA := uuid.Must(uuid.NewV7())
-	keyB := uuid.Must(uuid.NewV7())
+	keyA := uuid.Must(uuid.NewV7()).String()
+	keyB := uuid.Must(uuid.NewV7()).String()
 
 	closure := func(ctx context.Context, tx producer.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{IdempotencyKey: keyA}); err != nil {

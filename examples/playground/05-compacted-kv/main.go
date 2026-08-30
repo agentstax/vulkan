@@ -36,7 +36,6 @@ import (
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/google/uuid"
 )
 
 type DeviceConfig struct {
@@ -118,7 +117,7 @@ func run() error {
 		next := *head.Message
 		next.Restarts++
 		_, err = configs.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*DeviceConfig, error) {
+			func(ctx context.Context, tx producer.Tx, _ string) (*DeviceConfig, error) {
 				return &next, nil
 			}, producer.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
 		return err

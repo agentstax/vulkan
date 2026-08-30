@@ -42,7 +42,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const (
@@ -263,7 +262,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[KeyedRec
 		opts.MessageKey = key
 		opts.Compaction = compaction
 	}
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*KeyedRecord, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*KeyedRecord, error) {
 		return &KeyedRecord{Key: key, Version: version, Deleted: deleted}, nil
 	}, opts)
 	must(err)

@@ -28,12 +28,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   (scenario 11) is designed as *Lease heartbeat/renewal (9b)* in the
   parking lot -- promote on its merit. Everything below is that review,
   in the order it was already sequenced.
-- **IdempotencyKey stays uuid.UUID; rescope the v7-not-v4 warning**
-  (settled 2026-08-29 from playground scenario 09): scenario 09's
-  derived v5 key from an upstream event id is the canonical
-  external-key path, so the field comment and
-  guides/side-effects-and-retries warn only hot-path producers minting
-  their own keys, not callers deriving one.
 - **Library work the doc pass surfaced.**
   - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
     comments and maybe a log line recommending against production use.

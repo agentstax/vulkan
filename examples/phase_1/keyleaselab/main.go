@@ -321,7 +321,7 @@ func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key s
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
 	compaction, err := producer.NewCompactionOptions(0)
 	must(err)
-	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)

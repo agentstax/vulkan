@@ -11,6 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// idempotencyKeyNamespace is the UUIDv5 namespace a non-UUID IdempotencyKey
+// string hashes under. Frozen: changing it would change every derived key.
+var idempotencyKeyNamespace = uuid.MustParse("b6f6c193-4e2b-45c1-9d3f-6a821e0c7a54")
+
 // ProduceFunc runs inside the append's transaction; the type and its docs
 // live with the datastore.
 type ProduceFunc[Message topic.Versioned] = datastore.ProduceFunc[Message]
@@ -46,7 +50,7 @@ func (c *ProducerController) AppendMessage[Message topic.Versioned](ctx context.
 		return nil, err
 	}
 
-	idempotencyKey, err := resolveIdempotencyKey(options)
+	idempotencyKey, err := resolveIdempotencyKey(options.IdempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +78,7 @@ func (c *ProducerController) AppendMessageInTx[Message topic.Versioned](ctx cont
 		return nil, err
 	}
 
-	idempotencyKey, err := resolveIdempotencyKey(options)
+	idempotencyKey, err := resolveIdempotencyKey(options.IdempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -100,10 +104,14 @@ func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx con
 	for _, item := range appends {
 		// cant batch produce a message without an IdempotencyKey
 		// a rerun dedups an ambiguous commit only by reusing the IdempotencyKey
-		if item.Options.IdempotencyKey == uuid.Nil {
+		if item.Options.IdempotencyKey == "" {
 			return nil, -1, errors.New("append Options.IdempotencyKey is required")
 		}
-		appendData = append(appendData, toAppendData(item.Options.IdempotencyKey, item.Payload, item.Options))
+		resolved, err := resolveIdempotencyKey(item.Options.IdempotencyKey)
+		if err != nil {
+			return nil, -1, err
+		}
+		appendData = append(appendData, toAppendData(resolved, item.Payload, item.Options))
 	}
 
 	appendedData, failedIdx, err := c.datastore.AppendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appendData)
@@ -122,11 +130,15 @@ func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx con
 // *** HELPERS ***
 // ***************
 
-// resolveIdempotencyKey generates a fresh UUIDv7 unless the caller supplied
-// one
-func resolveIdempotencyKey(options ProduceOptions) (uuid.UUID, error) {
-	if options.IdempotencyKey != uuid.Nil {
-		return options.IdempotencyKey, nil
+// resolveIdempotencyKey resolves the caller's key to the UUID the claim
+// table stores: "" mints a fresh UUIDv7, a string that parses as a UUID is
+// used verbatim, anything else hashes to a deterministic UUIDv5.
+func resolveIdempotencyKey(key string) (uuid.UUID, error) {
+	if key == "" {
+		return uuid.NewV7()
 	}
-	return uuid.NewV7()
+	if parsed, err := uuid.Parse(key); err == nil {
+		return parsed, nil
+	}
+	return uuid.NewSHA1(idempotencyKeyNamespace, []byte(key)), nil
 }

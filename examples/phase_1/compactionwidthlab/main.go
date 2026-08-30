@@ -31,7 +31,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const (
@@ -169,7 +168,7 @@ func seed(ctx context.Context, wp *producer.ProducerInstance[Record]) {
 func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key string) {
 	compaction, err := producer.NewCompactionOptions(0)
 	must(err)
-	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
+	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*Record, error) {
 		return &Record{Key: key}, nil
 	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)

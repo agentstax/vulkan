@@ -243,8 +243,8 @@ type callerResult struct {
 // committed survivor.
 func runCallerWithRetry(ctx context.Context, firstKey string, secondKey string, holdOnce *sync.Once, holdsFirst chan struct{}, peerHoldsFirst chan struct{}) callerResult {
 	// fixed per-produce keys make the rerun dedup-safe, the documented pattern
-	firstIdempotencyKey := uuid.Must(uuid.NewV7())
-	secondIdempotencyKey := uuid.Must(uuid.NewV7())
+	firstIdempotencyKey := uuid.Must(uuid.NewV7()).String()
+	secondIdempotencyKey := uuid.Must(uuid.NewV7()).String()
 
 	result := callerResult{}
 	for range 5 {
@@ -278,12 +278,12 @@ func runCallerWithRetry(ctx context.Context, firstKey string, secondKey string, 
 	return result
 }
 
-func produceKeyInTx(ctx context.Context, tx producer.Tx, key string, idempotencyKey uuid.UUID) error {
+func produceKeyInTx(ctx context.Context, tx producer.Tx, key string, idempotencyKey string) error {
 	compaction, err := producer.NewCompactionOptions(0)
 	if err != nil {
 		return err
 	}
-	_, err = wpInstance.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*labMessage, error) {
+	_, err = wpInstance.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ string) (*labMessage, error) {
 		return &labMessage{Note: key}, nil
 	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
 	return err

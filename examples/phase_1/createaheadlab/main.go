@@ -25,7 +25,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const partitionSize = int64(100)
@@ -157,7 +156,7 @@ func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *adm
 	return tp, wpInstance, warns, cleanup
 }
 
-func workFunc(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+func workFunc(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 	return common.NewWork(30, "admin@example.com")
 }
 

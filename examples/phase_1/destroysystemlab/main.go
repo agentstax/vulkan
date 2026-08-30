@@ -26,7 +26,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/system"
-	"github.com/google/uuid"
 )
 
 // every table createSystemTables creates -- the teardown assertion list
@@ -91,7 +90,7 @@ func run() (err error) {
 	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 	for range 3 {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

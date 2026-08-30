@@ -31,7 +31,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const group = "phase14a.compactionranklab"
@@ -156,7 +155,7 @@ func run() (err error) {
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[RankedRecord], key, label string, rank int64) {
 	compaction, err := producer.NewCompactionOptions(rank)
 	must(err)
-	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*RankedRecord, error) {
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*RankedRecord, error) {
 		return &RankedRecord{Key: key, Label: label}, nil
 	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)

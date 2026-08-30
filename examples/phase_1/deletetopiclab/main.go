@@ -32,7 +32,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 )
 
 const group = "phase9.deletetopiclab.group"
@@ -95,7 +94,7 @@ func run() (err error) {
 	_, err = cd.DeclareBindings(ctx, tp.Id, groupId, []string{"orders.*"}, time.Now())
 	must(err)
 
-	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	fn := func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}
 	// Compaction seeds compaction_head; the default (protected) idempotency
