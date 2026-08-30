@@ -13,22 +13,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RegisterSchedule creates the schedule named name if it doesn't exist and
-// returns it. Safe to call on every startup: expression, topic, payload and
-// cfg are applied on every call, so changing one and redeploying changes the
-// schedule -- and two services passing different values for one name will
-// overwrite each other.
-//   - name: must not contain '*'; it is the message key and routing key of
-//     every produce.
-//   - expression: from schedule.ParseExpression; min rate 1m and >= cfg.Timeout.
-//     A changed expression decides when the schedule next runs -- a time
-//     already due under the old one is dropped, not produced late.
-//   - topicName: the target topic every produce lands on.
-//   - payload: the message, stored marshaled with Message's schema version.
-//   - cfg: may be nil or sparse
-//
-// A suspended schedule stays suspended across a call -- only SuspendSchedule and
-// UnsuspendSchedule change that.
+// RegisterSchedule declares the schedule named name on the target topic and
+// returns it. Safe to call on every startup: the newest declaration wins, so
+// two services passing different values for one name overwrite each other.
+// A changed expression drops a time already due under the old one; a
+// suspended schedule stays suspended. The name is the message key of every
+// produce. cfg may be nil or sparse.
 func (a *MessageAdmin) RegisterSchedule[Message topic.Versioned](ctx context.Context, name string, expression *schedule.Expression, topicName string, payload *Message, cfg *schedulecontroller.ScheduleConfig) (*schedule.Schedule, error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
