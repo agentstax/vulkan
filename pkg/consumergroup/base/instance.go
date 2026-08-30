@@ -8,6 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/concurrency"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -20,7 +21,7 @@ type BaseInstance struct {
 	permit         *concurrency.Permit // never released -- Run is one-shot
 }
 
-func NewBaseInstance[Message any](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, claimed *worker.WorkerInstance, instanceTTL time.Duration, run func(ctx context.Context) error) (*BaseInstance, error) {
+func NewBaseInstance[Message topic.Versioned](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, claimed *worker.WorkerInstance, instanceTTL time.Duration, run func(ctx context.Context) error) (*BaseInstance, error) {
 	if baseProvisioner == nil {
 		return nil, errors.New("provisioner base must not be nil")
 	}

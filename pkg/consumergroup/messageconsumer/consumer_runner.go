@@ -19,7 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type messageRunner[Message any] struct {
+type messageRunner[Message topic.Versioned] struct {
 	*consumerbase.BaseConsumer[Message]
 
 	consumers   *controller.MessageConsumerGroupController
@@ -28,7 +28,7 @@ type messageRunner[Message any] struct {
 	buffer      *claimBuffer
 }
 
-func newMessageRunner[Message any](base *consumerbase.BaseConsumer[Message], consumers *controller.MessageConsumerGroupController, cfg *MessageConsumerConfig) (*messageRunner[Message], error) {
+func newMessageRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.MessageConsumerGroupController, cfg *MessageConsumerConfig) (*messageRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}

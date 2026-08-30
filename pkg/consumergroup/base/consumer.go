@@ -17,7 +17,7 @@ import (
 
 // BaseConsumer is built fresh per claimed life, so a respawned runner never
 // shares state with a predecessor still draining.
-type BaseConsumer[Message any] struct {
+type BaseConsumer[Message topic.Versioned] struct {
 	Owner         *common.Owner
 	Topic         *topic.Topic
 	SchemaVersion int
@@ -32,7 +32,7 @@ type BaseConsumer[Message any] struct {
 // resolvedTopic comes from BaseProvisioner.GetTopic. cfg may be nil or a
 // sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func NewBaseConsumer[Message any](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, resolvedTopic *topic.Topic, cfg *BaseConsumerConfig) (*BaseConsumer[Message], error) {
+func NewBaseConsumer[Message topic.Versioned](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, resolvedTopic *topic.Topic, cfg *BaseConsumerConfig) (*BaseConsumer[Message], error) {
 	if baseProvisioner == nil {
 		return nil, errors.New("provisioner base must not be nil")
 	}

@@ -19,7 +19,7 @@ import (
 )
 
 // should be idempotent -- redelivery after a crash or timeout is normal
-type ConsumerFunc[Message any] func(ctx context.Context, message *Message) error
+type ConsumerFunc[Message topic.Versioned] func(ctx context.Context, message *Message) error
 
 // Consumer runs a consumer group on one topic. Failed messages retry with
 // backoff, and the topic's upkeep (partitions, retention, committed advance) runs

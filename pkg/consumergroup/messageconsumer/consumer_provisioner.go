@@ -17,6 +17,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
@@ -24,7 +25,7 @@ import (
 // claims, leaving the group's other consumer rows running
 const WorkerMessageConsumer = "message_consumer"
 
-type MessageConsumerProvisioner[Message any] struct {
+type MessageConsumerProvisioner[Message topic.Versioned] struct {
 	Config *MessageConsumerConfig
 
 	*consumerbase.BaseProvisioner[Message]
@@ -36,7 +37,7 @@ type MessageConsumerProvisioner[Message any] struct {
 // assembled consumer -- see the package doc.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion int, metrics *metricsproducer.MetricsProducer, cfg *MessageConsumerConfig) (*MessageConsumerProvisioner[Message], error) {
+func NewMessageConsumerProvisioner[Message topic.Versioned](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion int, metrics *metricsproducer.MetricsProducer, cfg *MessageConsumerConfig) (*MessageConsumerProvisioner[Message], error) {
 	if cfg == nil {
 		cfg = &MessageConsumerConfig{}
 	}

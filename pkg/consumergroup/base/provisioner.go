@@ -23,7 +23,7 @@ import (
 
 // BaseProvisioner is the half of a consumer worker kind every row shares:
 // the row's definition, the controllers, and the group's consumerFunc.
-type BaseProvisioner[Message any] struct {
+type BaseProvisioner[Message topic.Versioned] struct {
 	definition *worker.Definition
 	Logger     logging.Logger
 
@@ -39,7 +39,7 @@ type BaseProvisioner[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion int, metrics *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
+func NewBaseProvisioner[Message topic.Versioned](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion int, metrics *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

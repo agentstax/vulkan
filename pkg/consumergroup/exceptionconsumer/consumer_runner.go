@@ -12,16 +12,17 @@ import (
 	consumerbase "github.com/agentstax/vulkan/pkg/consumergroup/base"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-type exceptionRunner[Message any] struct {
+type exceptionRunner[Message topic.Versioned] struct {
 	*consumerbase.BaseConsumer[Message]
 
 	consumers *controller.ExceptionConsumerGroupController
 	cfg       *ExceptionConsumerConfig
 }
 
-func newExceptionRunner[Message any](base *consumerbase.BaseConsumer[Message], consumers *controller.ExceptionConsumerGroupController, cfg *ExceptionConsumerConfig) (*exceptionRunner[Message], error) {
+func newExceptionRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.ExceptionConsumerGroupController, cfg *ExceptionConsumerConfig) (*exceptionRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}

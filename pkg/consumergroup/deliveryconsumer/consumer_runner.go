@@ -8,17 +8,18 @@ import (
 
 	consumerbase "github.com/agentstax/vulkan/pkg/consumergroup/base"
 	"github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
 
-type deliveryRunner[Message any] struct {
+type deliveryRunner[Message topic.Versioned] struct {
 	*consumerbase.BaseConsumer[Message]
 
 	consumers *controller.DeliveryConsumerGroupController
 	cfg       *DeliveryConsumerConfig
 }
 
-func newDeliveryRunner[Message any](base *consumerbase.BaseConsumer[Message], consumers *controller.DeliveryConsumerGroupController, cfg *DeliveryConsumerConfig) (*deliveryRunner[Message], error) {
+func newDeliveryRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.DeliveryConsumerGroupController, cfg *DeliveryConsumerConfig) (*deliveryRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}
