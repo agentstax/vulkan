@@ -1,9 +1,7 @@
 ---
 title: Schedules
-description: A schedule is a producer on a cron expression. Register it with the message it produces and the topic it produces to; any consumer group on that topic receives it. Proposed shape, written up as the spec.
+description: A schedule is a producer on a cron expression. Register it with the message it produces and the topic it produces to; any consumer group on that topic receives it.
 ---
-
-import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 A schedule is a producer on a cron expression. You register it with a
 name, an expression, the topic it produces to, and the message it
@@ -11,16 +9,6 @@ produces; the system produces that message onto that topic every time
 the expression comes due. Consuming it is a plain consumer group on
 that topic, and there can be any number of them - the schedule knows
 nothing about who listens.
-
-<ThreadAside label="PROPOSED" title="Partly shipped">
-The `scheduler` handle, the rename, and the stored-payload produce
-path below are in the library; every sample on this page compiles.
-What is still ahead: the built-in alerts register their own schedules
-through `MessageAdmin.RegisterSchedule` rather than this handle, and
-the older pages (quickstart, architecture, table design) still
-describe the cron-job shape. The aside comes off when those catch up.
-
-</ThreadAside>
 
 ```go
 type InvoiceRun struct {
@@ -156,7 +144,7 @@ noun on both:
 | --- | --- | --- |
 | `RunSchedule(name)` | `vulkan schedule run` | produces one message now, off-schedule, from the stored payload |
 | `SuspendSchedule` / `UnsuspendSchedule` | `vulkan schedule suspend` / `unsuspend` | stops and resumes the schedule; a time that came due while suspended is dropped |
-| `ScheduleStatus`, `ScheduleMessages` | `vulkan schedule status` / `messages` | per-group outcomes, read from the target topic's `delivery_log` by message key; a `succeeded` count needs the target topic's `DeliveryLogMode: all` (the default keeps failures only) - `Register` warns [VK0058](/errors/VK0058) when it isn't |
+| `ScheduleStatus`, `ScheduleMessages` | `vulkan schedule get` / `get --messages` | per-group outcomes, read from the target topic's `delivery_log` by message key; a `succeeded` count needs the target topic's `DeliveryLogMode: all` (the default keeps failures only) - `Register` warns [VK0058](/errors/VK0058) when it isn't |
 | `DestroySchedule` | `vulkan schedule destroy` | deletes the row; gated by `AllowDestroy` |
 
 Temporal and EventBridge Scheduler use the same noun for the same

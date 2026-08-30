@@ -10,7 +10,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule"
 	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
-	"github.com/agentstax/vulkan/pkg/systemmanager"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
@@ -128,14 +127,5 @@ func (s *Scheduler) Register[Message topic.Versioned](ctx context.Context, name 
 		return nil, err
 	}
 
-	// built per instance -- a SystemManager refuses a second concurrent Run
-	systemManager, err := systemmanager.NewSystemManager(s.ds, &systemmanager.SystemManagerConfig{
-		Logger: s.Config.Logger,
-		Retry:  s.Config.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return newSchedulerInstance[Message](registered, payload, systemManager, s.Config)
+	return newSchedulerInstance[Message](registered, payload, s.ds, s.Config)
 }

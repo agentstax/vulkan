@@ -37,14 +37,19 @@ its labs pass alone; the full fresh-DB suite runs at the end.
    because that is the verb), `Schedule(ctx)` = a per-instance system
    manager's Run. `RegisterSchedule` on admin stays (alerts + CLI path);
    playground 06 and a schedulelab handle section drive the handle.
-4. **Alerts through the handle + docs sweep.** (JobRequest retirement,
-   alerts consuming `alert.JobPayload`, and the playground 06 rewrite
-   landed with step 2.) partitioncount / compactionreadcost register
-   through the handle; quickstart / architecture / table-design /
-   rabbitmq-sqs pages swept; the schedules page's PROPOSED aside comes
-   off.
-5. Closeout: full fresh-DB suite, `just verify`, PROPOSED aside off,
-   HISTORY entry, memory.
+4. DONE 2026-08-30 (uncommitted) -- **Alerts through the handle + docs sweep.**
+   `MessageAdmin` holds a `scheduler.Scheduler`; `RegisterSystem`
+   registers the two alert schedules through it (`alertcontroller.Job`
+   carries the expression string). `admin.RegisterSchedule` DELETED --
+   the handle is the one declaration path, the consumer mirror (admin
+   has no RegisterGroup either); schedulelab registers through the
+   handle. `Schedule(ctx)` builds its SystemManager per call, so a
+   Register that never schedules (admin's) builds no manager. VK0013
+   fix names `Scheduler.Register` (codes.json re-synced). Docs: the
+   other pages already carried no cron-job wording after step 1; the
+   schedules page's PROPOSED aside is off and its CLI column names
+   `vulkan schedule get` / `get --messages`.
+5. Closeout: full fresh-DB suite, `just verify`, HISTORY entry, memory.
 
 Settled during step 2 (2026-08-30): every schedule is the system's --
 the nullable owner pair + `num_nonnulls` CHECK are gone (a group-owned

@@ -11,12 +11,12 @@ import (
 // Job is one built-in alert's schedule, as RegisterSystem declares it.
 type Job struct {
 	Name       string
-	Expression *schedule.Expression
+	Expression string
 	Payload    *alert.JobPayload
 	Config     *schedulecontroller.ScheduleConfig
 }
 
-// NewJob parses schedule so a bad expression fails here, not at register.
+// NewJob parses expression so a bad one fails here, not at register.
 // cfg may be nil.
 func NewJob(name string, expression string, payload *alert.JobPayload, cfg *schedulecontroller.ScheduleConfig) (*Job, error) {
 	if name == "" {
@@ -26,13 +26,12 @@ func NewJob(name string, expression string, payload *alert.JobPayload, cfg *sche
 		return nil, errors.New("job payload is required")
 	}
 
-	parsed, err := schedule.ParseExpression(expression)
-	if err != nil {
+	if _, err := schedule.ParseExpression(expression); err != nil {
 		return nil, err
 	}
 	return &Job{
 		Name:       name,
-		Expression: parsed,
+		Expression: expression,
 		Payload:    payload,
 		Config:     cfg,
 	}, nil

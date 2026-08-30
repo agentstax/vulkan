@@ -6,50 +6,10 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
-	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
-
-// RegisterSchedule declares the schedule named name on the target topic and
-// returns it. Safe to call on every startup: the newest declaration wins, so
-// two services passing different values for one name overwrite each other.
-// A changed expression drops a time already due under the old one; a
-// suspended schedule stays suspended. The name is the message key of every
-// produce. cfg may be nil or sparse.
-func (a *MessageAdmin) RegisterSchedule[Message topic.Versioned](ctx context.Context, name string, expression *schedule.Expression, topicName string, payload *Message, cfg *schedulecontroller.ScheduleConfig) (*schedule.Schedule, error) {
-	if name == "" {
-		return nil, errors.New("schedule name is required")
-	}
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
-
-	// gate -- a schedule needs the control-plane schema RegisterSystem creates
-	sys, err := a.systemController.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if sys == nil {
-		return nil, migrate.ErrNotRegistered.With("schedule", name)
-	}
-
-	target, err := a.topicController.Get(ctx, topicName)
-	if err != nil {
-		return nil, err
-	}
-	if target == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", topicName)
-	}
-
-	if target.DeliveryLogMode != topic.DeliveryLogModeAll {
-		a.Logger.WarnContext(ctx, schedule.EventTargetKeepsNoSuccessRows.Message, "code", schedule.EventTargetKeepsNoSuccessRows.Code, "schedule", name, "topic", target.Name, "delivery_log_mode", string(target.DeliveryLogMode))
-	}
-
-	return a.scheduleController.Register(ctx, sys.Id, name, expression, target.Id, payload, cfg)
-}
 
 // GetSchedule returns (nil, nil), not an error, if name isn't registered.
 func (a *MessageAdmin) GetSchedule(ctx context.Context, name string) (*schedule.Schedule, error) {

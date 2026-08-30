@@ -128,7 +128,7 @@
       "kind": "error",
       "problem": "schedule not found",
       "recovery": "permanent",
-      "fix": "register \"{schedule}\" with MessageAdmin.RegisterSchedule first",
+      "fix": "register \"{schedule}\" with Scheduler.Register first",
       "fix_placeholders": [
         "schedule"
       ]

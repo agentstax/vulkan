@@ -53,8 +53,9 @@ import (
 const schedulerPollRate = 100 * time.Millisecond
 
 var (
-	ds     *iDatastore.PostgresDatastore
-	mAdmin *admin.MessageAdmin
+	ds           *iDatastore.PostgresDatastore
+	mAdmin       *admin.MessageAdmin
+	labScheduler *scheduler.Scheduler
 	target *topic.Topic // the lab's own target topic
 	prefix string
 )
@@ -104,6 +105,8 @@ func run() (err error) {
 	mAdmin, err = admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
+	labScheduler, err = scheduler.NewScheduler(ds, nil)
+	must(err)
 
 	prefix = fmt.Sprintf("schedulelab.%d", time.Now().UnixNano())
 	// status reads count 'success' rows, so the target keeps every outcome
@@ -137,15 +140,13 @@ func run() (err error) {
 func validationSection(ctx context.Context) {
 	step("validation: names, schedules, timeout vs min rate, re-register wins")
 
-	hourly := parse("@hourly")
-
-	if _, err := mAdmin.RegisterSchedule(ctx, "", hourly, target.Name, payload, nil); err == nil {
+	if _, err := registerSchedule(ctx, "", "@hourly", target.Name, payload, nil); err == nil {
 		die("empty name must be rejected")
 	}
-	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".Upper", hourly, target.Name, payload, nil); err == nil {
+	if _, err := registerSchedule(ctx, prefix+".Upper", "@hourly", target.Name, payload, nil); err == nil {
 		die("uppercase name must be rejected")
 	}
-	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".star*", hourly, target.Name, payload, nil); err == nil {
+	if _, err := registerSchedule(ctx, prefix+".star*", "@hourly", target.Name, payload, nil); err == nil {
 		die("'*' in a name is the binding wildcard and must be rejected")
 	}
 	if _, err := schedule.ParseExpression("@every 30s"); err == nil {
@@ -155,14 +156,14 @@ func validationSection(ctx context.Context) {
 	if _, err := schedule.ParseExpression("0 0 30 2 *"); err == nil {
 		die("a expression with no upcoming scheduled time must be rejected at parse")
 	}
-	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".validate", hourly, target.Name, payload, &schedulecontroller.ScheduleConfig{Timeout: 2 * time.Hour}); err == nil {
+	if _, err := registerSchedule(ctx, prefix+".validate", "@hourly", target.Name, payload, &schedulecontroller.ScheduleConfig{Timeout: 2 * time.Hour}); err == nil {
 		die("timeout above the expression's min rate must be rejected")
 	}
 	fmt.Println("  ✓ rejections: empty/uppercase/star name, sub-minute, no-upcoming, timeout > min rate")
 
 	// Feb-29 has under two scheduled times inside the min-rate horizon -- the
 	// single-scheduled-time pass must register it, seeded on a real Feb 29
-	feb29, err := mAdmin.RegisterSchedule(ctx, prefix+".feb29", parse("0 0 29 2 *"), target.Name, payload, nil)
+	feb29, err := registerSchedule(ctx, prefix+".feb29", "0 0 29 2 *", target.Name, payload, nil)
 	must(err)
 	if feb29.NextScheduledAt.UTC().Month() != time.February || feb29.NextScheduledAt.UTC().Day() != 29 {
 		die(fmt.Sprintf("feb29 job seeded to %v, want a Feb 29", feb29.NextScheduledAt))
@@ -170,23 +171,22 @@ func validationSection(ctx context.Context) {
 	must(mAdmin.DestroySchedule(ctx, prefix+".feb29"))
 	fmt.Printf("  ✓ Feb-29 expression registered, seeded to %s\n", feb29.NextScheduledAt.UTC().Format("2006-01-02"))
 
-	first, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", hourly, target.Name, payload, nil)
+	first, err := registerSchedule(ctx, prefix+".redeclare", "@hourly", target.Name, payload, nil)
 	must(err)
-	again, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", hourly, target.Name, payload, nil)
+	again, err := registerSchedule(ctx, prefix+".redeclare", "@hourly", target.Name, payload, nil)
 	must(err)
 	if again.Id != first.Id {
 		die(fmt.Sprintf("identical re-register resolved to a different job: %d vs %d", again.Id, first.Id))
 	}
 
-	daily := parse("@daily")
 	must(mAdmin.SuspendSchedule(ctx, prefix+".redeclare"))
-	redeclared, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", daily, target.Name, payload, nil)
+	redeclared, err := registerSchedule(ctx, prefix+".redeclare", "@daily", target.Name, payload, nil)
 	must(err)
 	if redeclared.Id != first.Id {
 		die(fmt.Sprintf("re-register resolved to a different job: %d vs %d", redeclared.Id, first.Id))
 	}
-	if redeclared.Expression != daily.String() {
-		die(fmt.Sprintf("re-registered expression = %q, want %q", redeclared.Expression, daily))
+	if redeclared.Expression != "@daily" {
+		die(fmt.Sprintf("re-registered expression = %q, want %q", redeclared.Expression, "@daily"))
 	}
 	if !redeclared.NextScheduledAt.After(time.Now().UTC()) {
 		die(fmt.Sprintf("a expression change must re-seed the next scheduled time, got %v", redeclared.NextScheduledAt))
@@ -205,9 +205,9 @@ func targetSection(ctx context.Context) {
 	_, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
 
-	_, err = mAdmin.RegisterSchedule(ctx, prefix+".cascade", parse("@hourly"), topicName, payload, nil)
+	_, err = registerSchedule(ctx, prefix+".cascade", "@hourly", topicName, payload, nil)
 	must(err)
-	_, err = mAdmin.RegisterSchedule(ctx, prefix+".standalone", parse("@hourly"), target.Name, payload, nil)
+	_, err = registerSchedule(ctx, prefix+".standalone", "@hourly", target.Name, payload, nil)
 	must(err)
 
 	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
@@ -229,17 +229,14 @@ func targetSection(ctx context.Context) {
 func handleSection(ctx context.Context) {
 	step("handle: scheduler.Register declares the row, Schedule runs the manager until ctx cancels")
 
-	invoiceScheduler, err := scheduler.NewScheduler(ds, nil)
-	must(err)
-
-	if _, err := invoiceScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", prefix+".missing", payload, nil); !errors.Is(err, topic.ErrTopicNotFound) {
+	if _, err := labScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", prefix+".missing", payload, nil); !errors.Is(err, topic.ErrTopicNotFound) {
 		die(fmt.Sprintf("want ErrTopicNotFound for an unregistered target, got %v", err))
 	}
-	if _, err := invoiceScheduler.Register[labMessage](ctx, prefix+".handle", "every day at noon", target.Name, payload, nil); err == nil {
+	if _, err := labScheduler.Register[labMessage](ctx, prefix+".handle", "every day at noon", target.Name, payload, nil); err == nil {
 		die("want an error for an unparseable expression")
 	}
 
-	nightly, err := invoiceScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", target.Name, payload, nil)
+	nightly, err := labScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".handle")) }()
 	found, err := mAdmin.GetSchedule(ctx, prefix+".handle")
@@ -263,7 +260,7 @@ func handleSection(ctx context.Context) {
 func produceOnceSection(ctx context.Context) {
 	step("produce-once: a 5m-backdated row produces ONE message, stamped with the NEWEST due scheduled time")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".walk", parse("@every 1m"), target.Name, payload, nil)
+	job, err := registerSchedule(ctx, prefix+".walk", "@every 1m", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".walk")) }()
 	key := job.Name
@@ -288,7 +285,7 @@ func produceOnceSection(ctx context.Context) {
 func dedupeSection(ctx context.Context) {
 	step("v7 dedupe: re-backdating to the SAME scheduled time is a Duplicate, not a second message")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".dedupe", parse("@every 1m"), target.Name, payload, nil)
+	job, err := registerSchedule(ctx, prefix+".dedupe", "@every 1m", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".dedupe")) }()
 	key := job.Name
@@ -313,7 +310,7 @@ func dedupeSection(ctx context.Context) {
 func suspendSection(ctx context.Context) {
 	step("suspend/unsuspend: a due-while-suspended scheduled time is dropped, not produced late")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".suspend", parse("@hourly"), target.Name, payload, nil)
+	job, err := registerSchedule(ctx, prefix+".suspend", "@hourly", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".suspend")) }()
 	key := job.Name
@@ -348,10 +345,10 @@ func suspendSection(ctx context.Context) {
 func poisonSection(ctx context.Context) {
 	step("poisoned row: one job's produce fails every tick, siblings still produce")
 
-	poisoned, err := mAdmin.RegisterSchedule(ctx, prefix+".poison", parse("@hourly"), target.Name, payload, nil)
+	poisoned, err := registerSchedule(ctx, prefix+".poison", "@hourly", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".poison")) }()
-	sibling, err := mAdmin.RegisterSchedule(ctx, prefix+".sibling", parse("@every 1m"), target.Name, payload, nil)
+	sibling, err := registerSchedule(ctx, prefix+".sibling", "@every 1m", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".sibling")) }()
 	poisonedKey := poisoned.Name
@@ -384,7 +381,7 @@ func poisonSection(ctx context.Context) {
 func deferSection(ctx context.Context) {
 	step("exclusive (spot): a scheduler request waits behind a running one, then runs")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".defer", parse("@every 1m"), target.Name, payload,
+	job, err := registerSchedule(ctx, prefix+".defer", "@every 1m", target.Name, payload,
 		&schedulecontroller.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".defer")) }()
@@ -433,7 +430,7 @@ func deferSection(ctx context.Context) {
 func runNowOverrideSection(ctx context.Context) {
 	step("run-now beside a running request: default 'parallel' runs alongside it, cfg exclusive waits for it")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".runnow", parse("@hourly"), target.Name, payload,
+	job, err := registerSchedule(ctx, prefix+".runnow", "@hourly", target.Name, payload,
 		&schedulecontroller.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".runnow")) }()
@@ -500,7 +497,7 @@ func runNowOverrideSection(ctx context.Context) {
 func supersedeSection(ctx context.Context) {
 	step("run-now supersedes a pending unclaimed request")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".supersede", parse("@hourly"), target.Name, payload, nil)
+	job, err := registerSchedule(ctx, prefix+".supersede", "@hourly", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".supersede")) }()
 
@@ -583,7 +580,7 @@ func statusSection(ctx context.Context) {
 	step("consumer end-to-end + status: fail-once retry, always-failing sibling, RAN/SUCCEEDED/FAILED")
 
 	jobName := prefix + ".status"
-	_, err := mAdmin.RegisterSchedule(ctx, jobName, parse("@hourly"), target.Name, payload, nil)
+	_, err := registerSchedule(ctx, jobName, "@hourly", target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, jobName)) }()
 
@@ -847,11 +844,16 @@ func exec(ctx context.Context, sql string, args ...any) {
 	must(err)
 }
 
-func parse(expr string) *schedule.Expression {
-	expression, err := schedule.ParseExpression(expr)
-	must(err)
-	return expression
+// registerSchedule is the handle's Register for the lab's message type,
+// returning the row like admin's reads do.
+func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedulecontroller.ScheduleConfig) (*schedule.Schedule, error) {
+	instance, err := labScheduler.Register[labMessage](ctx, name, expression, topicName, payload, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return instance.Registered, nil
 }
+
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }
 
