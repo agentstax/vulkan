@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-06
 phase: "14a"
 ---
@@ -11,3 +11,5 @@ phase: "14a"
 **Decision.** Keep the name `schema_version` for both. The two columns are never read in the same query and are documented at both definitions.
 
 **Consequences.** **Rejected:** disambiguating the topic column (e.g. `topic_version`) — judged not worth losing the more natural word for what a user actually sets via `--schema-version`. Readers encountering either column should check which axis they're on; the definitions carry that note.
+
+Superseded by [0618]: the schema version is a message_log column declared by the Message type; the topic catalog is keyed by name alone.

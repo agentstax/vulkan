@@ -29,11 +29,11 @@ import (
 	"github.com/google/uuid"
 )
 
-type OrderPlaced struct {
+type OrderPlacedV1 struct {
 	OrderId string `json:"order_id"`
 }
 
-type InventoryReserved struct {
+type InventoryReservedV1 struct {
 	OrderId string `json:"order_id"`
 	Sku     string `json:"sku"`
 }
@@ -71,7 +71,7 @@ func run() error {
 		return err
 	}
 
-	orderProducer, err := producer.NewProducer[OrderPlaced](ds, nil)
+	orderProducer, err := producer.NewProducer[OrderPlacedV1](ds, nil)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	inventoryProducer, err := producer.NewProducer[InventoryReserved](ds, nil)
+	inventoryProducer, err := producer.NewProducer[InventoryReservedV1](ds, nil)
 	if err != nil {
 		return err
 	}
@@ -90,11 +90,11 @@ func run() error {
 
 	// one topic: the message's own transaction carries the business write
 	produced, err := orders.ProduceFunc(ctx,
-		func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderPlaced, error) {
+		func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderPlacedV1, error) {
 			if _, err := tx.Exec(ctx, `INSERT INTO playground_orders (id) VALUES ($1) ON CONFLICT DO NOTHING`, "ord-2"); err != nil {
 				return nil, err
 			}
-			return &OrderPlaced{OrderId: "ord-2"}, nil
+			return &OrderPlacedV1{OrderId: "ord-2"}, nil
 		}, producer.ProduceOptions{})
 	if err != nil {
 		return err
@@ -107,14 +107,14 @@ func run() error {
 			return err
 		}
 		if _, err := orders.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderPlaced, error) {
-				return &OrderPlaced{OrderId: "ord-3"}, nil
+			func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderPlacedV1, error) {
+				return &OrderPlacedV1{OrderId: "ord-3"}, nil
 			}, producer.ProduceOptions{}); err != nil {
 			return err
 		}
 		_, err := inventory.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*InventoryReserved, error) {
-				return &InventoryReserved{OrderId: "ord-3", Sku: "sku-9"}, nil
+			func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*InventoryReservedV1, error) {
+				return &InventoryReservedV1{OrderId: "ord-3", Sku: "sku-9"}, nil
 			}, producer.ProduceOptions{})
 		return err
 	}); err != nil {

@@ -46,6 +46,7 @@ export const boards: Board[] = [
 			'guides/new-group-start',
 			'guides/ordered-delivery',
 			'guides/consumer-timeouts',
+			'guides/schema-versions',
 			'guides/migrations',
 		],
 	},

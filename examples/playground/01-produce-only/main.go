@@ -28,7 +28,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-type OrderPlaced struct {
+type OrderPlacedV1 struct {
 	OrderId string `json:"order_id"`
 	Total   int64  `json:"total_cents"`
 }
@@ -50,6 +50,7 @@ func run() error {
 	}
 	defer ds.Close()
 
+	// START - not needed every time
 	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
 	if err != nil {
 		return err
@@ -62,8 +63,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// END - not needed every time
 
-	orderProducer, err := producer.NewProducer[OrderPlaced](ds, nil)
+	orderProducer, err := producer.NewProducer[OrderPlacedV1](ds, nil)
 	if err != nil {
 		return err
 	}
@@ -72,7 +74,7 @@ func run() error {
 		return err
 	}
 
-	produced, err := orders.Produce(ctx, &OrderPlaced{OrderId: "ord-1", Total: 4200}, producer.ProduceOptions{})
+	produced, err := orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, producer.ProduceOptions{})
 	if err != nil {
 		return err
 	}

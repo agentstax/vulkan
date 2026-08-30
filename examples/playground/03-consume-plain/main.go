@@ -32,7 +32,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-type OrderPlaced struct {
+type OrderPlacedV1 struct {
 	OrderId string `json:"order_id"`
 	Total   int64  `json:"total_cents"`
 }
@@ -55,7 +55,7 @@ func run() error {
 	}
 	defer ds.Close()
 
-	orderConsumer, err := consumer.NewConsumer[OrderPlaced](ds, nil)
+	orderConsumer, err := consumer.NewConsumer[OrderPlacedV1](ds, nil)
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func run() error {
 		return err
 	}
 
-	return receipts.Consume(ctx, func(ctx context.Context, order *OrderPlaced) error {
+	return receipts.Consume(ctx, func(ctx context.Context, order *OrderPlacedV1) error {
 		fmt.Printf("receipt for %s: %d cents\n", order.OrderId, order.Total)
 		return nil
 	})

@@ -1,0 +1,114 @@
+---
+title: Schema Versions
+description: Proposed — the payload version lives on the message row and is declared by the Message type, so a topic is one name and Register never asks for a version.
+---
+
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
+
+A message's schema version is a column on its row, written from the Go
+type that produced it. Today it is a topic key: `topic.SchemaVersion(1)`
+on every `RegisterTopic`, `Register`, and `GetTopic`, and a version bump
+is a whole new physical topic. This page is the spec for moving it.
+
+<ThreadAside label="NOTE" title="Proposed">
+Nothing on this page is shipped. The shipped shape is the
+`(name, schema_version)` topic key the quickstart shows. The code
+below is what the API looks like after the change.
+
+</ThreadAside>
+
+## The type declares its version
+
+```go
+// PROPOSED -- not shipped API.
+type OrderPlacedV2 struct {
+	OrderId string `json:"order_id"`
+	Total   Money  `json:"total"`
+}
+
+func (OrderPlacedV2) SchemaVersion() topic.SchemaVersion { return 2 }
+
+orders, err := producer.NewProducer[OrderPlacedV2](ds, nil)
+must(err)
+instance, err := orders.Register(ctx, "orders.placed")
+must(err)
+```
+
+`NewProducer` and `NewConsumer` constrain `Message` to
+`topic.Versioned`, one method: `SchemaVersion()`. Forget it and the
+program does not compile, which is the same guarantee the positional
+parameter gave (no way to bind a type to a topic without saying which
+version) moved from a runtime check to the type checker. The struct
+name and its version sit two lines apart, so the `V2` suffix and the
+`2` are read together. The method is the only source. There is no
+config field that overrides it, because two places to say one fact is
+how they drift.
+
+Every produce writes the method's value into the row:
+
+```sql
+message_log_<id>.schema_version BIGINT NOT NULL   -- what this row's payload is
+```
+
+and `topic_config` loses its `schema_version` column: `UNIQUE (name)`.
+One topic, one log, one id space, rows of any version interleaved.
+
+## A group reads its own version and steps over the rest
+
+```go
+// PROPOSED -- not shipped API.
+scoring, err := consumer.NewConsumer[OrderPlacedV2](ds, nil)
+must(err)
+instance, err := scoring.Register(ctx, "fraud-scoring", "orders.placed", nil)
+must(err)
+```
+
+The claim adds `m.schema_version = $version` beside the binding
+predicate it already has. A v1 row under a v2 group is treated the way
+a routing key that matches no binding is treated: the cursor passes over
+it, nothing decodes it, and the group's lag never counts it. The
+exception claim filters the same way, so a v1 row that was dead-lettered
+or delayed never replays weeks later into a v2 struct. That replay was
+the bug the topic-key design existed to prevent, and it stays
+prevented.
+
+A rolling deploy is then two groups on one topic. Say `orders.placed`
+has been live a month at v1 with `Total int64` cents and the change is
+`Total Money`. Deploy producers built on `OrderPlacedV2` -> new rows
+carry `schema_version = 2` -> the existing `fraud-scoring` group on
+`OrderPlacedV1` keeps draining v1 rows and steps over v2 -> a second
+group `fraud-scoring-v2` on `OrderPlacedV2` does the opposite. When the
+v1 group's lag is 0 and no v1 rows remain, stop it. Nothing ever
+decoded a v1 row with the v2 struct.
+
+## What changes for compacted topics
+
+Compaction is per key per topic, so a v2 write for `acct-1` becomes the
+key's head and the v1 row stops being claimable. The bridge pattern
+(consume the old version, re-produce as the new one at
+`CompactionRank -1` so a live rank-0 write always wins) is unchanged,
+except it is now a group on the same topic instead of a copy across two.
+
+Retirement stops being a guess. Today `FamilyHealth` refuses to ever
+call a compacted version safe, because from lag alone it cannot know
+whether every key's state was carried over. With the version on the
+row that is a query: heads whose row is still `schema_version = 1`,
+plus unconsumed v1 rows per group. Zero of both is the verdict.
+
+## What it costs
+
+- A v1 row lives until retention drains it, not until you drop its
+  family. Retiring v1 is "no v1 rows or heads remain", not `DROP TABLE`.
+- Partitions and retention are shared across versions. A version cannot
+  be sized or retained on its own.
+- Eight bytes per row.
+- `AlterTopic`, `DestroyTopic`, `GetTopic`, `RenameTopic`, and the CLI's
+  `--schema-version` flag all lose the version. `FamilyHealth` becomes
+  per-version counts inside one topic.
+
+## Not in this change
+
+Reading an older version through a converter (Confluent's reader
+schema, Temporal's data converter) instead of skipping it is a separate
+piece of work; the skip predicate is where it would plug in. It waits
+until the skip has been lived with.

@@ -28,6 +28,17 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   (scenario 11) is designed as *Lease heartbeat/renewal (9b)* in the
   parking lot -- promote on its merit. Everything below is that review,
   in the order it was already sequenced.
+- **Schema version moves onto the message row** [0618] (settled
+  2026-08-30 from playground scenario 01): `message_log.schema_version`
+  written from the Message type's `SchemaVersion()` method
+  (`topic.Versioned` constraint, the only source); topic_config keyed
+  by name alone; a group claims only rows at its type's version, other
+  versions pass under the cursor like a binding miss; every
+  version-addressed verb and `--schema-version` drop the parameter;
+  bridge becomes same-topic; FamilyHealth's compacted verdict becomes a
+  query. Spec: guides/schema-versions (Proposed). Sweep: playground
+  headers, quickstart, replay/fan-out/routing/new-group-start samples,
+  schemaevolutionlab, migrations.mdx "two counters" paragraph.
 - **IdempotencyKey stays uuid.UUID; rescope the v7-not-v4 warning**
   (settled 2026-08-29 from playground scenario 09): scenario 09's
   derived v5 key from an upstream event id is the canonical
@@ -212,6 +223,17 @@ documentation; the latter want a surface that has stopped moving.
   not re-proposed. The research evidence is summarized in [0609];
   VOICE.md ## Sample sources names where future samples may come
   from.
+
+- **Upcaster for skipped schema versions** (after [0618] ships): a
+  consumer group today skips rows whose `schema_version` differs from
+  its Message type's. An optional per-consumer decoder --
+  `ConsumerConfig.Upgrade` shaped roughly `map[topic.SchemaVersion]
+  func(json.RawMessage) (*Message, error)` -- would let one group read
+  older rows through a user-written converter instead of a bridge
+  re-produce. Plugs into the claim predicate (versions with an
+  upgrader become claimable) and the decode step; Confluent's reader
+  schema / Temporal's data converter are the precedents. Not before
+  the skip behavior has been lived with.
 
 - **Doc-site pages the 2026-08-28 link sweep found missing** — a
   compaction concept page (concepts/message-key now covers the basics

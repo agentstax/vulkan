@@ -32,7 +32,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-type PaymentRequested struct {
+type PaymentRequestedV1 struct {
 	OrderId string `json:"order_id"`
 	Card    string `json:"card"` // "declined" | "gateway-down" | "settles-later" | anything else succeeds
 }
@@ -60,7 +60,7 @@ func run() error {
 	}
 	defer ds.Close()
 
-	paymentConsumer, err := consumer.NewConsumer[PaymentRequested](ds, &consumer.ConsumerConfig{
+	paymentConsumer, err := consumer.NewConsumer[PaymentRequestedV1](ds, &consumer.ConsumerConfig{
 		Message: &common.MessageOptions{
 			Timeout: 10 * time.Second,
 			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
@@ -74,7 +74,7 @@ func run() error {
 		return err
 	}
 
-	return payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequested) error {
+	return payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequestedV1) error {
 		meta, _ := consumergroup.MetaFromContext(ctx)
 		fmt.Printf("charging %s (message %d, attempt %d, delays %d)\n",
 			payment.OrderId, meta.Id, meta.Attempts+1, meta.Delays)
@@ -87,7 +87,7 @@ func run() error {
 			// retried MaxRetries times with backoff
 			return errGatewayDown
 		case "settles-later":
-			// runs again after the delay; attempts stays where it was
+			// runs again after the delay
 			return consumergroup.Delay(untilSettlement())
 		}
 		return nil
