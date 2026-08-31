@@ -17,6 +17,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule"
 	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	"github.com/agentstax/vulkan/pkg/scheduler"
+	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -42,6 +43,7 @@ type (
 	TopicConfig          = topiccontroller.TopicConfig
 	DestroyOptions       = admin.DestroyOptions
 	RegisterSystemConfig = admin.RegisterSystemConfig
+	RunScheduleConfig    = admin.RunScheduleConfig
 
 	MessageOptions = common.MessageOptions
 	RetryPolicy    = common.RetryPolicy
@@ -55,6 +57,10 @@ type (
 	MessageData[Message Versioned] = producer.MessageData[Message]
 	VersionHealth                  = admin.VersionHealth
 	TopicSnapshot                  = metrics.TopicSnapshot
+	SystemData                     = system.SystemData
+	GroupStatus                    = schedule.GroupStatus
+	MessageStatus                  = schedule.MessageStatus
+	StoredMessage                  = schedule.StoredMessage
 )
 
 // ConcurrencyPolicy is a message's concurrency policy.
