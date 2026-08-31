@@ -14,11 +14,11 @@ func toGroupData(data *datastore.ConsumerGroupConfigRow) *consumergroup.GroupDat
 	}
 }
 
-func toDeclaration(data *datastore.BindingConfigLogRow) *consumergroup.Declaration {
-	return &consumergroup.Declaration{
+func toBindingDeclaration(data *datastore.BindingConfigLogRow) *consumergroup.BindingDeclaration {
+	return &consumergroup.BindingDeclaration{
 		GroupName:   data.GroupName,
 		TopicName:   data.TopicName,
-		Status:      consumergroup.DeclarationOutcome(data.Status),
+		Status:      consumergroup.BindingOutcome(data.Status),
 		Patterns:    data.Patterns,
 		DeclaredBy:  data.DeclaredBy,
 		DeclaredAt:  data.DeclaredAt,

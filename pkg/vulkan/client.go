@@ -158,8 +158,8 @@ func (c *Client) ListSchedules(ctx context.Context) ([]*ScheduleData, error) {
 	return c.admin.ListSchedules(ctx)
 }
 
-func (c *Client) ListDeclarations(ctx context.Context) ([]*Declaration, error) {
-	return c.admin.ListDeclarations(ctx)
+func (c *Client) ListBindingDeclarations(ctx context.Context) ([]*BindingDeclaration, error) {
+	return c.admin.ListBindingDeclarations(ctx)
 }
 
 func (c *Client) ListAlerts(ctx context.Context) ([]*MessageData[alert.Alert], error) {

@@ -190,7 +190,7 @@ func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context, binding
 		if err != nil {
 			return err
 		}
-		if outcome != consumergroup.DeclarationWaiting {
+		if outcome != consumergroup.BindingWaiting {
 			return nil
 		}
 

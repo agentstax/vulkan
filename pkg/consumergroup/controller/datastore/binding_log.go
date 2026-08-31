@@ -17,8 +17,8 @@ import (
 // DeclareBindings states the group's full binding set in one transaction and
 // reports the end state (see classifyDeclaration). patterns must arrive
 // sorted and deduplicated -- sets are compared element-wise.
-func (d *ConsumerGroupDatastore) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
-	var outcome consumergroup.DeclarationOutcome
+func (d *ConsumerGroupDatastore) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.BindingOutcome, error) {
+	var outcome consumergroup.BindingOutcome
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		outcome, err = d.declareBindings(ctx, topicId, groupId, patterns, declaredBy, declaredAt)
@@ -27,7 +27,7 @@ func (d *ConsumerGroupDatastore) DeclareBindings(ctx context.Context, topicId in
 	return outcome, err
 }
 
-func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
+func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.BindingOutcome, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -68,13 +68,13 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, topicId in
 
 	outcome := classifyDeclaration(found, storedPatterns, patterns, live)
 	switch outcome {
-	case consumergroup.DeclarationJoined:
+	case consumergroup.BindingJoined:
 		// the stored set already matches -- nothing to write
-	case consumergroup.DeclarationWaiting:
+	case consumergroup.BindingWaiting:
 		if err := d.appendDeclaration(ctx, tx, topicId, groupId, BindingLogWaiting, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
-	case consumergroup.DeclarationInstalled:
+	case consumergroup.BindingInstalled:
 		if err := d.appendDeclaration(ctx, tx, topicId, groupId, BindingLogInstalled, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
@@ -87,7 +87,7 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, topicId in
 		return "", err
 	}
 
-	if outcome == consumergroup.DeclarationInstalled {
+	if outcome == consumergroup.BindingInstalled {
 		d.Logger.InfoContext(ctx, "binding set installed", "group_id", groupId, "patterns", patterns, "previous_patterns", storedPatterns, "declared_by", declaredBy)
 	}
 	return outcome, nil
@@ -272,18 +272,18 @@ func NewestInstalledDeclaration(declarations []BindingConfigLogRow) (*BindingCon
 // *** HELPERS ***
 // ***************
 
-func classifyDeclaration(found bool, storedPatterns []string, patterns []string, live bool) consumergroup.DeclarationOutcome {
+func classifyDeclaration(found bool, storedPatterns []string, patterns []string, live bool) consumergroup.BindingOutcome {
 	switch {
 	case !found:
-		return consumergroup.DeclarationInstalled // first declarer wins
+		return consumergroup.BindingInstalled // first declarer wins
 	case equalPatterns(storedPatterns, patterns):
-		return consumergroup.DeclarationJoined
+		return consumergroup.BindingJoined
 	case !live:
-		return consumergroup.DeclarationInstalled // nothing live declares the stored set
+		return consumergroup.BindingInstalled // nothing live declares the stored set
 	default:
 		// waiting never changes the effective set -- a missed case blocks
 		// loudly instead of installing silently
-		return consumergroup.DeclarationWaiting
+		return consumergroup.BindingWaiting
 	}
 }
 

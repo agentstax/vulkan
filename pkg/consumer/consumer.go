@@ -162,7 +162,7 @@ func (c *Consumer) Register[Message topic.Versioned](ctx context.Context, consum
 	if err != nil {
 		return nil, err
 	}
-	if outcome == consumergroup.DeclarationWaiting {
+	if outcome == consumergroup.BindingWaiting {
 		c.Logger.InfoContext(ctx, "binding declaration waiting -- a live instance still declares a different set; Consume retries until installed",
 			"group", group.Name, "patterns", bindings)
 	}

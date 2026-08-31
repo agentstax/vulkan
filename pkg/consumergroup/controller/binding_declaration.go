@@ -16,8 +16,8 @@ import (
 // DeclareBindings states the group's full binding set -- no patterns = the
 // whole topic, '*' in a pattern matches any run of characters.
 // declaredAt is when the declarer first stated the set, fixed across its
-// retries; callers retry on DeclarationWaiting.
-func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
+// retries; callers retry on BindingWaiting.
+func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredAt time.Time) (consumergroup.BindingOutcome, error) {
 	if topicId <= 0 {
 		return "", fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -35,28 +35,28 @@ func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, topicId i
 	return c.datastore.DeclareBindings(ctx, topicId, groupId, declared, common.ProcessIdentity, declaredAt)
 }
 
-// ListDeclarations returns every group's effective declaration followed by
+// ListBindingDeclarations returns every group's effective declaration followed by
 // its still-waiting declarers, ordered by topic then group.
-func (c *ConsumerGroupController) ListDeclarations(ctx context.Context) ([]*consumergroup.Declaration, error) {
+func (c *ConsumerGroupController) ListBindingDeclarations(ctx context.Context) ([]*consumergroup.BindingDeclaration, error) {
 	data, err := c.datastore.ListBindingLog(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var declarations []*consumergroup.Declaration
+	var declarations []*consumergroup.BindingDeclaration
 	for _, rows := range groupByConsumerGroup(data) {
 		effective, found := datastore.NewestInstalledDeclaration(rows)
 		if !found {
 			continue
 		}
-		declarations = append(declarations, toDeclaration(effective))
+		declarations = append(declarations, toBindingDeclaration(effective))
 		for _, waiter := range openWaiters(rows, effective) {
-			declarations = append(declarations, toDeclaration(&waiter))
+			declarations = append(declarations, toBindingDeclaration(&waiter))
 		}
 	}
 
 	// stable keeps each group's effective row ahead of its waiters
-	slices.SortStableFunc(declarations, compareDeclarations)
+	slices.SortStableFunc(declarations, compareBindingDeclarations)
 	return declarations, nil
 }
 
@@ -114,7 +114,7 @@ func declarerInstalledAfter(waiting *datastore.BindingConfigLogRow, rows []datas
 	return false
 }
 
-func compareDeclarations(left *consumergroup.Declaration, right *consumergroup.Declaration) int {
+func compareBindingDeclarations(left *consumergroup.BindingDeclaration, right *consumergroup.BindingDeclaration) int {
 	if c := strings.Compare(left.TopicName, right.TopicName); c != 0 {
 		return c
 	}

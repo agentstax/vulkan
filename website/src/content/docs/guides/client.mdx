@@ -305,7 +305,7 @@ name, cfg)`, `client.System(name)`, topics nesting under it as
 `client.System(name).Topic(name)` the way groups nest under topics, and
 `client.Topic(name)` staying as the default system's shortcut. The
 verbs that span a system's resources (`ListTopics`, `MigrateTopics`,
-`ListDeclarations`, `RunManager`) move with it that day; until then
+`ListBindingDeclarations`, `RunManager`) move with it that day; until then
 they sit on the client.
 
 ## Where the shipped verbs go
@@ -323,7 +323,7 @@ they sit on the client.
 | `GetGroup` | `Topic.Group(name).Get(ctx)`; its worker rows become `Group.ListWorkers` |
 | (none) | `Topic.ListGroups` |
 | `DestroyGroup` | `Group.Destroy` |
-| `ListDeclarations` | `client.ListDeclarations` |
+| `ListBindingDeclarations` | `client.ListBindingDeclarations` |
 | `GetSchedule` | `client.Schedule(name).Get(ctx)` |
 | `ListSchedules` | `client.ListSchedules` |
 | `SuspendSchedule` / `UnsuspendSchedule` | `Schedule.Suspend` / `Schedule.Unsuspend` |

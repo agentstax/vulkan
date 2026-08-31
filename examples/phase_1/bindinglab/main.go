@@ -296,26 +296,26 @@ func bindingDisplays(ctx context.Context) string {
 
 // labDeclarations reads the listing surface and returns the lab group's
 // installed row and open waiting row (nil when absent).
-func labDeclarations(ctx context.Context) (*consumergroup.Declaration, *consumergroup.Declaration) {
-	declarations, err := client.ListDeclarations(ctx)
+func labDeclarations(ctx context.Context) (*consumergroup.BindingDeclaration, *consumergroup.BindingDeclaration) {
+	declarations, err := client.ListBindingDeclarations(ctx)
 	must(err)
-	var installed *consumergroup.Declaration
-	var waiter *consumergroup.Declaration
+	var installed *consumergroup.BindingDeclaration
+	var waiter *consumergroup.BindingDeclaration
 	for _, declaration := range declarations {
 		if declaration.TopicName != topicName || declaration.GroupName != groupName {
 			continue
 		}
 		switch declaration.Status {
-		case consumergroup.DeclarationInstalled:
+		case consumergroup.BindingInstalled:
 			installed = declaration
-		case consumergroup.DeclarationWaiting:
+		case consumergroup.BindingWaiting:
 			waiter = declaration
 		}
 	}
 	return installed, waiter
 }
 
-func patterns(declaration *consumergroup.Declaration) string {
+func patterns(declaration *consumergroup.BindingDeclaration) string {
 	joined := ""
 	for i, pattern := range declaration.Patterns {
 		if i > 0 {

@@ -53,7 +53,7 @@ type (
 	ScheduleData                   = schedule.ScheduleData
 	GroupData                      = consumergroup.GroupData
 	WorkerData                     = worker.WorkerData
-	Declaration                    = consumergroup.Declaration
+	BindingDeclaration             = consumergroup.BindingDeclaration
 	MessageMeta                    = consumergroup.MessageMeta
 	MessageData[Message Versioned] = producer.MessageData[Message]
 	VersionHealth                  = admin.VersionHealth
