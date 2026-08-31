@@ -92,6 +92,9 @@ reclaim-lab:
 exception-lab:
   go run examples/phase_1/exceptionlab/main.go
 
+group-config-lab:
+  go run examples/phase_1/groupconfiglab/main.go
+
 outcome-lab:
   go run examples/phase_1/outcomelab/main.go
 

@@ -1,14 +1,12 @@
 package messageconsumer
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
 )
 
 // MessageConsumerConfig is the slice of the group's consumer config this
@@ -147,21 +145,17 @@ func (c *MessageConsumerConfig) resolveMessageOptions(requested *common.MessageO
 	return requested.Fill(c.Message).Clamp(c.MessageMin, c.MessageMax).ResolveConcurrency(c.ConcurrencyOverride)
 }
 
-// withMetadata resolves what this run uses: the stored config, with its message
-// options clamped. The stored options are whatever declared the group last, so
-// the clamp is what keeps this process inside the MessageMin/MessageMax its own
-// code sets.
-func (c *MessageConsumerConfig) withMetadata(ctx context.Context, metadata *messageConsumerMetadata) *MessageConsumerConfig {
+// withMetadata resolves what this run uses: the stored group document --
+// whichever process declared it last -- with unset fields resolved to the
+// library defaults by the same WithDefaults every declaration resolves
+// against.
+func (c *MessageConsumerConfig) withMetadata(metadata *MessageConsumerMetadata) *MessageConsumerConfig {
 	applied := *c
-	applied.ClaimPollRate = metadata.ClaimPollRate
-	applied.MaxRangeReclaims = metadata.MaxRangeReclaims
-	applied.ExceptionInitialBackoff = metadata.ExceptionInitialBackoff
+	applied.Message = metadata.Message
+	applied.MessageMin = metadata.MessageMin
+	applied.MessageMax = metadata.MessageMax
 	applied.ConcurrencyOverride = metadata.ConcurrencyOverride
-
-	message := metadata.Message
-	applied.Message = message.Clamp(c.MessageMin, c.MessageMax)
-	if !applied.Message.Equal(&message) {
-		c.Logger.WarnContext(ctx, consumergroup.EventStoredOptionsClamped.Message, "code", consumergroup.EventStoredOptionsClamped.Code, "stored", message, "clamped", applied.Message)
-	}
-	return &applied
+	applied.ExceptionInitialBackoff = metadata.ExceptionInitialBackoff
+	applied.MaxRangeReclaims = metadata.MaxRangeReclaims
+	return applied.WithDefaults()
 }

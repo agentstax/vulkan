@@ -660,6 +660,9 @@ the code is the line's breadcrumb to its own explanation.
       owner         owner name (Owner.Name)
       owner_kind    owner kind (Owner.Kind())
       worker        worker name
+      worker_id     worker row id
+      metadata      a worker row's stored config document; a replace
+                    logs "old -> new"
       message_id    message id
       schedule      schedule name
       schedule_id   schedule id

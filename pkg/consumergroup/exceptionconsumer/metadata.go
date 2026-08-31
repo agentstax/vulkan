@@ -2,25 +2,31 @@ package exceptionconsumer
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// exceptionConsumerMetadata is the config stored on the exception consumer
-// worker row.
-type exceptionConsumerMetadata struct {
-	ClaimPollRate       time.Duration            `json:"claim_poll_rate"`
-	Message             common.MessageOptions    `json:"message"`
-	ConcurrencyOverride common.ConcurrencyPolicy `json:"concurrency_override"`
+// ExceptionConsumerMetadata is the group config stored on the exception
+// consumer worker row: only the fields the declaration set. Unset fields
+// resolve to the library defaults when the row is read back.
+type ExceptionConsumerMetadata struct {
+	Message             *common.MessageOptions   `json:"message,omitempty"`
+	MessageMin          *common.MessageOptions   `json:"message_min,omitempty"`
+	MessageMax          *common.MessageOptions   `json:"message_max,omitempty"`
+	ConcurrencyOverride common.ConcurrencyPolicy `json:"concurrency_override,omitempty"`
 }
 
-func (m *exceptionConsumerMetadata) Validate() error {
-	if m.ClaimPollRate <= 0 {
-		return fmt.Errorf("claim_poll_rate must be > 0, got %v", m.ClaimPollRate)
-	}
+// Validate accepts the sparse document -- zero means unset -- and rejects
+// only values no declaration could have written.
+func (m *ExceptionConsumerMetadata) Validate() error {
 	if err := m.Message.Validate(); err != nil {
 		return fmt.Errorf("message: %w", err)
+	}
+	if err := m.MessageMin.Validate(); err != nil {
+		return fmt.Errorf("message_min: %w", err)
+	}
+	if err := m.MessageMax.Validate(); err != nil {
+		return fmt.Errorf("message_max: %w", err)
 	}
 	if err := m.ConcurrencyOverride.Validate(); err != nil {
 		return fmt.Errorf("concurrency_override: %w", err)

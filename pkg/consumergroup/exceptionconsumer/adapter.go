@@ -6,10 +6,11 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
 )
 
-func toExceptionConsumerMetadata(cfg *ExceptionConsumerConfig) *exceptionConsumerMetadata {
-	return &exceptionConsumerMetadata{
-		ClaimPollRate:       cfg.ClaimPollRate,
-		Message:             *cfg.Message,
+func toExceptionConsumerMetadata(cfg *ExceptionConsumerConfig) *ExceptionConsumerMetadata {
+	return &ExceptionConsumerMetadata{
+		Message:             cfg.Message,
+		MessageMin:          cfg.MessageMin,
+		MessageMax:          cfg.MessageMax,
 		ConcurrencyOverride: cfg.ConcurrencyOverride,
 	}
 }

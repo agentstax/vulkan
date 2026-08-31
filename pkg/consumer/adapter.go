@@ -3,12 +3,23 @@ package consumer
 import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Each worker row runs on its own slice of the group config and the session
-// options. Both arrive resolved -- cfg by NewConsumer, options by Consume --
-// so the row configs carry resolved values and their own WithDefaults is a
-// no-op.
+func toMessageConsumerWorkerConfig(declared *ConsumerConfig) *workercontroller.WorkerConfig {
+	return &workercontroller.WorkerConfig{
+		Metadata: &messageconsumer.MessageConsumerMetadata{
+			Message:                 declared.Message,
+			MessageMin:              declared.MessageMin,
+			MessageMax:              declared.MessageMax,
+			ConcurrencyOverride:     declared.ConcurrencyOverride,
+			ExceptionInitialBackoff: declared.ExceptionInitialBackoff,
+			MaxRangeReclaims:        declared.MaxRangeReclaims,
+		},
+		TargetInstances: worker.NoInstanceTarget,
+	}
+}
 
 func toMessageConsumerConfig(cfg *ConsumerConfig, options *ConsumeOptions) *messageconsumer.MessageConsumerConfig {
 	return &messageconsumer.MessageConsumerConfig{
@@ -48,5 +59,17 @@ func toExceptionConsumerConfig(cfg *ConsumerConfig, options *ConsumeOptions) *ex
 		ConcurrencyOverride:   cfg.ConcurrencyOverride,
 		Logger:                cfg.Logger,
 		Retry:                 cfg.Retry,
+	}
+}
+
+func toExceptionConsumerWorkerConfig(declared *ConsumerConfig) *workercontroller.WorkerConfig {
+	return &workercontroller.WorkerConfig{
+		Metadata: &exceptionconsumer.ExceptionConsumerMetadata{
+			Message:             declared.Message,
+			MessageMin:          declared.MessageMin,
+			MessageMax:          declared.MessageMax,
+			ConcurrencyOverride: declared.ConcurrencyOverride,
+		},
+		TargetInstances: worker.NoInstanceTarget,
 	}
 }

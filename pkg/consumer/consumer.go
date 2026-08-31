@@ -12,10 +12,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
 // should be idempotent -- redelivery after a crash or timeout is normal
@@ -28,10 +31,12 @@ type Consumer struct {
 	Config *ConsumerConfig
 	Logger logging.Logger
 
-	ds *datastore.PostgresDatastore
+	ds       *datastore.PostgresDatastore
+	declared *ConsumerConfig
 
 	topicController *topiccontroller.TopicController
 	consumers       *consumergroupcontroller.ConsumerGroupController
+	workers         *workercontroller.WorkerController
 	evaluators      []alert.Evaluator
 }
 
@@ -42,6 +47,11 @@ func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consume
 	if cfg == nil {
 		cfg = &ConsumerConfig{}
 	}
+
+	// captured before WithDefaults resolves cfg -- the stored document keeps
+	// only what the caller set
+	declared := cfg.DeepCopy()
+
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -58,6 +68,14 @@ func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consume
 	}
 
 	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	workers, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -84,8 +102,10 @@ func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consume
 		Config:          cfg,
 		Logger:          cfg.Logger,
 		ds:              ds,
+		declared:        declared,
 		topicController: topicController,
 		consumers:       consumers,
+		workers:         workers,
 		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController},
 	}, nil
 }
@@ -126,6 +146,14 @@ func (c *Consumer) Register[Message topic.Versioned](ctx context.Context, consum
 	// janitor and the system's schedule producer, never across to a sibling group
 	owner, err := common.NewConsumerGroupOwner(current.SystemId, current.Id, group.Id, group.Name)
 	if err != nil {
+		return nil, err
+	}
+
+	// the registered group config is stored on the group's consumer worker rows
+	if err := c.workers.RegisterWorker(ctx, messageconsumer.WorkerMessageConsumer, owner, toMessageConsumerWorkerConfig(c.declared)); err != nil {
+		return nil, err
+	}
+	if err := c.workers.RegisterWorker(ctx, exceptionconsumer.WorkerExceptionConsumer, owner, toExceptionConsumerWorkerConfig(c.declared)); err != nil {
 		return nil, err
 	}
 

@@ -14,9 +14,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/manager"
 )
 
-// every group-owned row is declared here rather than at Register, so the
-// provisioner that runs a row is the one that declares it and a second
-// Consume re-creates whatever a crash lost
+// the group's consumer rows and their config document are declared by
+// Register; the upkeep rows below are declared here, so a second Consume
+// re-creates whatever a crash lost
 func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consumerFunc ConsumerFunc[Message], options *ConsumeOptions) (*manager.Runner, error) {
 	groupProvisioners, err := i.newGroupProvisioners(ctx, consumerFunc, options)
 	if err != nil {
@@ -55,15 +55,9 @@ func (i *ConsumerInstance[Message]) newGroupProvisioners(ctx context.Context, co
 	if err != nil {
 		return nil, err
 	}
-	if err := message.Declare(ctx, i.Owner); err != nil {
-		return nil, err
-	}
 
 	exception, err := exceptionconsumer.NewExceptionConsumerProvisioner(i.ds, consumerFunc, i.topicVersion, i.metrics, toExceptionConsumerConfig(i.Config, options))
 	if err != nil {
-		return nil, err
-	}
-	if err := exception.Declare(ctx, i.Owner); err != nil {
 		return nil, err
 	}
 

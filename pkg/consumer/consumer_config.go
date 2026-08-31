@@ -157,3 +157,31 @@ func (c *ConsumerConfig) validateMessageBounds() error {
 	}
 	return nil
 }
+
+// DeepCopy returns a copy sharing nothing mutable with the receiver --
+// WithDefaults fills the message options and retry policy in place, so a
+// captured declaration must not alias them.
+func (c *ConsumerConfig) DeepCopy() *ConsumerConfig {
+	copied := *c
+	copied.Message = cloneMessageOptions(c.Message)
+	copied.MessageMin = cloneMessageOptions(c.MessageMin)
+	copied.MessageMax = cloneMessageOptions(c.MessageMax)
+	if c.Retry != nil {
+		retry := *c.Retry
+		copied.Retry = &retry
+	}
+	return &copied
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// cloneMessageOptions keeps nil as nil; Fill with no defaults copies the
+// options and their retry policy.
+func cloneMessageOptions(options *common.MessageOptions) *common.MessageOptions {
+	if options == nil {
+		return nil
+	}
+	return options.Fill(nil)
+}

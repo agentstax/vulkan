@@ -671,6 +671,20 @@
       "code": "VK0058",
       "kind": "event",
       "message": "schedule target topic keeps no success rows -- ScheduleStatus counts no successes for it; set DeliveryLogMode all on the topic to count them"
+    },
+    "VK0059": {
+      "code": "VK0059",
+      "kind": "event",
+      "message": "worker config replaced -- the newest declaration wins",
+      "queries": [
+        {
+          "label": "every declaration this worker row has received, newest first",
+          "sql": "SELECT\n\tmetadata,\n\tdeclared_by,\n\tdeclared_at\nFROM worker_config_log\nWHERE worker_id = {worker_id}\nORDER BY id DESC\nLIMIT 10;",
+          "placeholders": [
+            "worker_id"
+          ]
+        }
+      ]
     }
   }
 }

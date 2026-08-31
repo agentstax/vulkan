@@ -105,8 +105,8 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 		return err
 	}
 
-	// the only signal that two services declare this worker differently
-	d.Logger.InfoContext(ctx, "worker declared (config replaced)", "worker", name, "owner", owner.Name,
+	d.Logger.WarnContext(ctx, worker.EventWorkerConfigReplaced.Message, "code", worker.EventWorkerConfigReplaced.Code,
+		"worker", name, "worker_id", workerId, "owner", owner.Name,
 		"metadata", replaced(string(storedMetadata), string(declaredMetadata)))
 	return nil
 }

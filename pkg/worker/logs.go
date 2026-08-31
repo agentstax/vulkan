@@ -69,3 +69,22 @@ ORDER BY worker_instance.attempts DESC;`),
 var EventSlowTick = diagnostic.NewEvent("VK0040",
 	"worker tick exceeded its poll rate",
 	"the next tick is late")
+
+// EventWorkerConfigReplaced means a declaration overwrote a worker row's
+// differing stored config -- two declarers disagree about the worker.
+//
+// Diagnose queries: vulkan explain VK0059
+var EventWorkerConfigReplaced = diagnostic.NewEvent("VK0059",
+	"worker config replaced",
+	"the newest declaration wins").
+	Diagnose(
+		diagnostic.NewQuery("every declaration this worker row has received, newest first", `
+SELECT
+	metadata,
+	declared_by,
+	declared_at
+FROM worker_config_log
+WHERE worker_id = {worker_id}
+ORDER BY id DESC
+LIMIT 10;`),
+	)

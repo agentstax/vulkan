@@ -6,13 +6,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 )
 
-func toMessageConsumerMetadata(cfg *MessageConsumerConfig) *messageConsumerMetadata {
-	return &messageConsumerMetadata{
-		ClaimPollRate:           cfg.ClaimPollRate,
-		MaxRangeReclaims:        cfg.MaxRangeReclaims,
-		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
-		Message:                 *cfg.Message,
+func toMessageConsumerMetadata(cfg *MessageConsumerConfig) *MessageConsumerMetadata {
+	return &MessageConsumerMetadata{
+		Message:                 cfg.Message,
+		MessageMin:              cfg.MessageMin,
+		MessageMax:              cfg.MessageMax,
 		ConcurrencyOverride:     cfg.ConcurrencyOverride,
+		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
+		MaxRangeReclaims:        cfg.MaxRangeReclaims,
 	}
 }
 

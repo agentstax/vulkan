@@ -10,7 +10,7 @@ import (
 
 // a nil Execution is a declined claim, not an error -- try again later.
 func (d *ExceptionConsumerProvisioner[Message]) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
-	parsed, err := workercontroller.ParseMetadata[exceptionConsumerMetadata](declared.Metadata)
+	parsed, err := workercontroller.ParseMetadata[ExceptionConsumerMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +22,7 @@ func (d *ExceptionConsumerProvisioner[Message]) Provision(ctx context.Context, d
 		return nil, err
 	}
 
-	cfg := d.Config.withMetadata(ctx, parsed)
+	cfg := d.Config.withMetadata(parsed)
 	resolvedTopic, err := d.GetTopic(ctx, declared.Owner.TopicId)
 	if err != nil {
 		return nil, err
