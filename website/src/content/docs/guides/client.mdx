@@ -346,7 +346,9 @@ return client.RunManager(ctx)
 The client holds the one `SystemManager`, so the refuse-a-second-Run
 permit survives: today every `Schedule` call builds a fresh manager and
 two calls in one process run two rival reconcile loops; under the
-client the second is refused.
+client the second is refused. The client's start line carries
+`runs_manager`, so a pasted log answers whether this process runs
+upkeep without a second question.
 
 Nothing else on this page runs workers or stops running them. A
 `Consume` already runs the fleet-wide workers beside its group's own

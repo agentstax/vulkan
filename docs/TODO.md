@@ -110,6 +110,12 @@ close-out.
   import-path prefix rule). `producer.InTransaction`/`Tx` become
   `vulkan.InTransaction`/`vulkan.Tx`. `MessageAdmin`'s flat methods are
   deleted; the client and handles are the only path.
+- Every declared fix or help text naming a moved surface
+  (`MessageAdmin.RegisterTopic` in VK0005, `MessageAdmin.RegisterSystem`
+  in VK0017, ...) rewords to the client verb, its docs page updated
+  verbatim in the same change. The `-- vulkan: <package>.<method>` SQL
+  owner comments follow the moved packages; the website sandbox SQL
+  mirror and codes.json re-sync.
 - Every lab, every playground, the CLI, and every site sample compiles
   against `vulkan` only.
 - Done when: build, `go test -race ./...`, the full fresh-DB lab suite,
@@ -150,6 +156,8 @@ close-out.
   logs a declared Warn naming the diff. Sparse document, defaults resolved
   at read. `Consume` reads the stored document at start instead of using
   the process's copy.
+- The differing-overwrite Warn is a declared event: next VK code, and
+  its hand-written docs page lands in this chunk.
 - No refresh loop yet.
 - Done when: build, tests, a lab where two processes declare different
   documents and the second's Warn fires and wins.
@@ -189,6 +197,8 @@ close-out.
   no `worker_instance` row for this topic's `topic_janitor` with
   `expires_at > now()` -> declared Warn event (next VK code, docs page)
   naming the topic and `vulkan manager run`.
+- The client's start line gains `runs_manager` -- whether this process
+  runs upkeep (`RunManager` or a handle's `Schedule`).
 - Done when: a lab with a produce-only process logs it once and a
   consumer's start silences the next restart.
 - Review: log-only; `Register` never fails on it.
