@@ -104,7 +104,7 @@ func toGroupConfigDocument(topicName string, groupName string, lines []groupConf
 
 // groupConfigLines flattens the rows' metadata into print lines: one per key,
 // and one per message field so the KEY column names the field itself.
-func groupConfigLines(workers []*worker.Worker) []groupConfigLine {
+func groupConfigLines(workers []*worker.WorkerData) []groupConfigLine {
 	var lines []groupConfigLine
 	for _, row := range workers {
 		metadata, ok := row.Metadata.(map[string]any)

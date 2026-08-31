@@ -8,13 +8,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic/controller/datastore"
 )
 
-func toTopic(data *datastore.TopicConfigRow) (*topic.Topic, error) {
+func toTopicData(data *datastore.TopicConfigRow) (*topic.TopicData, error) {
 	deliveryLogMode, err := deliveryLogModeEnum(data.DeliveryLogMode)
 	if err != nil {
 		return nil, err
 	}
 
-	return &topic.Topic{
+	return &topic.TopicData{
 		Id:                     data.Id,
 		SystemId:               data.SystemId,
 		Name:                   data.Name,

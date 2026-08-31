@@ -17,7 +17,7 @@ import (
 // Register resolved. Shutdown is per call -- a cancelled ctx refuses that
 // call's message, the instance itself never stops accepting work.
 type ProducerInstance[Message topic.Versioned] struct {
-	Topic  *topic.Topic
+	Topic  *topic.TopicData
 	Config *ProducerConfig
 
 	controller *controller.ProducerController
@@ -25,7 +25,7 @@ type ProducerInstance[Message topic.Versioned] struct {
 }
 
 // cfg is already resolved (WithDefaults + Validate) by NewProducer.
-func NewProducerInstance[Message topic.Versioned](resolvedTopic *topic.Topic, producerController *controller.ProducerController, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
+func NewProducerInstance[Message topic.Versioned](resolvedTopic *topic.TopicData, producerController *controller.ProducerController, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
 	if resolvedTopic == nil {
 		return nil, errors.New("topic must not be nil")
 	}
@@ -182,7 +182,7 @@ func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, prod
 // or nil if nothing has been published under it.
 // It does so within the transaction and locks the found row in a FOR UPDATE
 // allowing for race-free compare and set.
-func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, messageKey string) (*MessageRow[Message], error) {
+func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, messageKey string) (*MessageData[Message], error) {
 	return p.controller.GetCompactionHeadInTx[Message](ctx, tx, p.Topic.Id, messageKey)
 }
 

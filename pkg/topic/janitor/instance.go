@@ -14,7 +14,7 @@ import (
 
 // sweeps the topic at the row's poll_rate while a heartbeat holds the claim
 type JanitorInstance struct {
-	Topic  *topic.Topic
+	Topic  *topic.TopicData
 	Config *JanitorConfig
 	Logger logging.Logger
 
@@ -23,7 +23,7 @@ type JanitorInstance struct {
 	metadata   *janitorMetadata
 }
 
-func newJanitorInstance(janitor *JanitorProvisioner, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorInstance, error) {
+func newJanitorInstance(janitor *JanitorProvisioner, current *topic.TopicData, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorInstance, error) {
 	if current == nil {
 		return nil, errors.New("topic must not be nil")
 	}

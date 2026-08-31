@@ -81,12 +81,12 @@ const (
 type workerChange struct {
 	change changeType
 	id     int64
-	worker *worker.Worker // nil on workerRemoved -- the row is gone
+	worker *worker.WorkerData // nil on workerRemoved -- the row is gone
 }
 
 // newWorkerChange rejects a pairing diff can never produce: workerRemoved is
 // the one change whose row is already gone.
-func newWorkerChange(change changeType, id int64, desiredWorker *worker.Worker) (workerChange, error) {
+func newWorkerChange(change changeType, id int64, desiredWorker *worker.WorkerData) (workerChange, error) {
 	if id <= 0 {
 		return workerChange{}, fmt.Errorf("id must be > 0, got %d", id)
 	}
@@ -98,7 +98,7 @@ func newWorkerChange(change changeType, id int64, desiredWorker *worker.Worker) 
 }
 
 // reconcile makes the running set match desired -- one action per diffed change.
-func (p *instancePool) reconcile(ctx context.Context, desiredWorkers []*worker.Worker) error {
+func (p *instancePool) reconcile(ctx context.Context, desiredWorkers []*worker.WorkerData) error {
 	changes, err := p.diff(desiredWorkers)
 	if err != nil {
 		return err
@@ -122,7 +122,7 @@ func (p *instancePool) reconcile(ctx context.Context, desiredWorkers []*worker.W
 
 // diff compares desired against running and returns what reconcile must act
 // on; workers running as desired produce no change.
-func (p *instancePool) diff(desiredWorkers []*worker.Worker) ([]workerChange, error) {
+func (p *instancePool) diff(desiredWorkers []*worker.WorkerData) ([]workerChange, error) {
 	want := make(map[int64]bool, len(desiredWorkers))
 	var changes []workerChange
 
@@ -161,7 +161,7 @@ func (p *instancePool) diff(desiredWorkers []*worker.Worker) ([]workerChange, er
 
 // start spawns one worker row through its provisioner under its own child ctx.
 // Errors warn -- the next reconcile retries.
-func (p *instancePool) start(ctx context.Context, desiredWorker *worker.Worker) {
+func (p *instancePool) start(ctx context.Context, desiredWorker *worker.WorkerData) {
 	provisioner, ok := p.provisioners[desiredWorker.Name]
 	if !ok {
 		// expected every pass, not a misconfiguration -- a chain carries rows

@@ -12,7 +12,7 @@ import (
 )
 
 // GetSchedule returns (nil, nil), not an error, if name isn't registered.
-func (a *MessageAdmin) GetSchedule(ctx context.Context, name string) (*schedule.Schedule, error) {
+func (a *MessageAdmin) GetSchedule(ctx context.Context, name string) (*schedule.ScheduleData, error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}
@@ -20,7 +20,7 @@ func (a *MessageAdmin) GetSchedule(ctx context.Context, name string) (*schedule.
 }
 
 // ListSchedules returns every schedule, ordered by name.
-func (a *MessageAdmin) ListSchedules(ctx context.Context) ([]*schedule.Schedule, error) {
+func (a *MessageAdmin) ListSchedules(ctx context.Context) ([]*schedule.ScheduleData, error) {
 	return a.scheduleController.List(ctx)
 }
 

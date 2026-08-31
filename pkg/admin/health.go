@@ -13,7 +13,7 @@ import (
 // VersionHealth is one payload version's retire verdict on a topic: safe
 // once no compaction head points at it and every group has read past it.
 type VersionHealth struct {
-	Topic           *topic.Topic                    `json:"topic"`
+	Topic           *topic.TopicData                `json:"topic"`
 	Version         int                             `json:"version"`
 	Messages        int64                           `json:"messages"`
 	CompactionHeads int64                           `json:"compaction_heads"`

@@ -432,7 +432,7 @@ func timeArm(ctx context.Context, ds *iDatastore.PostgresDatastore, label string
 // ---- helpers ----
 
 // registerTopic registers a lab-unique topic and returns it with its cleanup.
-func registerTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, func()) {
+func registerTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.TopicData, func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 

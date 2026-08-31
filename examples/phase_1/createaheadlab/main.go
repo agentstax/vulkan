@@ -137,7 +137,7 @@ func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin 
 
 // ---- helpers ----
 
-func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, scenario string) (*topic.Topic, *producer.ProducerInstance[common.Work], *WarnCounter, func()) {
+func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, scenario string) (*topic.TopicData, *producer.ProducerInstance[common.Work], *WarnCounter, func()) {
 	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)

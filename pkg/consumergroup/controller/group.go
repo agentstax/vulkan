@@ -10,7 +10,7 @@ import (
 
 // GetGroup resolves a consumer group by its owning topic and name.
 // Returns (nil, nil) if the group is not registered on that topic.
-func (c *ConsumerGroupController) GetGroup(ctx context.Context, topicId int64, name string) (*consumergroup.Group, error) {
+func (c *ConsumerGroupController) GetGroup(ctx context.Context, topicId int64, name string) (*consumergroup.GroupData, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -22,12 +22,12 @@ func (c *ConsumerGroupController) GetGroup(ctx context.Context, topicId int64, n
 	if err != nil || data == nil {
 		return nil, err
 	}
-	return toGroup(data), nil
+	return toGroupData(data), nil
 }
 
 // RegisterGroup creates the group and its cursor at start; an existing group
 // is returned untouched, its position kept.
-func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*consumergroup.Group, error) {
+func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*consumergroup.GroupData, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -42,7 +42,7 @@ func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int
 	if err != nil {
 		return nil, err
 	}
-	return toGroup(data), nil
+	return toGroupData(data), nil
 }
 
 // DeleteGroup deletes the group and every row it owns in one transaction.

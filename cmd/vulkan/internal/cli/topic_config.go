@@ -36,7 +36,7 @@ so a change takes effect on their next restart, not live.`,
 type topicConfigKey struct {
 	key   string
 	value string
-	read  func(found *topic.Topic) string
+	read  func(found *topic.TopicData) string
 }
 
 // topicConfigKeys holds the keys config get prints. PartitionSize is absent --
@@ -45,28 +45,28 @@ var topicConfigKeys = []topicConfigKey{
 	{
 		key:   "retention_ttl",
 		value: "duration, e.g. 720h (0 keeps messages forever)",
-		read: func(found *topic.Topic) string {
+		read: func(found *topic.TopicData) string {
 			return retentionDetail(found.RetentionTTL)
 		},
 	},
 	{
 		key:   "allow_drop_past_committed",
 		value: "true or false",
-		read: func(found *topic.Topic) string {
+		read: func(found *topic.TopicData) string {
 			return strconv.FormatBool(found.AllowDropPastCommitted)
 		},
 	},
 	{
 		key:   "idempotency_key_ttl",
 		value: "duration, e.g. 1h",
-		read: func(found *topic.Topic) string {
+		read: func(found *topic.TopicData) string {
 			return found.IdempotencyKeyTTL.String()
 		},
 	},
 	{
 		key:   "delivery_log_mode",
 		value: "off, failures, or all",
-		read: func(found *topic.Topic) string {
+		read: func(found *topic.TopicData) string {
 			return string(found.DeliveryLogMode)
 		},
 	},
@@ -106,7 +106,7 @@ type topicConfigKeyDocument struct {
 	Value   string `json:"value"`
 }
 
-func toTopicConfigDocument(found *topic.Topic, entries []topicConfigKey) topicConfigDocument {
+func toTopicConfigDocument(found *topic.TopicData, entries []topicConfigKey) topicConfigDocument {
 	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
 
 	keys := make([]topicConfigKeyDocument, 0, len(entries))
@@ -124,7 +124,7 @@ func toTopicConfigDocument(found *topic.Topic, entries []topicConfigKey) topicCo
 	}
 }
 
-func printTopicConfigLines(w io.Writer, found *topic.Topic, entries []topicConfigKey) {
+func printTopicConfigLines(w io.Writer, found *topic.TopicData, entries []topicConfigKey) {
 	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  KEY\tDEFAULT\tVALUE")

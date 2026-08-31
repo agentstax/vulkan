@@ -54,13 +54,13 @@ func newTopicListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printTopicNames(w io.Writer, topics []*topic.Topic) {
+func printTopicNames(w io.Writer, topics []*topic.TopicData) {
 	for _, t := range topics {
 		fmt.Fprintln(w, t.Name)
 	}
 }
 
-func printTopicsTable(w io.Writer, topics []*topic.Topic) {
+func printTopicsTable(w io.Writer, topics []*topic.TopicData) {
 	if len(topics) == 0 {
 		fmt.Fprintln(w, "no topics registered")
 		return

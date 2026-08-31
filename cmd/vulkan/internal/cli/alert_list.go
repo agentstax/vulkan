@@ -39,7 +39,7 @@ func newAlertListCmd(g *globalFlags) *cobra.Command {
 
 			if g.jsonOutput() {
 				if heads == nil {
-					heads = make([]*producer.MessageRow[alert.Alert], 0)
+					heads = make([]*producer.MessageData[alert.Alert], 0)
 				}
 				writeJSON(out, heads)
 				return nil
@@ -64,13 +64,13 @@ func ownerCell(owner *common.Owner) string {
 	return fmt.Sprintf("%s/%s", owner.Kind(), owner.Name)
 }
 
-func printAlertKeys(w io.Writer, heads []*producer.MessageRow[alert.Alert]) {
+func printAlertKeys(w io.Writer, heads []*producer.MessageData[alert.Alert]) {
 	for _, head := range heads {
 		fmt.Fprintf(w, "%s %s\n", head.Message.Name, ownerCell(head.Message.Owner))
 	}
 }
 
-func printAlertsTable(w io.Writer, heads []*producer.MessageRow[alert.Alert]) {
+func printAlertsTable(w io.Writer, heads []*producer.MessageData[alert.Alert]) {
 	if len(heads) == 0 {
 		fmt.Fprintln(w, "no alerts published")
 		return

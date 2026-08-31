@@ -120,7 +120,7 @@ type groupVersionLagDocument struct {
 	UnresolvedExceptions int64  `json:"unresolved_exceptions"`
 }
 
-func toTopicDocument(found *topic.Topic) topicDocument {
+func toTopicDocument(found *topic.TopicData) topicDocument {
 	return topicDocument{
 		TopicId:                found.Id,
 		SystemId:               found.SystemId,
@@ -133,7 +133,7 @@ func toTopicDocument(found *topic.Topic) topicDocument {
 	}
 }
 
-func toTopicDocuments(topics []*topic.Topic) []topicDocument {
+func toTopicDocuments(topics []*topic.TopicData) []topicDocument {
 	documents := make([]topicDocument, 0, len(topics))
 	for _, found := range topics {
 		documents = append(documents, toTopicDocument(found))
@@ -141,7 +141,7 @@ func toTopicDocuments(topics []*topic.Topic) []topicDocument {
 	return documents
 }
 
-func toTopicGetDocument(name string, found *topic.Topic, health []*admin.VersionHealth) topicGetDocument {
+func toTopicGetDocument(name string, found *topic.TopicData, health []*admin.VersionHealth) topicGetDocument {
 	document := topicGetDocument{Topic: name, Exists: found != nil, Versions: make([]versionHealthDocument, 0, len(health))}
 	if found != nil {
 		config := toTopicDocument(found)
@@ -174,7 +174,7 @@ func toVersionHealthDocument(versionHealth *admin.VersionHealth) versionHealthDo
 
 // printTopicDetail shows the columns fixed at creation; the declared config
 // lives under topic config get.
-func printTopicDetail(w io.Writer, t *topic.Topic) {
+func printTopicDetail(w io.Writer, t *topic.TopicData) {
 	fmt.Fprintf(w, "\n(id=%d)\n", t.Id)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)

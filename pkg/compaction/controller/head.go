@@ -11,7 +11,7 @@ import (
 
 // GetHead returns the current compaction head under messageKey,
 // or nil if nothing has been published under it.
-func (c *CompactionController) GetHead[Message topic.Versioned](ctx context.Context, topicId int64, messageKey string) (*common.MessageRow[Message], error) {
+func (c *CompactionController) GetHead[Message topic.Versioned](ctx context.Context, topicId int64, messageKey string) (*common.MessageData[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -23,12 +23,12 @@ func (c *CompactionController) GetHead[Message topic.Versioned](ctx context.Cont
 	if err != nil || data == nil {
 		return nil, err
 	}
-	return toMessageRow[Message](data)
+	return toMessageData[Message](data)
 }
 
 // ListHeads returns every key's current head on the topic, ordered
 // by message key.
-func (c *CompactionController) ListHeads[Message topic.Versioned](ctx context.Context, topicId int64) ([]*common.MessageRow[Message], error) {
+func (c *CompactionController) ListHeads[Message topic.Versioned](ctx context.Context, topicId int64) ([]*common.MessageData[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -38,9 +38,9 @@ func (c *CompactionController) ListHeads[Message topic.Versioned](ctx context.Co
 		return nil, err
 	}
 
-	heads := make([]*common.MessageRow[Message], 0, len(data))
+	heads := make([]*common.MessageData[Message], 0, len(data))
 	for i := range data {
-		head, err := toMessageRow[Message](&data[i])
+		head, err := toMessageData[Message](&data[i])
 		if err != nil {
 			return nil, err
 		}

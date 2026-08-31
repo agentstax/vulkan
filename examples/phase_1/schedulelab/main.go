@@ -56,7 +56,7 @@ var (
 	ds           *iDatastore.PostgresDatastore
 	mAdmin       *admin.MessageAdmin
 	labScheduler *scheduler.Scheduler
-	target *topic.Topic // the lab's own target topic
+	target *topic.TopicData // the lab's own target topic
 	prefix string
 )
 
@@ -845,7 +845,7 @@ func exec(ctx context.Context, sql string, args ...any) {
 
 // registerSchedule is the handle's Register for the lab's message type,
 // returning the row like admin's reads do.
-func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedulecontroller.ScheduleConfig) (*schedule.Schedule, error) {
+func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedulecontroller.ScheduleConfig) (*schedule.ScheduleData, error) {
 	instance, err := labScheduler.Register[labMessage](ctx, name, expression, topicName, payload, cfg)
 	if err != nil {
 		return nil, err

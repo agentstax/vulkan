@@ -445,4 +445,4 @@ func die(msg string) {
 	panic(labFailure{message: msg})
 }
 
-func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }

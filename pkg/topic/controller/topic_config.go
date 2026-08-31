@@ -90,8 +90,8 @@ func (c *TopicConfig) Validate() error {
 	return nil
 }
 
-func (c *TopicConfig) ToTopic(id int64, systemId int64, name string) *topic.Topic {
-	return &topic.Topic{
+func (c *TopicConfig) ToTopic(id int64, systemId int64, name string) *topic.TopicData {
+	return &topic.TopicData{
 		Id:                     id,
 		SystemId:               systemId,
 		Name:                   name,

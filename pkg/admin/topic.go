@@ -14,7 +14,7 @@ import (
 
 // GetTopic resolves a topic by name. Returns (nil, nil), not an error,
 // if name isn't registered.
-func (a *MessageAdmin) GetTopic(ctx context.Context, name string) (*topic.Topic, error) {
+func (a *MessageAdmin) GetTopic(ctx context.Context, name string) (*topic.TopicData, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -27,7 +27,7 @@ func (a *MessageAdmin) GetTopic(ctx context.Context, name string) (*topic.Topic,
 }
 
 // ListTopics returns every registered topic, ordered by name.
-func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
+func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.TopicData, error) {
 	return a.topicController.List(ctx)
 }
 
@@ -44,7 +44,7 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
 //
 // PartitionSize is fixed at creation; passing a different one returns
 // ErrTopicConfigMismatch.
-func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) (*topic.Topic, error) {
+func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) (*topic.TopicData, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -68,7 +68,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topi
 	return a.registerTopic(ctx, name, cfg)
 }
 
-func (a *MessageAdmin) registerTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) (*topic.Topic, error) {
+func (a *MessageAdmin) registerTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) (*topic.TopicData, error) {
 	// gate -- a topic can't exist without the control-plane schema it rides on;
 	// otherwise RegisterTopic dies with a raw undefined-table error.
 	sys, err := a.systemController.Get(ctx)
@@ -111,7 +111,7 @@ func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) e
 //
 // Running producers/consumers keep working (they resolved the id at their Register),
 // but anything still CONFIGURED with the old name fails its next restart's Register.
-func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName string) (*topic.Topic, error) {
+func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName string) (*topic.TopicData, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}

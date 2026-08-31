@@ -88,7 +88,7 @@ func run() (err error) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
-	register := func(name string) *topic.Topic {
+	register := func(name string) *topic.TopicData {
 		t, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 		must(err)
 		return t
@@ -98,7 +98,7 @@ func run() (err error) {
 	topicC := register(fmt.Sprintf("phase8b.topiclab.c.%d", run))
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
-		for _, t := range []*topic.Topic{topicA, topicB, topicC, topicD} {
+		for _, t := range []*topic.TopicData{topicA, topicB, topicC, topicD} {
 			must(mAdmin.DestroyTopic(ctx, t.Name, admin.DestroyOptions{Force: true}))
 		}
 	}()
@@ -360,4 +360,4 @@ func assertInt64s(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }

@@ -5,8 +5,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/controller/datastore"
 )
 
-func toGroup(data *datastore.ConsumerGroupConfigRow) *consumergroup.Group {
-	return &consumergroup.Group{
+func toGroupData(data *datastore.ConsumerGroupConfigRow) *consumergroup.GroupData {
+	return &consumergroup.GroupData{
 		Id:        data.Id,
 		TopicId:   data.TopicId,
 		Name:      data.Name,

@@ -10,13 +10,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-func toSchedule(data *datastore.ScheduleConfigRow) (*schedule.Schedule, error) {
+func toScheduleData(data *datastore.ScheduleConfigRow) (*schedule.ScheduleData, error) {
 	concurrency, err := concurrencyEnum(data.Concurrency)
 	if err != nil {
 		return nil, err
 	}
 
-	return &schedule.Schedule{
+	return &schedule.ScheduleData{
 		Id:              data.Id,
 		SystemId:        data.SystemId,
 		TopicId:         data.TopicId,

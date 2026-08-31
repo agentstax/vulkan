@@ -62,13 +62,13 @@ var (
 	ds     *iDatastore.PostgresDatastore
 	mAdmin *admin.MessageAdmin
 
-	schedulesTopic *topic.Topic
-	alertsTopic *topic.Topic
+	schedulesTopic *topic.TopicData
+	alertsTopic *topic.TopicData
 	prefix      string
 
 	partitionCountGroup int64
 	groupOwner          *common.Owner
-	labTopic            *topic.Topic
+	labTopic            *topic.TopicData
 	labTopicOwner       *common.Owner
 	executorCapture     *captureLogger
 )

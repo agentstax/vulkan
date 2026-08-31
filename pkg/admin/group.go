@@ -12,7 +12,7 @@ import (
 
 // GetGroup reads the group's config.
 // Returns ErrTopicNotFound / ErrGroupNotFound when either side is missing.
-func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName string) ([]*worker.Worker, error) {
+func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName string) ([]*worker.WorkerData, error) {
 	groupOwner, err := a.groupOwner(ctx, topicName, groupName)
 	if err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName
 	}
 
 	// ListWorkers walks the whole owner chain -- keep only the group's own rows
-	var workers []*worker.Worker
+	var workers []*worker.WorkerData
 	for _, row := range listed {
 		if row.Owner.ConsumerGroupId == groupOwner.ConsumerGroupId {
 			workers = append(workers, row)

@@ -53,7 +53,7 @@ func (c *WorkerController) RegisterWorker(ctx context.Context, name string, owne
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain -- a
 // sibling group's are not on it. A system owner's chain is everything.
-func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner) ([]*worker.Worker, error) {
+func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner) ([]*worker.WorkerData, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -62,10 +62,10 @@ func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner)
 		return nil, err
 	}
 
-	var workers []*worker.Worker
+	var workers []*worker.WorkerData
 	for _, data := range listed {
 		// a bad row skips rather than erroring the whole list
-		listedWorker, err := toWorker(data)
+		listedWorker, err := toWorkerData(data)
 		if err != nil {
 			c.Logger.WarnContext(ctx, "could not read worker row owner -- skipping", "worker", data.Name, "error", err)
 			continue
@@ -77,7 +77,7 @@ func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner)
 
 // GetWorker reads the (name, owner) worker row. Errors if the row was never
 // declared.
-func (c *WorkerController) GetWorker(ctx context.Context, name string, owner *common.Owner) (*worker.Worker, error) {
+func (c *WorkerController) GetWorker(ctx context.Context, name string, owner *common.Owner) (*worker.WorkerData, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}

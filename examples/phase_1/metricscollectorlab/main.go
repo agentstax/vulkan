@@ -193,7 +193,7 @@ func run() (err error) {
 			}
 		}
 	}
-	var heads []*producer.MessageRow[metrics.Measurement]
+	var heads []*producer.MessageData[metrics.Measurement]
 	must(waitFor(30*time.Second, func() (bool, error) {
 		heads, err = mAdmin.ListMeasurements(ctx)
 		if err != nil {

@@ -41,7 +41,7 @@ func newSystemGetCmd(g *globalFlags) *cobra.Command {
 	}
 }
 
-func printSystemDetail(w io.Writer, s *system.System) {
+func printSystemDetail(w io.Writer, s *system.SystemData) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintf(tw, "  CreatedAt\t%s\n", timeCell(s.CreatedAt))
 	fmt.Fprintf(tw, "  UpdatedAt\t%s\n", timeCell(s.UpdatedAt))

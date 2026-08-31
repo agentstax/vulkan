@@ -224,7 +224,7 @@ func run() (err error) {
 	return nil
 }
 
-func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.Topic, suffix int64) {
+func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.TopicData, suffix int64) {
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)

@@ -6,7 +6,7 @@
 //
 // Concepts held before domain code (12): the produce set from scenario 01,
 // plus MessageKey, CompactionOptions (+NewCompactionOptions), Rank,
-// InTransaction, GetCompactionHeadInTx, ProduceInTx, MessageRow, and for
+// InTransaction, GetCompactionHeadInTx, ProduceInTx, MessageData, and for
 // reads outside a transaction the separate CompactionController with a
 // topic id.
 //

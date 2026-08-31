@@ -15,7 +15,7 @@ import (
 // Message's schema version; every produce carries both. cfg may be nil or a
 // sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func (c *ScheduleController) Register[Message topic.Versioned](ctx context.Context, systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) (*schedule.Schedule, error) {
+func (c *ScheduleController) Register[Message topic.Versioned](ctx context.Context, systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) (*schedule.ScheduleData, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
@@ -46,11 +46,11 @@ func (c *ScheduleController) Register[Message topic.Versioned](ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	return toSchedule(registered)
+	return toScheduleData(registered)
 }
 
 // Get returns (nil, nil) if name isn't registered.
-func (c *ScheduleController) Get(ctx context.Context, name string) (*schedule.Schedule, error) {
+func (c *ScheduleController) Get(ctx context.Context, name string) (*schedule.ScheduleData, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
@@ -59,19 +59,19 @@ func (c *ScheduleController) Get(ctx context.Context, name string) (*schedule.Sc
 	if err != nil || found == nil {
 		return nil, err
 	}
-	return toSchedule(found)
+	return toScheduleData(found)
 }
 
 // List returns every schedule, ordered by name.
-func (c *ScheduleController) List(ctx context.Context) ([]*schedule.Schedule, error) {
+func (c *ScheduleController) List(ctx context.Context) ([]*schedule.ScheduleData, error) {
 	listed, err := c.datastore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var schedules []*schedule.Schedule
+	var schedules []*schedule.ScheduleData
 	for _, data := range listed {
-		found, err := toSchedule(&data)
+		found, err := toScheduleData(&data)
 		if err != nil {
 			return nil, err
 		}

@@ -263,4 +263,4 @@ func assertIDs(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }

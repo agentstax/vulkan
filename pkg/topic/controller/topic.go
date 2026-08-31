@@ -10,7 +10,7 @@ import (
 )
 
 // Get resolves a topic by name. Returns (nil, nil) if name is not found.
-func (c *TopicController) Get(ctx context.Context, name string) (*topic.Topic, error) {
+func (c *TopicController) Get(ctx context.Context, name string) (*topic.TopicData, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
@@ -19,11 +19,11 @@ func (c *TopicController) Get(ctx context.Context, name string) (*topic.Topic, e
 	if err != nil || found == nil {
 		return nil, err
 	}
-	return toTopic(found)
+	return toTopicData(found)
 }
 
 // GetById resolves a topic by its id. Returns (nil, nil) if no topic has it.
-func (c *TopicController) GetById(ctx context.Context, id int64) (*topic.Topic, error) {
+func (c *TopicController) GetById(ctx context.Context, id int64) (*topic.TopicData, error) {
 	if id <= 0 {
 		return nil, fmt.Errorf("id must be > 0, got %d", id)
 	}
@@ -32,18 +32,18 @@ func (c *TopicController) GetById(ctx context.Context, id int64) (*topic.Topic, 
 	if err != nil || found == nil {
 		return nil, err
 	}
-	return toTopic(found)
+	return toTopicData(found)
 }
 
-func (c *TopicController) List(ctx context.Context) ([]*topic.Topic, error) {
+func (c *TopicController) List(ctx context.Context) ([]*topic.TopicData, error) {
 	listed, err := c.datastore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var topics []*topic.Topic
+	var topics []*topic.TopicData
 	for _, data := range listed {
-		listedTopic, err := toTopic(&data)
+		listedTopic, err := toTopicData(&data)
 		if err != nil {
 			return nil, err
 		}
@@ -56,7 +56,7 @@ func (c *TopicController) List(ctx context.Context) ([]*topic.Topic, error) {
 // topic if it doesn't exist, and returns the registered topic. cfg may be nil
 // or a sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func (c *TopicController) Register(ctx context.Context, systemId int64, name string, cfg *TopicConfig) (*topic.Topic, error) {
+func (c *TopicController) Register(ctx context.Context, systemId int64, name string, cfg *TopicConfig) (*topic.TopicData, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
@@ -85,13 +85,13 @@ func (c *TopicController) Register(ctx context.Context, systemId int64, name str
 			return nil, err
 		}
 	}
-	return toTopic(registered)
+	return toTopicData(registered)
 }
 
 // Rename moves the topic under oldName to newName.
 // Returns (nil, nil) if no topic is registered under oldName
 // ErrTopicNameTaken if newName is already registered.
-func (c *TopicController) Rename(ctx context.Context, oldName string, newName string) (*topic.Topic, error) {
+func (c *TopicController) Rename(ctx context.Context, oldName string, newName string) (*topic.TopicData, error) {
 	if oldName == "" {
 		return nil, errors.New("oldName is required")
 	}
@@ -103,7 +103,7 @@ func (c *TopicController) Rename(ctx context.Context, oldName string, newName st
 	if err != nil || renamed == nil {
 		return nil, err
 	}
-	return toTopic(renamed)
+	return toTopicData(renamed)
 }
 
 // Delete drains and drops the topic's tables, then removes its rows.

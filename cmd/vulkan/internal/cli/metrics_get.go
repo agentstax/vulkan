@@ -57,7 +57,7 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
-			matched := make([]*producer.MessageRow[metrics.Measurement], 0, len(heads))
+			matched := make([]*producer.MessageData[metrics.Measurement], 0, len(heads))
 			for _, head := range heads {
 				if head.Message.Name != name {
 					continue
@@ -90,7 +90,7 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 						return translateAdminError(err)
 					}
 					if messages == nil {
-						messages = make([]*producer.MessageRow[metrics.Measurement], 0)
+						messages = make([]*producer.MessageData[metrics.Measurement], 0)
 					}
 					document.Series = append(document.Series, metricSeriesDocument{
 						Attributes:   head.Message.Attributes,
@@ -153,7 +153,7 @@ type metricGetDocument struct {
 // metricSeriesDocument is one attribute set's history, newest first.
 type metricSeriesDocument struct {
 	Attributes   map[string]string                           `json:"attributes"`
-	Measurements []*producer.MessageRow[metrics.Measurement] `json:"measurements"`
+	Measurements []*producer.MessageData[metrics.Measurement] `json:"measurements"`
 }
 
 // parseAttributePairs turns repeated key=value flags into one filter map.
@@ -188,7 +188,7 @@ func measurementKindUnitCell(measurement *metrics.Measurement) string {
 
 // printMeasurementSeries is one attribute set's block, newest measurement first --
 // measurements older than the retention window are gone.
-func printMeasurementSeries(w io.Writer, attributes map[string]string, messages []*producer.MessageRow[metrics.Measurement]) {
+func printMeasurementSeries(w io.Writer, attributes map[string]string, messages []*producer.MessageData[metrics.Measurement]) {
 	fmt.Fprintf(w, "\n  %s\n", seriesHeading(attributes))
 	if len(messages) == 0 {
 		fmt.Fprintln(w, "  no measurements in the retention window")

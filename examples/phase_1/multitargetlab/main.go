@@ -246,7 +246,7 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 // ---- fixtures ----
 
-func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.ProducerInstance[common.Work], func()) {
+func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.TopicData, *producer.ProducerInstance[common.Work], func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 

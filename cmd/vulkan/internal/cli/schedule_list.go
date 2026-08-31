@@ -54,13 +54,13 @@ func newScheduleListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printScheduleNames(w io.Writer, schedules []*schedule.Schedule) {
+func printScheduleNames(w io.Writer, schedules []*schedule.ScheduleData) {
 	for _, row := range schedules {
 		fmt.Fprintln(w, row.Name)
 	}
 }
 
-func printSchedulesTable(w io.Writer, schedules []*schedule.Schedule) {
+func printSchedulesTable(w io.Writer, schedules []*schedule.ScheduleData) {
 	if len(schedules) == 0 {
 		fmt.Fprintln(w, "no schedules registered")
 		return

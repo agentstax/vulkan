@@ -143,7 +143,7 @@ type scheduleGetDocument struct {
 	Messages []*schedule.MessageStatus `json:"messages"` // null unless --messages
 }
 
-func toScheduleDocument(row *schedule.Schedule) scheduleDocument {
+func toScheduleDocument(row *schedule.ScheduleData) scheduleDocument {
 	return scheduleDocument{
 		ScheduleId:      row.Id,
 		SystemId:        row.SystemId,
@@ -160,7 +160,7 @@ func toScheduleDocument(row *schedule.Schedule) scheduleDocument {
 	}
 }
 
-func toScheduleDocuments(schedules []*schedule.Schedule) []scheduleDocument {
+func toScheduleDocuments(schedules []*schedule.ScheduleData) []scheduleDocument {
 	documents := make([]scheduleDocument, 0, len(schedules))
 	for _, row := range schedules {
 		documents = append(documents, toScheduleDocument(row))
@@ -168,7 +168,7 @@ func toScheduleDocuments(schedules []*schedule.Schedule) []scheduleDocument {
 	return documents
 }
 
-func toScheduleGetDocument(name string, row *schedule.Schedule, groups []*schedule.GroupStatus, messages []*schedule.MessageStatus) scheduleGetDocument {
+func toScheduleGetDocument(name string, row *schedule.ScheduleData, groups []*schedule.GroupStatus, messages []*schedule.MessageStatus) scheduleGetDocument {
 	document := scheduleGetDocument{
 		Schedule: name,
 		Exists:   row != nil,
@@ -184,7 +184,7 @@ func toScheduleGetDocument(name string, row *schedule.Schedule, groups []*schedu
 	return document
 }
 
-func printScheduleDetail(w io.Writer, row *schedule.Schedule) {
+func printScheduleDetail(w io.Writer, row *schedule.ScheduleData) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintf(tw, "  Schedule\t%s\n", row.Expression)
 	fmt.Fprintf(tw, "  Concurrency\t%s\n", row.Concurrency)
@@ -246,7 +246,7 @@ func messageOutcomeCell(status *schedule.MessageStatus) string {
 
 // scheduleNextCell - a suspended schedule's next_scheduled_at is stale by design
 // (unsuspend re-seeds it), so show the state instead of a misleading time.
-func scheduleNextCell(row *schedule.Schedule) string {
+func scheduleNextCell(row *schedule.ScheduleData) string {
 	if row.Suspended {
 		return "suspended"
 	}
@@ -254,7 +254,7 @@ func scheduleNextCell(row *schedule.Schedule) string {
 }
 
 // scheduleLastCell - NULL until the scheduler first produces this schedule.
-func scheduleLastCell(row *schedule.Schedule) string {
+func scheduleLastCell(row *schedule.ScheduleData) string {
 	if row.LastScheduledAt == nil {
 		return "never"
 	}

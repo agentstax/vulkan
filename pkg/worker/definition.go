@@ -49,7 +49,7 @@ type Declarer interface {
 // error; the manager retries next reconcile.
 type Provisioner interface {
 	Definition() *Definition
-	Provision(ctx context.Context, declared *Worker) (Execution, error)
+	Provision(ctx context.Context, declared *WorkerData) (Execution, error)
 }
 
 // An Execution is one provisioned life. Run blocks until the life ends, and

@@ -354,7 +354,7 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *messageconsumergroupcontroller.MessageConsumerGroupController, *producer.ProducerInstance[common.Work], int64) {
+func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.TopicData, *messageconsumergroupcontroller.MessageConsumerGroupController, *producer.ProducerInstance[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -385,7 +385,7 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, wpInstance *producer.ProducerInstance[common.Work], tp *topic.Topic, groupId int64, n int) int64 {
+func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, wpInstance *producer.ProducerInstance[common.Work], tp *topic.TopicData, groupId int64, n int) int64 {
 	seed(ctx, wpInstance, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, n, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
@@ -483,4 +483,4 @@ func die(msg string) {
 	panic(labFailure{message: msg})
 }
 
-func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }

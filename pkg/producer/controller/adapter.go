@@ -31,12 +31,12 @@ func toAppended[Message topic.Versioned](data *datastore.Appended[Message]) *App
 	}
 }
 
-func toMessageRow[Message topic.Versioned](data *datastore.MessageLogRow) (*MessageRow[Message], error) {
+func toMessageData[Message topic.Versioned](data *datastore.MessageLogRow) (*MessageData[Message], error) {
 	var message Message
 	if err := json.Unmarshal(data.Payload, &message); err != nil {
 		return nil, err
 	}
-	return &MessageRow[Message]{
+	return &MessageData[Message]{
 		Id:             data.Id,
 		Message:        &message,
 		CreatedAt:      data.CreatedAt,

@@ -47,7 +47,7 @@ func (d *PartitionCountProvisioner) Declare(ctx context.Context, owner *common.O
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *PartitionCountProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
+func (d *PartitionCountProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
 	parsed, err := workercontroller.ParseMetadata[partitionCountMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err

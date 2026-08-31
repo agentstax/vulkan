@@ -11,7 +11,7 @@ import (
 
 // ListKeyMessages returns messageKey's retained messages, newest
 // first. limit is required: an unbounded read spans the whole retention window.
-func (c *CompactionController) ListKeyMessages[Message topic.Versioned](ctx context.Context, topicId int64, messageKey string, limit int) ([]*common.MessageRow[Message], error) {
+func (c *CompactionController) ListKeyMessages[Message topic.Versioned](ctx context.Context, topicId int64, messageKey string, limit int) ([]*common.MessageData[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -27,9 +27,9 @@ func (c *CompactionController) ListKeyMessages[Message topic.Versioned](ctx cont
 		return nil, err
 	}
 
-	messages := make([]*common.MessageRow[Message], 0, len(data))
+	messages := make([]*common.MessageData[Message], 0, len(data))
 	for i := range data {
-		message, err := toMessageRow[Message](&data[i])
+		message, err := toMessageData[Message](&data[i])
 		if err != nil {
 			return nil, err
 		}

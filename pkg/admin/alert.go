@@ -12,7 +12,7 @@ import (
 // each key's latest publish, active or resolved, within the topic's retention
 // window.
 // Returns migrate.ErrNotRegistered until RegisterSystem has run.
-func (a *MessageAdmin) ListAlerts(ctx context.Context) ([]*producer.MessageRow[alert.Alert], error) {
+func (a *MessageAdmin) ListAlerts(ctx context.Context) ([]*producer.MessageData[alert.Alert], error) {
 	found, err := a.topicController.Get(ctx, alert.TopicName)
 	if err != nil {
 		return nil, err

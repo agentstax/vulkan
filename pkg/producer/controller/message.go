@@ -5,9 +5,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// MessageRow is one stored message, typed; the struct and its docs live in
+// MessageData is one stored message, typed; the struct and its docs live in
 // pkg/common.
-type MessageRow[Message topic.Versioned] = common.MessageRow[Message]
+type MessageData[Message topic.Versioned] = common.MessageData[Message]
 
 // Appended is one append's outcome.
 type Appended[Message topic.Versioned] struct {
