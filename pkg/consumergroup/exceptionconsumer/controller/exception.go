@@ -91,7 +91,7 @@ func (c *ExceptionConsumerGroupController) RenewLease(ctx context.Context, excep
 		return false, fmt.Errorf("duration must be > 0, got %v", duration)
 	}
 
-	return c.datastore.RenewLease(ctx, toExceptionData(exception), duration)
+	return c.datastore.RenewLease(ctx, toExceptionQueueRow(exception), duration)
 }
 
 // RecordSuccess deletes the row
@@ -102,7 +102,7 @@ func (c *ExceptionConsumerGroupController) RecordSuccess(ctx context.Context, ex
 		return errors.New("exception must not be nil")
 	}
 
-	return c.datastore.RecordSuccess(ctx, toExceptionData(exception), deliveryLogMode, toKeyLeaseData(keyClaim))
+	return c.datastore.RecordSuccess(ctx, toExceptionQueueRow(exception), deliveryLogMode, toKeyLease(keyClaim))
 }
 
 // RecordFailure resets the row as 'ready' with retryPolicy's
@@ -119,7 +119,7 @@ func (c *ExceptionConsumerGroupController) RecordFailure(ctx context.Context, re
 		return errors.New("failureErr must not be nil")
 	}
 
-	return c.datastore.RecordFailure(ctx, retryPolicy, toExceptionData(exception), failureErr, deliveryLogMode, toKeyLeaseData(keyClaim))
+	return c.datastore.RecordFailure(ctx, retryPolicy, toExceptionQueueRow(exception), failureErr, deliveryLogMode, toKeyLease(keyClaim))
 }
 
 // RecordDelayed resets the row 'ready' after the handler's requested delay,
@@ -133,7 +133,7 @@ func (c *ExceptionConsumerGroupController) RecordDelayed(ctx context.Context, de
 		return errors.New("delayErr must not be nil")
 	}
 
-	return c.datastore.RecordDelayed(ctx, delay, toExceptionData(exception), delayErr, deliveryLogMode, toKeyLeaseData(keyClaim))
+	return c.datastore.RecordDelayed(ctx, delay, toExceptionQueueRow(exception), delayErr, deliveryLogMode, toKeyLease(keyClaim))
 }
 
 // RecordTerminal marks the row 'dead' -- no retry could succeed.
@@ -146,7 +146,7 @@ func (c *ExceptionConsumerGroupController) RecordTerminal(ctx context.Context, e
 		return errors.New("failureErr must not be nil")
 	}
 
-	return c.datastore.RecordTerminal(ctx, toExceptionData(exception), failureErr, deliveryLogMode, toKeyLeaseData(keyClaim))
+	return c.datastore.RecordTerminal(ctx, toExceptionQueueRow(exception), failureErr, deliveryLogMode, toKeyLease(keyClaim))
 }
 
 // RecordSuperseded never runs the row again: the claim's attempts
@@ -156,7 +156,7 @@ func (c *ExceptionConsumerGroupController) RecordSuperseded(ctx context.Context,
 		return errors.New("exception must not be nil")
 	}
 
-	return c.datastore.RecordSuperseded(ctx, toExceptionData(exception), deliveryLogMode)
+	return c.datastore.RecordSuperseded(ctx, toExceptionQueueRow(exception), deliveryLogMode)
 }
 
 // RecordDeferred returns the row to 'deferred' -- its key was busy at the
@@ -171,5 +171,5 @@ func (c *ExceptionConsumerGroupController) RecordDeferred(ctx context.Context, e
 		return fmt.Errorf("concurrency: %w", err)
 	}
 
-	return c.datastore.RecordDeferred(ctx, toExceptionData(exception), concurrency, deliveryLogMode)
+	return c.datastore.RecordDeferred(ctx, toExceptionQueueRow(exception), concurrency, deliveryLogMode)
 }

@@ -18,7 +18,7 @@ import (
 // mid-range doesn't strand those offsets. past maxRangeReclaims the range is
 // POISON -- quarantine it into the sparse exception window instead of handing it
 // out again, so one bad message can't crash-loop the whole range forever.
-func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
+func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRange, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 		return nil, err
 	}
 
-	lease, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[LeaseData])
+	lease, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[ClaimLeaseRow])
 	if err != nil {
 		// no reclaimable leases were found -> follow normal claim from message_log
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -75,7 +75,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 			return nil, err
 		}
 		// the lease is freed and every row written as a 'ready' exception
-		return &ClaimedRangeData{Lease: lease, Quarantined: true}, nil
+		return &ClaimedRange{Lease: lease, Quarantined: true}, nil
 	}
 
 	messages, err := d.readMessages(ctx, tx, topicId, groupId, schemaVersion, lease.Low, lease.High)
@@ -87,7 +87,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 		return nil, err
 	}
 
-	return &ClaimedRangeData{Lease: lease, Messages: messages}, nil
+	return &ClaimedRange{Lease: lease, Messages: messages}, nil
 }
 
 // quarantine gives up on retrying a poisoned range as one unit: every message in
@@ -98,7 +98,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 // exact same exception-window machinery as an ordinary consumed-message failure --
 // AdvanceCommitted's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
-func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, lease ClaimLeaseRow, deliveryLogMode topic.DeliveryLogMode) error {
 	d.Logger.WarnContext(ctx, consumergroup.EventRangeQuarantined.Message, "code", consumergroup.EventRangeQuarantined.Code, "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	var deliverySql string

@@ -6,7 +6,7 @@ import (
 	"uuid"
 )
 
-func toMessage(data datastore.MessageData) Message {
+func toMessage(data datastore.MessageLogRow) Message {
 	return Message{
 		Id:             data.Id,
 		Payload:        data.Payload,
@@ -19,7 +19,7 @@ func toMessage(data datastore.MessageData) Message {
 	}
 }
 
-func toRangeLease(data datastore.LeaseData) RangeLease {
+func toRangeLease(data datastore.ClaimLeaseRow) RangeLease {
 	return RangeLease{
 		Token:           uuid.UUID(data.Token.Bytes),
 		ConsumerGroupId: data.ConsumerGroupId,
@@ -30,7 +30,7 @@ func toRangeLease(data datastore.LeaseData) RangeLease {
 	}
 }
 
-func toClaimedRange(data *datastore.ClaimedRangeData) *ClaimedRange {
+func toClaimedRange(data *datastore.ClaimedRange) *ClaimedRange {
 	messages := make([]Message, 0, len(data.Messages))
 	for _, message := range data.Messages {
 		messages = append(messages, toMessage(message))
@@ -42,10 +42,10 @@ func toClaimedRange(data *datastore.ClaimedRangeData) *ClaimedRange {
 	}
 }
 
-func toOutcomeData(outcomes []MessageOutcome) []datastore.OutcomeData {
-	data := make([]datastore.OutcomeData, 0, len(outcomes))
+func toOutcome(outcomes []MessageOutcome) []datastore.Outcome {
+	data := make([]datastore.Outcome, 0, len(outcomes))
 	for _, outcome := range outcomes {
-		data = append(data, datastore.OutcomeData{
+		data = append(data, datastore.Outcome{
 			MessageId:   outcome.MessageId,
 			MessageKey:  outcome.MessageKey,
 			Concurrency: outcome.Concurrency,

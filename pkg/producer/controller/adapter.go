@@ -8,8 +8,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 )
 
-func toAppendData[Message topic.Versioned](idempotencyKey uuid.UUID, payload *Message, options ProduceOptions) *datastore.AppendData[Message] {
-	data := &datastore.AppendData[Message]{
+func toAppend[Message topic.Versioned](idempotencyKey uuid.UUID, payload *Message, options ProduceOptions) *datastore.Append[Message] {
+	data := &datastore.Append[Message]{
 		IdempotencyKey: idempotencyKey,
 		Payload:        payload,
 		RoutingKey:     options.RoutingKey,
@@ -23,7 +23,7 @@ func toAppendData[Message topic.Versioned](idempotencyKey uuid.UUID, payload *Me
 	return data
 }
 
-func toAppended[Message topic.Versioned](data *datastore.AppendedData[Message]) *Appended[Message] {
+func toAppended[Message topic.Versioned](data *datastore.Appended[Message]) *Appended[Message] {
 	return &Appended[Message]{
 		Message:   data.Message,
 		Id:        data.Id,
@@ -31,7 +31,7 @@ func toAppended[Message topic.Versioned](data *datastore.AppendedData[Message]) 
 	}
 }
 
-func toMessageRow[Message topic.Versioned](data *datastore.HeadData) (*MessageRow[Message], error) {
+func toMessageRow[Message topic.Versioned](data *datastore.MessageLogRow) (*MessageRow[Message], error) {
 	var message Message
 	if err := json.Unmarshal(data.Payload, &message); err != nil {
 		return nil, err

@@ -9,8 +9,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// AppendData is one message append's inputs, insert-arg exact.
-type AppendData[Message topic.Versioned] struct {
+// Append is one message append's inputs, insert-arg exact.
+type Append[Message topic.Versioned] struct {
 	// resolved once by the caller and reused across every retry -- that reuse
 	// is what makes a retried attempt safe after an ambiguous commit
 	IdempotencyKey uuid.UUID
@@ -22,15 +22,15 @@ type AppendData[Message topic.Versioned] struct {
 	Options        *common.MessageOptions
 }
 
-// AppendedData is one append's outcome.
-type AppendedData[Message topic.Versioned] struct {
+// Appended is one append's outcome.
+type Appended[Message topic.Versioned] struct {
 	Message   *Message // the payload this call built -- never re-read from storage
 	Id        int64    // 0 when Duplicate
 	Duplicate bool     // the idempotency claim already existed
 }
 
-// HeadData is the compaction head's message row, column-exact.
-type HeadData struct {
+// MessageLogRow is the compaction head's message row, column-exact.
+type MessageLogRow struct {
 	Id             int64           `db:"id"`
 	Payload        json.RawMessage `db:"payload"`
 	CreatedAt      time.Time       `db:"created_at"`

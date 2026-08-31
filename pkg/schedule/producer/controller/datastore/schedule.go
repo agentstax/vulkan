@@ -52,11 +52,11 @@ func (d *ScheduleProducerDatastore) listDue(ctx context.Context) ([]int64, error
 // destroyed, or another scheduler's transaction holds it).
 // Runs inside the produce transaction -- no retry, the transaction owns its
 // own error handling.
-func (d *ScheduleProducerDatastore) ClaimDue(ctx context.Context, q datastore.Querier, id int64) (*DueScheduleData, error) {
+func (d *ScheduleProducerDatastore) ClaimDue(ctx context.Context, q datastore.Querier, id int64) (*DueScheduleRow, error) {
 	return d.claimDue(ctx, q, id)
 }
 
-func (d *ScheduleProducerDatastore) claimDue(ctx context.Context, q datastore.Querier, id int64) (*DueScheduleData, error) {
+func (d *ScheduleProducerDatastore) claimDue(ctx context.Context, q datastore.Querier, id int64) (*DueScheduleRow, error) {
 	// FOR UPDATE locks both joined rows -- the cursor row Advance writes and
 	// the config row Suspend writes
 	sql := `
@@ -81,7 +81,7 @@ func (d *ScheduleProducerDatastore) claimDue(ctx context.Context, q datastore.Qu
 			AND NOT schedule_config.suspended
 		FOR UPDATE SKIP LOCKED;
 	`
-	var data DueScheduleData
+	var data DueScheduleRow
 	var timeoutNs int64
 	err := q.QueryRow(ctx, sql, id).Scan(&data.Id, &data.Name, &data.Expression, &data.TopicName, &data.Concurrency,
 		&timeoutNs, &data.Payload, &data.SchemaVersion, &data.Metadata, &data.NextScheduledAt, &data.DbNow)

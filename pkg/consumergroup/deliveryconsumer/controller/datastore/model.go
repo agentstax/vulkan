@@ -20,13 +20,13 @@ const (
 	DeliveryDead       DeliveryStatus = "dead"
 )
 
-// DeliveryData is one (consumer_group_id, message_id) row of the per-topic
+// ExceptionQueueRow is one (consumer_group_id, message_id) row of the per-topic
 // exception_queue_<topic_id> table: the mutable per-consumer lifecycle state that
 // lives off the immutable message_log. Payload is not stored on the row --
 // it's joined back in from message_log at claim time. The lifecycle claim
 // path never sets the lease columns (lease_expires_at / lease_token) -- no crash
 // recovery there; the exception window is what leases through them.
-type DeliveryData struct {
+type ExceptionQueueRow struct {
 	ConsumerGroupId int64                  `db:"consumer_group_id"`
 	TopicId         int64                  `db:"topic_id"`
 	MessageId       int64                  `db:"message_id"`

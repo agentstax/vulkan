@@ -7,7 +7,7 @@ import (
 	"uuid"
 )
 
-func toClaimedException(data datastore.ExceptionData) ClaimedException {
+func toClaimedException(data datastore.ExceptionQueueRow) ClaimedException {
 	return ClaimedException{
 		ConsumerGroupId: data.ConsumerGroupId,
 		TopicId:         data.TopicId,
@@ -26,8 +26,8 @@ func toClaimedException(data datastore.ExceptionData) ClaimedException {
 	}
 }
 
-func toExceptionData(exception *ClaimedException) *datastore.ExceptionData {
-	return &datastore.ExceptionData{
+func toExceptionQueueRow(exception *ClaimedException) *datastore.ExceptionQueueRow {
+	return &datastore.ExceptionQueueRow{
 		ConsumerGroupId: exception.ConsumerGroupId,
 		TopicId:         exception.TopicId,
 		MessageId:       exception.MessageId,
@@ -46,11 +46,11 @@ func toExceptionData(exception *ClaimedException) *datastore.ExceptionData {
 }
 
 // nil in, nil out -- the record verbs take an optional key claim.
-func toKeyLeaseData(claim *keyleasecontroller.KeyLeaseClaim) *datastore.KeyLeaseData {
+func toKeyLease(claim *keyleasecontroller.KeyLeaseClaim) *datastore.KeyLease {
 	if claim == nil {
 		return nil
 	}
-	return &datastore.KeyLeaseData{
+	return &datastore.KeyLease{
 		TopicId:         claim.TopicId,
 		ConsumerGroupId: claim.ConsumerGroupId,
 		MessageKey:      claim.MessageKey,

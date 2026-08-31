@@ -4,7 +4,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller/datastore"
 )
 
-func toDelivery(data datastore.DeliveryData) Delivery {
+func toDelivery(data datastore.ExceptionQueueRow) Delivery {
 	return Delivery{
 		ConsumerGroupId: data.ConsumerGroupId,
 		TopicId:         data.TopicId,
@@ -16,8 +16,8 @@ func toDelivery(data datastore.DeliveryData) Delivery {
 	}
 }
 
-func toDeliveryData(delivery *Delivery) *datastore.DeliveryData {
-	return &datastore.DeliveryData{
+func toExceptionQueueRow(delivery *Delivery) *datastore.ExceptionQueueRow {
+	return &datastore.ExceptionQueueRow{
 		ConsumerGroupId: delivery.ConsumerGroupId,
 		TopicId:         delivery.TopicId,
 		MessageId:       delivery.MessageId,

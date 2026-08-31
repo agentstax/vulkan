@@ -11,9 +11,9 @@ const (
 	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the compacted message is no longer its key's compaction head -- never run it
 )
 
-// KeyLeaseData is one Claim outcome. Token is set only when
+// KeyLease is one Claim outcome. Token is set only when
 // acquired; Release matches on it.
-type KeyLeaseData struct {
+type KeyLease struct {
 	Verdict         KeyLeaseVerdict
 	TopicId         int64
 	ConsumerGroupId int64

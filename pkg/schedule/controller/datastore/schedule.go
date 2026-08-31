@@ -12,8 +12,8 @@ import (
 )
 
 // Get returns (nil, nil) if not found.
-func (d *ScheduleDatastore) Get(ctx context.Context, name string) (*ScheduleData, error) {
-	var found *ScheduleData
+func (d *ScheduleDatastore) Get(ctx context.Context, name string) (*ScheduleConfigRow, error) {
+	var found *ScheduleConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		found, err = d.get(ctx, d.Datastore.Pool, name)
@@ -22,7 +22,7 @@ func (d *ScheduleDatastore) Get(ctx context.Context, name string) (*ScheduleData
 	return found, err
 }
 
-func (d *ScheduleDatastore) get(ctx context.Context, q datastore.Querier, name string) (*ScheduleData, error) {
+func (d *ScheduleDatastore) get(ctx context.Context, q datastore.Querier, name string) (*ScheduleConfigRow, error) {
 	sql := `
 		-- vulkan: schedule.get
 		SELECT
@@ -43,11 +43,11 @@ func (d *ScheduleDatastore) get(ctx context.Context, q datastore.Querier, name s
 		JOIN schedule_cursor ON schedule_cursor.schedule_id = schedule_config.id
 		WHERE schedule_config.name = $1;
 	`
-	return d.scanScheduleData(q.QueryRow(ctx, sql, name))
+	return d.scanScheduleConfigRow(q.QueryRow(ctx, sql, name))
 }
 
-func (d *ScheduleDatastore) List(ctx context.Context) ([]ScheduleData, error) {
-	var schedules []ScheduleData
+func (d *ScheduleDatastore) List(ctx context.Context) ([]ScheduleConfigRow, error) {
+	var schedules []ScheduleConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		schedules, err = d.list(ctx)
@@ -56,7 +56,7 @@ func (d *ScheduleDatastore) List(ctx context.Context) ([]ScheduleData, error) {
 	return schedules, err
 }
 
-func (d *ScheduleDatastore) list(ctx context.Context) ([]ScheduleData, error) {
+func (d *ScheduleDatastore) list(ctx context.Context) ([]ScheduleConfigRow, error) {
 	sql := `
 		-- vulkan: schedule.list
 		SELECT
@@ -83,9 +83,9 @@ func (d *ScheduleDatastore) list(ctx context.Context) ([]ScheduleData, error) {
 	}
 	defer rows.Close()
 
-	var schedules []ScheduleData
+	var schedules []ScheduleConfigRow
 	for rows.Next() {
-		found, err := d.scanScheduleData(rows)
+		found, err := d.scanScheduleConfigRow(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -223,10 +223,10 @@ func (d *ScheduleDatastore) delete(ctx context.Context, name string) error {
 	return nil
 }
 
-// scanScheduleData scans a row shaped like getSchedule's SELECT -- the column
+// scanScheduleConfigRow scans a row shaped like getSchedule's SELECT -- the column
 // list every one of those queries shares.
-func (d *ScheduleDatastore) scanScheduleData(row pgx.Row) (*ScheduleData, error) {
-	var data ScheduleData
+func (d *ScheduleDatastore) scanScheduleConfigRow(row pgx.Row) (*ScheduleConfigRow, error) {
+	var data ScheduleConfigRow
 	err := row.Scan(
 		&data.Id,
 		&data.SystemId,

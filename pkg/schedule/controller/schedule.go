@@ -42,7 +42,7 @@ func (c *ScheduleController) Register[Message topic.Versioned](ctx context.Conte
 		return nil, fmt.Errorf("timeout %v exceeds expression %q's min rate %v", cfg.Timeout, expression, expression.MinRate())
 	}
 
-	registered, err := c.datastore.Register(ctx, toRegisterScheduleData(systemId, name, expression, topicId, payload, cfg))
+	registered, err := c.datastore.Register(ctx, toScheduleDeclaration(systemId, name, expression, topicId, payload, cfg))
 	if err != nil {
 		return nil, err
 	}

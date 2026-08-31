@@ -79,7 +79,7 @@ func (c *DeliveryConsumerGroupController) RecordSuccess(ctx context.Context, del
 		return errors.New("delivery must not be nil")
 	}
 
-	return c.datastore.RecordSuccess(ctx, toDeliveryData(delivery), deliveryLogMode)
+	return c.datastore.RecordSuccess(ctx, toExceptionQueueRow(delivery), deliveryLogMode)
 }
 
 // RecordFailure retries until attempts are exhausted, then dead-letters. No
@@ -96,7 +96,7 @@ func (c *DeliveryConsumerGroupController) RecordFailure(ctx context.Context, max
 		return fmt.Errorf("maxAttempts must be >= 0, got %d", maxAttempts)
 	}
 
-	return c.datastore.RecordFailure(ctx, maxAttempts, toDeliveryData(delivery), failureErr, deliveryLogMode)
+	return c.datastore.RecordFailure(ctx, maxAttempts, toExceptionQueueRow(delivery), failureErr, deliveryLogMode)
 }
 
 // RecordTerminal dead-letters a delivery: no more retries. One group can
@@ -109,5 +109,5 @@ func (c *DeliveryConsumerGroupController) RecordTerminal(ctx context.Context, de
 		return errors.New("terminalErr must not be nil")
 	}
 
-	return c.datastore.RecordTerminal(ctx, toDeliveryData(delivery), terminalErr, deliveryLogMode)
+	return c.datastore.RecordTerminal(ctx, toExceptionQueueRow(delivery), terminalErr, deliveryLogMode)
 }

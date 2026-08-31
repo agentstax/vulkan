@@ -52,7 +52,7 @@ func (c *ProducerController) AppendMessage[Message topic.Versioned](ctx context.
 
 	idempotencyKey := resolveIdempotencyKey(options.IdempotencyKey)
 
-	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
+	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppend[Message](idempotencyKey, nil, options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (c *ProducerController) AppendMessageInTx[Message topic.Versioned](ctx cont
 
 	idempotencyKey := resolveIdempotencyKey(options.IdempotencyKey)
 
-	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
+	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppend[Message](idempotencyKey, nil, options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx con
 		return nil, -1, errors.New("appends must not be empty")
 	}
 
-	appendData := make([]*datastore.AppendData[Message], 0, len(appends))
+	datastoreAppends := make([]*datastore.Append[Message], 0, len(appends))
 	for _, item := range appends {
 		// cant batch produce a message without an IdempotencyKey
 		// a rerun dedups an ambiguous commit only by reusing the IdempotencyKey
@@ -102,16 +102,16 @@ func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx con
 			return nil, -1, errors.New("append Options.IdempotencyKey is required")
 		}
 		resolved := resolveIdempotencyKey(item.Options.IdempotencyKey)
-		appendData = append(appendData, toAppendData(resolved, item.Payload, item.Options))
+		datastoreAppends = append(datastoreAppends, toAppend(resolved, item.Payload, item.Options))
 	}
 
-	appendedData, failedIdx, err := c.datastore.AppendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appendData)
+	datastoreAppended, failedIdx, err := c.datastore.AppendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, datastoreAppends)
 	if err != nil {
 		return nil, failedIdx, err
 	}
 
-	appended := make([]Appended[Message], 0, len(appendedData))
-	for _, data := range appendedData {
+	appended := make([]Appended[Message], 0, len(datastoreAppended))
+	for _, data := range datastoreAppended {
 		appended = append(appended, *toAppended(&data))
 	}
 	return appended, -1, nil

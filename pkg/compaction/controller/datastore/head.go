@@ -11,8 +11,8 @@ import (
 
 // GetHead reads the current compaction head under messageKey,
 // nil if the key has no head.
-func (d *CompactionDatastore) GetHead(ctx context.Context, topicId int64, messageKey string) (*MessageData, error) {
-	var head *MessageData
+func (d *CompactionDatastore) GetHead(ctx context.Context, topicId int64, messageKey string) (*MessageLogRow, error) {
+	var head *MessageLogRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		head, err = d.getHead(ctx, topicId, messageKey)
@@ -21,7 +21,7 @@ func (d *CompactionDatastore) GetHead(ctx context.Context, topicId int64, messag
 	return head, err
 }
 
-func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, messageKey string) (*MessageData, error) {
+func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, messageKey string) (*MessageLogRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: compaction.getHead
 		SELECT
@@ -36,7 +36,7 @@ func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, messag
 		WHERE h.compaction_key = $1;
 	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
 
-	var head MessageData
+	var head MessageLogRow
 	err := d.Datastore.Pool.QueryRow(ctx, sql, messageKey).Scan(
 		&head.Id,
 		&head.Payload,
@@ -56,8 +56,8 @@ func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, messag
 
 // ListHeads reads every key's current head on the topic, ordered by
 // message key.
-func (d *CompactionDatastore) ListHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
-	var heads []MessageData
+func (d *CompactionDatastore) ListHeads(ctx context.Context, topicId int64) ([]MessageLogRow, error) {
+	var heads []MessageLogRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		heads, err = d.listHeads(ctx, topicId)
@@ -66,7 +66,7 @@ func (d *CompactionDatastore) ListHeads(ctx context.Context, topicId int64) ([]M
 	return heads, err
 }
 
-func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
+func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]MessageLogRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: compaction.listHeads
 		SELECT
@@ -87,9 +87,9 @@ func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]M
 	}
 	defer rows.Close()
 
-	var heads []MessageData
+	var heads []MessageLogRow
 	for rows.Next() {
-		var head MessageData
+		var head MessageLogRow
 		if err := rows.Scan(
 			&head.Id,
 			&head.Payload,

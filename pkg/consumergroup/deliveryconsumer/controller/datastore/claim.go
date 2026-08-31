@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (d *DeliveryConsumerGroupDatastore) ClaimMessagesWithLifecycle(ctx context.Context, topicId int64, groupId int64, limit int) ([]DeliveryData, error) {
-	var deliveries []DeliveryData
+func (d *DeliveryConsumerGroupDatastore) ClaimMessagesWithLifecycle(ctx context.Context, topicId int64, groupId int64, limit int) ([]ExceptionQueueRow, error) {
+	var deliveries []ExceptionQueueRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		deliveries, err = d.claimMessagesWithLifecycle(ctx, topicId, groupId, limit)
@@ -18,7 +18,7 @@ func (d *DeliveryConsumerGroupDatastore) ClaimMessagesWithLifecycle(ctx context.
 	return deliveries, err
 }
 
-func (d *DeliveryConsumerGroupDatastore) claimMessagesWithLifecycle(ctx context.Context, topicId int64, groupId int64, limit int) ([]DeliveryData, error) {
+func (d *DeliveryConsumerGroupDatastore) claimMessagesWithLifecycle(ctx context.Context, topicId int64, groupId int64, limit int) ([]ExceptionQueueRow, error) {
 	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
 	// one statement, per (group, topic, message). SKIP LOCKED keeps competing
 	// workers from grabbing the same row.
@@ -64,5 +64,5 @@ func (d *DeliveryConsumerGroupDatastore) claimMessagesWithLifecycle(ctx context.
 		return nil, err
 	}
 
-	return pgx.CollectRows(rows, pgx.RowToStructByName[DeliveryData])
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ExceptionQueueRow])
 }

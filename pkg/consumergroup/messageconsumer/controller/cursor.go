@@ -45,7 +45,7 @@ func (c *MessageConsumerGroupController) Commit(ctx context.Context, topicId int
 		return err
 	}
 
-	return c.datastore.Commit(ctx, topicId, groupId, toTokenData(token), toOutcomeData(outcomes), initialBackoff, deliveryLogMode)
+	return c.datastore.Commit(ctx, topicId, groupId, toTokenData(token), toOutcome(outcomes), initialBackoff, deliveryLogMode)
 }
 
 // PartialCommit narrows a still-open lease to lastProcessed and records whatever
@@ -59,7 +59,7 @@ func (c *MessageConsumerGroupController) PartialCommit(ctx context.Context, topi
 		return fmt.Errorf("lastProcessed must be >= 0, got %d", lastProcessed)
 	}
 
-	return c.datastore.PartialCommit(ctx, topicId, groupId, toTokenData(token), lastProcessed, toOutcomeData(outcomes), initialBackoff, deliveryLogMode)
+	return c.datastore.PartialCommit(ctx, topicId, groupId, toTokenData(token), lastProcessed, toOutcome(outcomes), initialBackoff, deliveryLogMode)
 }
 
 // ForceReclaimRange surrenders a range nobody ever started -- unlike

@@ -11,17 +11,17 @@ import (
 )
 
 // Get resolves a topic by name. Returns (nil, nil) if name is not found.
-func (d *TopicDatastore) Get(ctx context.Context, name string) (*TopicData, error) {
-	var topicData *TopicData
+func (d *TopicDatastore) Get(ctx context.Context, name string) (*TopicConfigRow, error) {
+	var topicConfigRow *TopicConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topicData, err = d.get(ctx, d.Datastore.Pool, name)
+		topicConfigRow, err = d.get(ctx, d.Datastore.Pool, name)
 		return err
 	})
-	return topicData, err
+	return topicConfigRow, err
 }
 
-func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name string) (*TopicData, error) {
+func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name string) (*TopicConfigRow, error) {
 	sql := `
 		-- vulkan: topic.get
 		SELECT
@@ -38,21 +38,21 @@ func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name stri
 		FROM topic_config
 		WHERE name = $1;
 	`
-	return d.scanTopicData(q.QueryRow(ctx, sql, name))
+	return d.scanTopicConfigRow(q.QueryRow(ctx, sql, name))
 }
 
 // GetById resolves a topic by its id. Returns (nil, nil) if no topic has it.
-func (d *TopicDatastore) GetById(ctx context.Context, id int64) (*TopicData, error) {
-	var topicData *TopicData
+func (d *TopicDatastore) GetById(ctx context.Context, id int64) (*TopicConfigRow, error) {
+	var topicConfigRow *TopicConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topicData, err = d.getById(ctx, id)
+		topicConfigRow, err = d.getById(ctx, id)
 		return err
 	})
-	return topicData, err
+	return topicConfigRow, err
 }
 
-func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicData, error) {
+func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicConfigRow, error) {
 	sql := `
 		-- vulkan: topic.getById
 		SELECT
@@ -69,11 +69,11 @@ func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicData, err
 		FROM topic_config
 		WHERE id = $1;
 	`
-	return d.scanTopicData(d.Datastore.Pool.QueryRow(ctx, sql, id))
+	return d.scanTopicConfigRow(d.Datastore.Pool.QueryRow(ctx, sql, id))
 }
 
-func (d *TopicDatastore) List(ctx context.Context) ([]TopicData, error) {
-	var topics []TopicData
+func (d *TopicDatastore) List(ctx context.Context) ([]TopicConfigRow, error) {
+	var topics []TopicConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		topics, err = d.list(ctx)
@@ -82,7 +82,7 @@ func (d *TopicDatastore) List(ctx context.Context) ([]TopicData, error) {
 	return topics, err
 }
 
-func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
+func (d *TopicDatastore) list(ctx context.Context) ([]TopicConfigRow, error) {
 	sql := `
 		-- vulkan: topic.list
 		SELECT
@@ -110,13 +110,13 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 	}
 	defer rows.Close()
 
-	var topics []TopicData
+	var topics []TopicConfigRow
 	for rows.Next() {
-		topicData, err := d.scanTopicData(rows)
+		topicConfigRow, err := d.scanTopicConfigRow(rows)
 		if err != nil {
 			return nil, err
 		}
-		topics = append(topics, *topicData)
+		topics = append(topics, *topicConfigRow)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -128,8 +128,8 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 // Register resolves declared's name to its row, creating
 // it (and its per-topic tables) if it doesn't exist. An existing row takes
 // declared's mutable config; its partition_size must match.
-func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData, declaredBy string) (*TopicData, error) {
-	var registered *TopicData
+func (d *TopicDatastore) Register(ctx context.Context, declared *TopicConfigRow, declaredBy string) (*TopicConfigRow, error) {
+	var registered *TopicConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		registered, err = d.register(ctx, declared, declaredBy)
@@ -140,7 +140,7 @@ func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData, decl
 
 // register registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, declaredBy string) (*TopicData, error) {
+func (d *TopicDatastore) register(ctx context.Context, declared *TopicConfigRow, declaredBy string) (*TopicConfigRow, error) {
 	// private get, not Get -- otherwise would have nested retries.
 	found, err := d.get(ctx, d.Datastore.Pool, declared.Name)
 	if err != nil {
@@ -215,8 +215,8 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, decl
 // topic_config_log row beside the update.
 // Returns (nil, nil) if no topic is registered under oldName
 // ErrTopicNameTaken if newName is already registered.
-func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string, declaredBy string) (*TopicData, error) {
-	var renamed *TopicData
+func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string, declaredBy string) (*TopicConfigRow, error) {
+	var renamed *TopicConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		renamed, err = d.rename(ctx, oldName, newName, declaredBy)
@@ -225,7 +225,7 @@ func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName str
 	return renamed, err
 }
 
-func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string, declaredBy string) (*TopicData, error) {
+func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string, declaredBy string) (*TopicConfigRow, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 			created_at,
 			updated_at;
 	`
-	renamed, err := d.scanTopicData(tx.QueryRow(ctx, sql, oldName, newName))
+	renamed, err := d.scanTopicConfigRow(tx.QueryRow(ctx, sql, oldName, newName))
 	if err != nil {
 		// 23505 = unique constraint violation ie name taken
 		var pgErr *pgconn.PgError
@@ -276,7 +276,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 
 // appendTopicConfigLog writes data's full snapshot as one topic_config_log row, inside
 // the transaction that changed the topic row.
-func (d *TopicDatastore) appendTopicConfigLog(ctx context.Context, q datastore.Querier, data *TopicData, declaredBy string) error {
+func (d *TopicDatastore) appendTopicConfigLog(ctx context.Context, q datastore.Querier, data *TopicConfigRow, declaredBy string) error {
 	sql := `
 		-- vulkan: topic.appendTopicConfigLog
 		INSERT INTO topic_config_log (topic_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode, declared_by)
@@ -286,11 +286,11 @@ func (d *TopicDatastore) appendTopicConfigLog(ctx context.Context, q datastore.Q
 	return err
 }
 
-// scanTopicData scans a row shaped like getTopic's SELECT -- the column list
+// scanTopicConfigRow scans a row shaped like getTopic's SELECT -- the column list
 // every one of those queries shares. Returns (nil, nil) when the row -- or
 // topic_config itself, 42P01 -- isn't there yet.
-func (d *TopicDatastore) scanTopicData(row pgx.Row) (*TopicData, error) {
-	var data TopicData
+func (d *TopicDatastore) scanTopicConfigRow(row pgx.Row) (*TopicConfigRow, error) {
+	var data TopicConfigRow
 	err := row.Scan(
 		&data.Id,
 		&data.SystemId,

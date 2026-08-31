@@ -12,7 +12,7 @@ import (
 // with declared's -- the newest declaration wins -- and appends the new
 // snapshot to topic_config_log in the same transaction.
 // partition_size is not mutable config.
-func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, declared *TopicData, declaredBy string) (*TopicData, error) {
+func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicConfigRow, declared *TopicConfigRow, declaredBy string) (*TopicConfigRow, error) {
 	if found.PartitionSize != declared.PartitionSize {
 		return nil, topic.ErrTopicConfigMismatch.With(
 			"topic", found.Name,
@@ -60,7 +60,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 		declared.IdempotencyKeyTTLNs,
 		declared.DeliveryLogMode,
 	)
-	updated, err := d.scanTopicData(row)
+	updated, err := d.scanTopicConfigRow(row)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 
 // configChanges is every mutable config field the declaration would change,
 // as log args. Empty means the declaration matches what is stored.
-func configChanges(found *TopicData, declared *TopicData) []any {
+func configChanges(found *TopicConfigRow, declared *TopicConfigRow) []any {
 	var changes []any
 	if found.RetentionTTLNs != declared.RetentionTTLNs {
 		changes = append(changes, "retention_ttl", replaced(time.Duration(found.RetentionTTLNs), time.Duration(declared.RetentionTTLNs)))

@@ -186,7 +186,7 @@ The domain layers:
   input validation, `to*` adapters, schema asserts. Files: `<x>_config.go`,
   `controller_config.go`.
 - `pkg/<x>/controller/datastore` -- all SQL; trusts inputs, no re-validation.
-  Table-exact `*Data` structs live in `model.go`, never beside the query that
+  Table-exact `*Row` structs live in `model.go`, never beside the query that
   returns them. An enum type travels with its const block.
 - Import arrows point strictly downward.
 - Named error variables are declared in the owning domain's `pkg/<x>`

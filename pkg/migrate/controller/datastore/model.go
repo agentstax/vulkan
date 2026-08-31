@@ -21,10 +21,10 @@ type Step struct {
 	NoTxn                bool
 }
 
-// SchemaStateData is one scope's version facts: the version the schema is
+// SchemaStateRow is one scope's version facts: the version the schema is
 // at, and the minimum compatible version in force -- the strictest
 // declaration among the steps at or below it.
-type SchemaStateData struct {
+type SchemaStateRow struct {
 	Version              int64 `db:"migration_version"`
 	MinCompatibleVersion int64 `db:"min_compatible_version"`
 }

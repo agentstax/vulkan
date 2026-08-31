@@ -74,8 +74,8 @@ func normalizePatterns(patterns []string) []string {
 	return slices.Compact(normalized)
 }
 
-func groupByConsumerGroup(rows []datastore.BindingLogData) map[int64][]datastore.BindingLogData {
-	groups := make(map[int64][]datastore.BindingLogData)
+func groupByConsumerGroup(rows []datastore.BindingConfigLogRow) map[int64][]datastore.BindingConfigLogRow {
+	groups := make(map[int64][]datastore.BindingConfigLogRow)
 	for _, row := range rows {
 		groups[row.ConsumerGroupId] = append(groups[row.ConsumerGroupId], row)
 	}
@@ -83,8 +83,8 @@ func groupByConsumerGroup(rows []datastore.BindingLogData) map[int64][]datastore
 }
 
 // openWaiters finds the waiting rows whose declarer is still blocked.
-func openWaiters(rows []datastore.BindingLogData, effective *datastore.BindingLogData) []datastore.BindingLogData {
-	var waiters []datastore.BindingLogData
+func openWaiters(rows []datastore.BindingConfigLogRow, effective *datastore.BindingConfigLogRow) []datastore.BindingConfigLogRow {
+	var waiters []datastore.BindingConfigLogRow
 	for i := range rows {
 		row := &rows[i]
 		if row.Status != datastore.BindingLogWaiting {
@@ -103,7 +103,7 @@ func openWaiters(rows []datastore.BindingLogData, effective *datastore.BindingLo
 
 // declarerInstalledAfter reports whether the waiting row's declarer went on
 // to install -- an ended wait leaves its waiting row behind.
-func declarerInstalledAfter(waiting *datastore.BindingLogData, rows []datastore.BindingLogData) bool {
+func declarerInstalledAfter(waiting *datastore.BindingConfigLogRow, rows []datastore.BindingConfigLogRow) bool {
 	for i := range rows {
 		if rows[i].Status == datastore.BindingLogInstalled &&
 			rows[i].DeclaredBy == waiting.DeclaredBy &&

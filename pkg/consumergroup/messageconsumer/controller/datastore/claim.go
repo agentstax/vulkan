@@ -13,8 +13,8 @@ import (
 // ClaimMessagesWithCursor tries to pick up a crashed range (an expired lease)
 // and only claims fresh work from the frontier if there's nothing to reclaim --
 // so crashed ranges drain first.
-func (d *MessageConsumerGroupDatastore) ClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
-	var claimed *ClaimedRangeData
+func (d *MessageConsumerGroupDatastore) ClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRange, error) {
+	var claimed *ClaimedRange
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		claimed, err = d.claimMessagesWithCursor(ctx, topicId, groupId, schemaVersion, limit, maxRangeReclaims, leaseDuration, deliveryLogMode)
@@ -23,7 +23,7 @@ func (d *MessageConsumerGroupDatastore) ClaimMessagesWithCursor(ctx context.Cont
 	return claimed, err
 }
 
-func (d *MessageConsumerGroupDatastore) claimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
+func (d *MessageConsumerGroupDatastore) claimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRange, error) {
 	reclaimed, err := d.reclaimWithCursor(ctx, topicId, groupId, schemaVersion, maxRangeReclaims, leaseDuration, deliveryLogMode)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (d *MessageConsumerGroupDatastore) claimMessagesWithCursor(ctx context.Cont
 }
 
 // readMessages reads topicId's message_log rows in (low, high], ordered by id.
-func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, schemaVersion int64, low int64, high int64) ([]MessageData, error) {
+func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, schemaVersion int64, low int64, high int64) ([]MessageLogRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.readMessages
 		SELECT
@@ -89,5 +89,5 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 		return nil, err
 	}
 
-	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageData])
+	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageLogRow])
 }

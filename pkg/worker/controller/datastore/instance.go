@@ -14,8 +14,8 @@ import (
 // ClaimInstance inserts a worker_instance row iff live instances are under
 // target_instances. nil = declined (already at target, target 0, or the
 // worker row is gone).
-func (d *WorkerDatastore) ClaimInstance(ctx context.Context, workerId int64, ttl time.Duration) (*WorkerInstanceData, error) {
-	var claimed *WorkerInstanceData
+func (d *WorkerDatastore) ClaimInstance(ctx context.Context, workerId int64, ttl time.Duration) (*WorkerInstanceRow, error) {
+	var claimed *WorkerInstanceRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		claimed, err = d.claimInstance(ctx, workerId, ttl)
@@ -24,7 +24,7 @@ func (d *WorkerDatastore) ClaimInstance(ctx context.Context, workerId int64, ttl
 	return claimed, err
 }
 
-func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl time.Duration) (*WorkerInstanceData, error) {
+func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl time.Duration) (*WorkerInstanceRow, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 			OR (SELECT count(*) FROM worker_instance WHERE worker_id = $1 AND expires_at > now()) < $3
 		RETURNING id, worker_id, token, attempts;
 	`
-	var claimed WorkerInstanceData
+	var claimed WorkerInstanceRow
 	err = tx.QueryRow(ctx, insertSql, workerId, ttl.Seconds(), target).
 		Scan(&claimed.Id, &claimed.WorkerId, &claimed.Token, &claimed.Attempts)
 	if err != nil {

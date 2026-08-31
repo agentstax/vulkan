@@ -10,7 +10,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-func toSchedule(data *datastore.ScheduleData) (*schedule.Schedule, error) {
+func toSchedule(data *datastore.ScheduleConfigRow) (*schedule.Schedule, error) {
 	concurrency, err := concurrencyEnum(data.Concurrency)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func toSchedule(data *datastore.ScheduleData) (*schedule.Schedule, error) {
 	}, nil
 }
 
-func toGroupStatus(data *datastore.GroupStatusData) *schedule.GroupStatus {
+func toGroupStatus(data *datastore.GroupStatus) *schedule.GroupStatus {
 	return &schedule.GroupStatus{
 		ConsumerGroup: data.ConsumerGroup,
 		Ran:           data.Ran,
@@ -43,7 +43,7 @@ func toGroupStatus(data *datastore.GroupStatusData) *schedule.GroupStatus {
 	}
 }
 
-func toMessageStatus(data *datastore.MessageStatusData) *schedule.MessageStatus {
+func toMessageStatus(data *datastore.MessageStatus) *schedule.MessageStatus {
 	status := &schedule.MessageStatus{
 		ConsumerGroup: data.ConsumerGroup,
 		MessageId:     data.MessageId,
@@ -58,7 +58,7 @@ func toMessageStatus(data *datastore.MessageStatusData) *schedule.MessageStatus 
 	return status
 }
 
-func toMessageOutcome(data *datastore.MessageStatusData) schedule.MessageOutcome {
+func toMessageOutcome(data *datastore.MessageStatus) schedule.MessageOutcome {
 	switch {
 	case data.Succeeded:
 		return schedule.MessageSucceeded
@@ -76,8 +76,8 @@ func toMessageOutcome(data *datastore.MessageStatusData) schedule.MessageOutcome
 	}
 }
 
-func toRegisterScheduleData[Message topic.Versioned](systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) *datastore.RegisterScheduleData {
-	return &datastore.RegisterScheduleData{
+func toScheduleDeclaration[Message topic.Versioned](systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) *datastore.ScheduleDeclaration {
+	return &datastore.ScheduleDeclaration{
 		Name:          name,
 		Expression:    expression,
 		SystemId:      systemId,

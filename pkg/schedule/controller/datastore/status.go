@@ -9,10 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Status is one GroupStatusData per consumer group that receives the
+// Status is one GroupStatus per consumer group that receives the
 // schedule's messages. Counts cover the topic's retention window.
-func (d *ScheduleDatastore) Status(ctx context.Context, topicId int64, name string) ([]GroupStatusData, error) {
-	var statuses []GroupStatusData
+func (d *ScheduleDatastore) Status(ctx context.Context, topicId int64, name string) ([]GroupStatus, error) {
+	var statuses []GroupStatus
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		statuses, err = d.status(ctx, topicId, name)
@@ -21,7 +21,7 @@ func (d *ScheduleDatastore) Status(ctx context.Context, topicId int64, name stri
 	return statuses, err
 }
 
-func (d *ScheduleDatastore) status(ctx context.Context, topicId int64, name string) ([]GroupStatusData, error) {
+func (d *ScheduleDatastore) status(ctx context.Context, topicId int64, name string) ([]GroupStatus, error) {
 	groups, err := d.matchingGroups(ctx, topicId, name)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func (d *ScheduleDatastore) status(ctx context.Context, topicId int64, name stri
 		return nil, err
 	}
 
-	var statuses []GroupStatusData
+	var statuses []GroupStatus
 	for _, group := range groups {
 		outcomes, err := d.messageOutcomes(ctx, topicId, group.Id, messageIds)
 		if err != nil {
@@ -48,7 +48,7 @@ func (d *ScheduleDatastore) status(ctx context.Context, topicId int64, name stri
 
 // matchingGroups is every consumer group that receives the schedule's requests,
 // ordered by name.
-func (d *ScheduleDatastore) matchingGroups(ctx context.Context, topicId int64, name string) ([]matchingGroupData, error) {
+func (d *ScheduleDatastore) matchingGroups(ctx context.Context, topicId int64, name string) ([]matchingGroupRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: schedule.matchingGroups
 		SELECT cg.id, cg.name
@@ -68,9 +68,9 @@ func (d *ScheduleDatastore) matchingGroups(ctx context.Context, topicId int64, n
 	}
 	defer rows.Close()
 
-	var groups []matchingGroupData
+	var groups []matchingGroupRow
 	for rows.Next() {
-		var group matchingGroupData
+		var group matchingGroupRow
 		if err := rows.Scan(&group.Id, &group.Name); err != nil {
 			return nil, err
 		}
@@ -134,7 +134,7 @@ func (d *ScheduleDatastore) headId(ctx context.Context, topicId int64, name stri
 
 // messageOutcomes is one consumer group's delivery history per message,
 // rolled up to booleans and indexed by message id.
-func (d *ScheduleDatastore) messageOutcomes(ctx context.Context, topicId int64, consumerGroupId int64, messageIds []int64) (map[int64]messageOutcomeData, error) {
+func (d *ScheduleDatastore) messageOutcomes(ctx context.Context, topicId int64, consumerGroupId int64, messageIds []int64) (map[int64]messageOutcomeRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: schedule.messageOutcomes
 		SELECT
@@ -154,10 +154,10 @@ func (d *ScheduleDatastore) messageOutcomes(ctx context.Context, topicId int64, 
 	}
 	defer rows.Close()
 
-	outcomes := make(map[int64]messageOutcomeData)
+	outcomes := make(map[int64]messageOutcomeRow)
 	for rows.Next() {
 		var messageId int64
-		var outcome messageOutcomeData
+		var outcome messageOutcomeRow
 		if err := rows.Scan(&messageId, &outcome.Succeeded, &outcome.Raised, &outcome.Deferred); err != nil {
 			return nil, err
 		}
@@ -175,8 +175,8 @@ func (d *ScheduleDatastore) messageOutcomes(ctx context.Context, topicId int64, 
 
 // 'superseded' and still-pending 'deferred' messages never
 // ran, so ran = succeeded + failed always holds
-func groupStatus(group matchingGroupData, messageIds []int64, headId int64, outcomes map[int64]messageOutcomeData) GroupStatusData {
-	status := GroupStatusData{ConsumerGroup: group.Name}
+func groupStatus(group matchingGroupRow, messageIds []int64, headId int64, outcomes map[int64]messageOutcomeRow) GroupStatus {
+	status := GroupStatus{ConsumerGroup: group.Name}
 	for _, messageId := range messageIds {
 		outcome := outcomes[messageId]
 		switch {

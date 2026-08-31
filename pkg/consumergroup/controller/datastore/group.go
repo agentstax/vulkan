@@ -15,8 +15,8 @@ import (
 
 // GetGroup resolves a consumer group by its owning topic and name.
 // Returns (nil, nil) if the group is not registered on that topic.
-func (d *ConsumerGroupDatastore) GetGroup(ctx context.Context, topicId int64, name string) (*GroupData, error) {
-	var group *GroupData
+func (d *ConsumerGroupDatastore) GetGroup(ctx context.Context, topicId int64, name string) (*ConsumerGroupConfigRow, error) {
+	var group *ConsumerGroupConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		group, err = d.getGroup(ctx, d.Datastore.Pool, topicId, name)
@@ -25,14 +25,14 @@ func (d *ConsumerGroupDatastore) GetGroup(ctx context.Context, topicId int64, na
 	return group, err
 }
 
-func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Querier, topicId int64, name string) (*GroupData, error) {
+func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Querier, topicId int64, name string) (*ConsumerGroupConfigRow, error) {
 	sql := `
 		-- vulkan: consumergroup.getGroup
 		SELECT id, topic_id, name, created_at
 		FROM consumer_group_config
 		WHERE topic_id = $1 AND name = $2;
 	`
-	var group GroupData
+	var group ConsumerGroupConfigRow
 	err := q.QueryRow(ctx, sql, topicId, name).Scan(&group.Id, &group.TopicId, &group.Name, &group.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -45,8 +45,8 @@ func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Queri
 
 // RegisterGroup registers the group and its cursor if it doesn't exist; start
 // places the cursor only when this call creates the row.
-func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*GroupData, error) {
-	var group *GroupData
+func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*ConsumerGroupConfigRow, error) {
+	var group *ConsumerGroupConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		group, err = d.registerGroup(ctx, topicId, name, start)
@@ -57,7 +57,7 @@ func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int6
 
 // registerGroup registers behind a per-(topic,name) advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*GroupData, error) {
+func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*ConsumerGroupConfigRow, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 		VALUES ($1, $2)
 		RETURNING id, topic_id, name, created_at;
 	`
-	var group GroupData
+	var group ConsumerGroupConfigRow
 	if err := tx.QueryRow(ctx, insertSql, topicId, name).Scan(&group.Id, &group.TopicId, &group.Name, &group.CreatedAt); err != nil {
 		// 23503 = the topic_id FK -- name the real problem, not the constraint
 		var pgErr *pgconn.PgError

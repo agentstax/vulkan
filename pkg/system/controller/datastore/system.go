@@ -12,8 +12,8 @@ import (
 
 // Register creates the shared control-plane schema and resolves the
 // singleton system row, returning it.
-func (d *SystemDatastore) Register(ctx context.Context) (*SystemData, error) {
-	var registered *SystemData
+func (d *SystemDatastore) Register(ctx context.Context) (*SystemConfigRow, error) {
+	var registered *SystemConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		registered, err = d.register(ctx)
@@ -22,7 +22,7 @@ func (d *SystemDatastore) Register(ctx context.Context) (*SystemData, error) {
 	return registered, err
 }
 
-func (d *SystemDatastore) register(ctx context.Context) (*SystemData, error) {
+func (d *SystemDatastore) register(ctx context.Context) (*SystemConfigRow, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemData, error) {
 }
 
 // seedSystem seeds the singleton row, first register wins.
-func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemData, error) {
+func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemConfigRow, error) {
 	seedSystemSql := `
 		-- vulkan: system.seedSystem
 		INSERT INTO system_config (created_at, updated_at)
@@ -65,7 +65,7 @@ func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemDat
 		WHERE NOT EXISTS (SELECT 1 FROM system_config)
 		RETURNING id, created_at, updated_at;
 	`
-	seeded, err := d.scanSystemData(tx.QueryRow(ctx, seedSystemSql))
+	seeded, err := d.scanSystemConfigRow(tx.QueryRow(ctx, seedSystemSql))
 	if err != nil {
 		return nil, err
 	}
@@ -101,29 +101,29 @@ func (d *SystemDatastore) recordBaseline(ctx context.Context, tx pgx.Tx, systemI
 
 // Get returns the singleton system row, or (nil, nil) if the system
 // hasn't been registered.
-func (d *SystemDatastore) Get(ctx context.Context) (*SystemData, error) {
-	var systemData *SystemData
+func (d *SystemDatastore) Get(ctx context.Context) (*SystemConfigRow, error) {
+	var systemConfigRow *SystemConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		systemData, err = d.get(ctx, d.Datastore.Pool)
+		systemConfigRow, err = d.get(ctx, d.Datastore.Pool)
 		return err
 	})
-	return systemData, err
+	return systemConfigRow, err
 }
 
-func (d *SystemDatastore) get(ctx context.Context, q datastore.Querier) (*SystemData, error) {
+func (d *SystemDatastore) get(ctx context.Context, q datastore.Querier) (*SystemConfigRow, error) {
 	sql := `
 		-- vulkan: system.get
 		SELECT id, created_at, updated_at
 		FROM system_config;
 	`
-	return d.scanSystemData(q.QueryRow(ctx, sql))
+	return d.scanSystemConfigRow(q.QueryRow(ctx, sql))
 }
 
-// scanSystemData returns (nil, nil) when the row -- or the table itself,
+// scanSystemConfigRow returns (nil, nil) when the row -- or the table itself,
 // 42P01 -- isn't there yet.
-func (d *SystemDatastore) scanSystemData(row pgx.Row) (*SystemData, error) {
-	var data SystemData
+func (d *SystemDatastore) scanSystemConfigRow(row pgx.Row) (*SystemConfigRow, error) {
+	var data SystemConfigRow
 	err := row.Scan(&data.Id, &data.CreatedAt, &data.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -8,8 +8,8 @@ import (
 )
 
 // ListKeyMessages reads messageKey's retained messages, newest first.
-func (d *CompactionDatastore) ListKeyMessages(ctx context.Context, topicId int64, messageKey string, limit int) ([]MessageData, error) {
-	var messages []MessageData
+func (d *CompactionDatastore) ListKeyMessages(ctx context.Context, topicId int64, messageKey string, limit int) ([]MessageLogRow, error) {
+	var messages []MessageLogRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		messages, err = d.listKeyMessages(ctx, topicId, messageKey, limit)
@@ -18,7 +18,7 @@ func (d *CompactionDatastore) ListKeyMessages(ctx context.Context, topicId int64
 	return messages, err
 }
 
-func (d *CompactionDatastore) listKeyMessages(ctx context.Context, topicId int64, messageKey string, limit int) ([]MessageData, error) {
+func (d *CompactionDatastore) listKeyMessages(ctx context.Context, topicId int64, messageKey string, limit int) ([]MessageLogRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: compaction.listKeyMessages
 		SELECT
@@ -40,9 +40,9 @@ func (d *CompactionDatastore) listKeyMessages(ctx context.Context, topicId int64
 	}
 	defer rows.Close()
 
-	var messages []MessageData
+	var messages []MessageLogRow
 	for rows.Next() {
-		var message MessageData
+		var message MessageLogRow
 		if err := rows.Scan(
 			&message.Id,
 			&message.Payload,

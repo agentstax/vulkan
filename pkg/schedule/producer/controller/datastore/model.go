@@ -7,9 +7,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// DueScheduleData is the locked row snapshot one producing transaction works
+// DueScheduleRow is the locked row snapshot one producing transaction works
 // from.
-type DueScheduleData struct {
+type DueScheduleRow struct {
 	Id              int64                    `db:"id"`
 	Name            string                   `db:"name"`
 	Expression      string                   `db:"expression"`

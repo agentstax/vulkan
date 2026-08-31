@@ -4,8 +4,8 @@ import "context"
 
 // WorkerSnapshots is every worker row with its owner columns and aggregated
 // worker_instance liveness.
-func (d *MetricsDatastore) WorkerSnapshots(ctx context.Context) ([]WorkerSnapshotData, error) {
-	var workers []WorkerSnapshotData
+func (d *MetricsDatastore) WorkerSnapshots(ctx context.Context) ([]WorkerSnapshotRow, error) {
+	var workers []WorkerSnapshotRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		workers, err = d.workerSnapshots(ctx)
@@ -14,7 +14,7 @@ func (d *MetricsDatastore) WorkerSnapshots(ctx context.Context) ([]WorkerSnapsho
 	return workers, err
 }
 
-func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapshotData, error) {
+func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapshotRow, error) {
 	sql := `
 		-- vulkan: metrics.workerSnapshots
 		SELECT
@@ -41,9 +41,9 @@ func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapsho
 	}
 	defer rows.Close()
 
-	var workers []WorkerSnapshotData
+	var workers []WorkerSnapshotRow
 	for rows.Next() {
-		var data WorkerSnapshotData
+		var data WorkerSnapshotRow
 		if err := rows.Scan(&data.Name, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.TopicName, &data.GroupName,
 			&data.TargetInstances, &data.LiveInstances, &data.MaxAttempts, &data.UnclaimedForSecs); err != nil {
 			return nil, err

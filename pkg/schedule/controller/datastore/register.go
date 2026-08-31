@@ -6,8 +6,8 @@ import (
 
 // Register resolves declared.Name to its row, creating it if it doesn't
 // exist. An existing row takes declared's config.
-func (d *ScheduleDatastore) Register(ctx context.Context, declared *RegisterScheduleData) (*ScheduleData, error) {
-	var found *ScheduleData
+func (d *ScheduleDatastore) Register(ctx context.Context, declared *ScheduleDeclaration) (*ScheduleConfigRow, error) {
+	var found *ScheduleConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		found, err = d.register(ctx, declared)
@@ -18,7 +18,7 @@ func (d *ScheduleDatastore) Register(ctx context.Context, declared *RegisterSche
 
 // register registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *ScheduleDatastore) register(ctx context.Context, declared *RegisterScheduleData) (*ScheduleData, error) {
+func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDeclaration) (*ScheduleConfigRow, error) {
 	found, err := d.get(ctx, d.Datastore.Pool, declared.Name)
 	if err != nil {
 		return nil, err

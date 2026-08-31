@@ -10,7 +10,7 @@ import (
 
 // replaceConfig overwrites an already-registered schedule's mutable
 // config with declared's: the newest declaration wins.
-func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleData, declared *RegisterScheduleData) (*ScheduleData, error) {
+func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleConfigRow, declared *ScheduleDeclaration) (*ScheduleConfigRow, error) {
 	// a scheduled time already due under the old schedule is dropped, not
 	// produced late -- the new schedule decides when the schedule next runs
 	var next *time.Time
@@ -89,7 +89,7 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleDa
 
 // configChanges is every mutable config field the declaration changed, as log
 // args. Empty means the declaration matched what was stored.
-func configChanges(found *ScheduleData, updated *ScheduleData) []any {
+func configChanges(found *ScheduleConfigRow, updated *ScheduleConfigRow) []any {
 	var changes []any
 	if found.Expression != updated.Expression {
 		changes = append(changes, "expression", replaced(found.Expression, updated.Expression))

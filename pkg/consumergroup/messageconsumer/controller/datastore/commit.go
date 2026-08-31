@@ -20,13 +20,13 @@ import (
 // deliveryLogMode gates the parallel delivery_log_<topic_id> audit writes.
 // The lease is freed FIRST, token-guarded -- so a reclaimed worker's stale
 // commit bails before writing any phantom exception rows.
-func (d *MessageConsumerGroupDatastore) Commit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *MessageConsumerGroupDatastore) Commit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, outcomes []Outcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.commit(ctx, topicId, groupId, token, outcomes, initialBackoff, deliveryLogMode)
 	})
 }
 
-func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, outcomes []Outcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -69,13 +69,13 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 // PartialCommit narrows a still-open lease to lastProcessed and records whatever
 // resolved before an interruption. The lease token isn't freed, it
 // naturally expires and gets reclaimed.
-func (d *MessageConsumerGroupDatastore) PartialCommit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, lastProcessed int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *MessageConsumerGroupDatastore) PartialCommit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, lastProcessed int64, outcomes []Outcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.partialCommit(ctx, topicId, groupId, token, lastProcessed, outcomes, initialBackoff, deliveryLogMode)
 	})
 }
 
-func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, lastProcessed int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, lastProcessed int64, outcomes []Outcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -171,7 +171,7 @@ func logStatement(topicId int64) string {
 // queueOutcomes queues one delivery insert + one log statement per resolved message, sent
 // as a single pipelined round trip. Returns how many rows were written 'dead'.
 // OutcomeSuperseded and OutcomeSuccess write no delivery row -- they record a log row only.
-func queueOutcomes(batch *pgx.Batch, deliverySql string, logSql string, groupId int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) int {
+func queueOutcomes(batch *pgx.Batch, deliverySql string, logSql string, groupId int64, outcomes []Outcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) int {
 	terminals := 0
 	for _, outcome := range outcomes {
 		switch outcome.Kind {

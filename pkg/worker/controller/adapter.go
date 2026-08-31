@@ -7,7 +7,7 @@ import (
 	"uuid"
 )
 
-func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {
+func toWorker(data datastore.ListWorkersRow) (*worker.Worker, error) {
 	var owner *common.Owner
 	var err error
 	switch {
@@ -32,7 +32,7 @@ func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {
 
 // the owner was the lookup key here, so unlike toWorker there are no join
 // columns to resolve it from
-func toOwnedWorker(data *datastore.WorkerData, owner *common.Owner) *worker.Worker {
+func toOwnedWorker(data *datastore.WorkerConfigRow, owner *common.Owner) *worker.Worker {
 	return &worker.Worker{
 		Id:       data.Id,
 		Name:     data.Name,
@@ -41,7 +41,7 @@ func toOwnedWorker(data *datastore.WorkerData, owner *common.Owner) *worker.Work
 	}
 }
 
-func toWorkerInstance(data *datastore.WorkerInstanceData) *worker.WorkerInstance {
+func toWorkerInstance(data *datastore.WorkerInstanceRow) *worker.WorkerInstance {
 	return &worker.WorkerInstance{
 		Id:       data.Id,
 		WorkerId: data.WorkerId,

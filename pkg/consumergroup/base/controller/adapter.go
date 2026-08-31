@@ -6,7 +6,7 @@ import (
 	"uuid"
 )
 
-func toKeyLeaseClaim(data *datastore.KeyLeaseData) *KeyLeaseClaim {
+func toKeyLeaseClaim(data *datastore.KeyLease) *KeyLeaseClaim {
 	return &KeyLeaseClaim{
 		Verdict:         KeyLeaseVerdict(data.Verdict),
 		TopicId:         data.TopicId,
@@ -16,8 +16,8 @@ func toKeyLeaseClaim(data *datastore.KeyLeaseData) *KeyLeaseClaim {
 	}
 }
 
-func toKeyLeaseData(claim *KeyLeaseClaim) *datastore.KeyLeaseData {
-	return &datastore.KeyLeaseData{
+func toKeyLease(claim *KeyLeaseClaim) *datastore.KeyLease {
+	return &datastore.KeyLease{
 		Verdict:         datastore.KeyLeaseVerdict(claim.Verdict),
 		TopicId:         claim.TopicId,
 		ConsumerGroupId: claim.ConsumerGroupId,

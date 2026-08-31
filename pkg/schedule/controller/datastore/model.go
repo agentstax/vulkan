@@ -7,8 +7,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
-// ScheduleData is one schedule_config row joined to its schedule_cursor row.
-type ScheduleData struct {
+// ScheduleConfigRow is one schedule_config row joined to its schedule_cursor row.
+type ScheduleConfigRow struct {
 	Id              int64           `db:"id"`
 	SystemId        int64           `db:"system_id"`
 	TopicId         int64           `db:"topic_id"`
@@ -24,9 +24,9 @@ type ScheduleData struct {
 	LastScheduledAt *time.Time      `db:"last_scheduled_at"`
 }
 
-// RegisterScheduleData is one declaration of a schedule, as RegisterSchedule
+// ScheduleDeclaration is one declaration of a schedule, as RegisterSchedule
 // takes it. Schedule stays parsed -- next_scheduled_at is computed from it.
-type RegisterScheduleData struct {
+type ScheduleDeclaration struct {
 	Name          string
 	Expression    *schedule.Expression
 	SystemId      int64
@@ -38,8 +38,8 @@ type RegisterScheduleData struct {
 	Metadata      any
 }
 
-// GroupStatusData is one consumer group's Status counts.
-type GroupStatusData struct {
+// GroupStatus is one consumer group's Status counts.
+type GroupStatus struct {
 	ConsumerGroup string
 	Ran           int64
 	Succeeded     int64
@@ -47,8 +47,8 @@ type GroupStatusData struct {
 	Failed        int64
 }
 
-// MessageStatusData is one (consumer group, message) ListMessages row.
-type MessageStatusData struct {
+// MessageStatus is one (consumer group, message) ListMessages row.
+type MessageStatus struct {
 	ConsumerGroup string
 	MessageId     int64
 	ScheduledAt   time.Time
@@ -61,22 +61,22 @@ type MessageStatusData struct {
 	SupersededAt  *time.Time
 }
 
-// matchingGroupData is one consumer group that receives a schedule's messages.
-type matchingGroupData struct {
+// matchingGroupRow is one consumer group that receives a schedule's messages.
+type matchingGroupRow struct {
 	Id   int64  `db:"id"`
 	Name string `db:"name"`
 }
 
-// keyMessageData is one of a schedule's message-log rows.
-type keyMessageData struct {
+// keyMessageRow is one of a schedule's message-log rows.
+type keyMessageRow struct {
 	Id          int64     `db:"id"`
 	ScheduledAt time.Time `db:"scheduled_at"` // options->>'scheduled_at'
 	CreatedAt   time.Time `db:"created_at"`
 }
 
-// messageOutcomeData is one message's delivery history for one consumer
+// messageOutcomeRow is one message's delivery history for one consumer
 // group, rolled up to booleans. The zero value reads as "never delivered".
-type messageOutcomeData struct {
+type messageOutcomeRow struct {
 	Succeeded bool `db:"succeeded"`
 	Raised    bool `db:"raised"`
 	Deferred  bool `db:"deferred"`

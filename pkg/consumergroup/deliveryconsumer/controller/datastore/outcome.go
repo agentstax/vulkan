@@ -13,13 +13,13 @@ import (
 // the 'success' log row in the same statement. Terminal success for this
 // (group, message); the message row is untouched and other groups are
 // unaffected.
-func (d *DeliveryConsumerGroupDatastore) RecordSuccess(ctx context.Context, delivery *DeliveryData, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *DeliveryConsumerGroupDatastore) RecordSuccess(ctx context.Context, delivery *ExceptionQueueRow, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordSuccess(ctx, delivery, deliveryLogMode)
 	})
 }
 
-func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, delivery *DeliveryData, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, delivery *ExceptionQueueRow, deliveryLogMode topic.DeliveryLogMode) error {
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeAll {
 		// updated CTE + INSERT keeps the 'done' mark and its
@@ -62,13 +62,13 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 // incremented at claim time, so >= maxAttempts means this was the last try.
 // No retry backoff (the exception_queue table carries no can_run_after) -- a
 // 'ready' row is simply re-claimed on the next poll.
-func (d *DeliveryConsumerGroupDatastore) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryData, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *DeliveryConsumerGroupDatastore) RecordFailure(ctx context.Context, maxAttempts int, delivery *ExceptionQueueRow, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordFailure(ctx, maxAttempts, delivery, failureErr, deliveryLogMode)
 	})
 }
 
-func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryData, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxAttempts int, delivery *ExceptionQueueRow, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	if delivery.Attempts >= maxAttempts {
 		// private call, not the exported RecordTerminal -- this already runs
 		// inside RecordFailure's own Retry.Wrap, calling the exported one
@@ -116,13 +116,13 @@ func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxA
 // RecordTerminal dead-letters a delivery: no more retries. The DLQ for a group is
 // just `WHERE consumer_group_id = $1 AND status = 'dead'`; one group can dead-letter a
 // message while another processes the same offset fine.
-func (d *DeliveryConsumerGroupDatastore) RecordTerminal(ctx context.Context, delivery *DeliveryData, terminalErr error, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *DeliveryConsumerGroupDatastore) RecordTerminal(ctx context.Context, delivery *ExceptionQueueRow, terminalErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordTerminal(ctx, delivery, terminalErr, deliveryLogMode)
 	})
 }
 
-func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, delivery *DeliveryData, terminalErr error, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, delivery *ExceptionQueueRow, terminalErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	var sql string
 	args := []any{delivery.ConsumerGroupId, delivery.MessageId, terminalErr.Error()}
 	if deliveryLogMode == topic.DeliveryLogModeOff {

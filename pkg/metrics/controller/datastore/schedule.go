@@ -4,8 +4,8 @@ import "context"
 
 // ScheduleSnapshots is every schedule (config row joined to its cursor) with
 // its target topic and schedule state.
-func (d *MetricsDatastore) ScheduleSnapshots(ctx context.Context) ([]ScheduleSnapshotData, error) {
-	var schedules []ScheduleSnapshotData
+func (d *MetricsDatastore) ScheduleSnapshots(ctx context.Context) ([]ScheduleSnapshotRow, error) {
+	var schedules []ScheduleSnapshotRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		schedules, err = d.scheduleSnapshots(ctx)
@@ -14,7 +14,7 @@ func (d *MetricsDatastore) ScheduleSnapshots(ctx context.Context) ([]ScheduleSna
 	return schedules, err
 }
 
-func (d *MetricsDatastore) scheduleSnapshots(ctx context.Context) ([]ScheduleSnapshotData, error) {
+func (d *MetricsDatastore) scheduleSnapshots(ctx context.Context) ([]ScheduleSnapshotRow, error) {
 	sql := `
 		-- vulkan: metrics.scheduleSnapshots
 		SELECT
@@ -38,9 +38,9 @@ func (d *MetricsDatastore) scheduleSnapshots(ctx context.Context) ([]ScheduleSna
 	}
 	defer rows.Close()
 
-	var schedules []ScheduleSnapshotData
+	var schedules []ScheduleSnapshotRow
 	for rows.Next() {
-		var data ScheduleSnapshotData
+		var data ScheduleSnapshotRow
 		if err := rows.Scan(&data.Name, &data.SystemId, &data.TopicId, &data.TopicName,
 			&data.Expression, &data.Suspended, &data.NextScheduledAt, &data.LastScheduledAt, &data.DueForSecs); err != nil {
 			return nil, err

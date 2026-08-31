@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, leaseDuration time.Duration) (*ClaimedRangeData, error) {
+func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -169,7 +169,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 		return nil, err
 	}
 
-	claimedRange, err := pgx.CollectOneRow(cursorRows, pgx.RowToStructByName[CursorData])
+	claimedRange, err := pgx.CollectOneRow(cursorRows, pgx.RowToStructByName[ConsumerGroupCursorRow])
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// if we didnt error a consumer with no cursor row would otherwise
@@ -190,7 +190,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 
 // low and high come from the cursor statement above, never from a caller --
 // this guard catches a cursor row that went backwards, not bad input.
-func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, schemaVersion int64, low int64, high int64, leaseDuration time.Duration) (*ClaimedRangeData, error) {
+func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, schemaVersion int64, low int64, high int64, leaseDuration time.Duration) (*ClaimedRange, error) {
 	if low >= high {
 		return nil, fmt.Errorf("claimed range must advance: low %d, high %d", low, high)
 	}
@@ -218,7 +218,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 		return nil, err
 	}
 
-	lease, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[LeaseData])
+	lease, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[ClaimLeaseRow])
 	if err != nil {
 		return nil, err
 	}
@@ -232,5 +232,5 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 		return nil, err
 	}
 
-	return &ClaimedRangeData{Lease: lease, Messages: messages}, nil
+	return &ClaimedRange{Lease: lease, Messages: messages}, nil
 }

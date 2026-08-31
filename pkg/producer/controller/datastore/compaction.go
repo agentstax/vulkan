@@ -13,11 +13,11 @@ import (
 // GetCompactionHeadInTx reads the head against the caller's tx, locking it
 // FOR UPDATE so a following produce on the same key is a race-free
 // compare-and-set. No retry: the tx owns its own error handling.
-func (d *ProducerDatastore) GetCompactionHeadInTx(ctx context.Context, q iDatastore.Querier, topicId int64, messageKey string) (*HeadData, error) {
+func (d *ProducerDatastore) GetCompactionHeadInTx(ctx context.Context, q iDatastore.Querier, topicId int64, messageKey string) (*MessageLogRow, error) {
 	return d.getCompactionHead(ctx, q, topicId, messageKey)
 }
 
-func (d *ProducerDatastore) getCompactionHead(ctx context.Context, q iDatastore.Querier, topicId int64, messageKey string) (*HeadData, error) {
+func (d *ProducerDatastore) getCompactionHead(ctx context.Context, q iDatastore.Querier, topicId int64, messageKey string) (*MessageLogRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: producer.getCompactionHead
 		SELECT
@@ -33,7 +33,7 @@ func (d *ProducerDatastore) getCompactionHead(ctx context.Context, q iDatastore.
 		FOR UPDATE OF h;
 	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
 
-	var head HeadData
+	var head MessageLogRow
 	err := q.QueryRow(ctx, sql, messageKey).Scan(
 		&head.Id,
 		&head.Payload,

@@ -49,7 +49,7 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 // assertVersionSupported renders migrate.ClassifySchemaSupport's answer as
 // the declared error for whichever side is behind. buildVersion is what this
 // binary's registry defines; state is what the database records.
-func assertVersionSupported(kind common.OwnerKind, state *datastore.SchemaStateData, buildVersion int64) error {
+func assertVersionSupported(kind common.OwnerKind, state *datastore.SchemaStateRow, buildVersion int64) error {
 	switch migrate.ClassifySchemaSupport(state.Version, state.MinCompatibleVersion, buildVersion) {
 	case migrate.SchemaOlderThanBuild:
 		return migrate.ErrSchemaOlderThanBuild.With("owner_kind", kind, "version", state.Version, "build_version", buildVersion)

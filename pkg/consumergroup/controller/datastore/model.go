@@ -2,7 +2,7 @@ package datastore
 
 import "time"
 
-type GroupData struct {
+type ConsumerGroupConfigRow struct {
 	Id        int64     `db:"id"`
 	TopicId   int64     `db:"topic_id"`
 	Name      string    `db:"name"`
@@ -17,9 +17,9 @@ const (
 	BindingLogWaiting   BindingLogStatus = "waiting"   // an attempt blocked by a live instance's different set
 )
 
-// BindingLogData is one binding_config_log row joined to the names
+// BindingConfigLogRow is one binding_config_log row joined to the names
 // a listing shows.
-type BindingLogData struct {
+type BindingConfigLogRow struct {
 	Id              int64            `db:"id"`
 	ConsumerGroupId int64            `db:"consumer_group_id"`
 	GroupName       string           `db:"group_name"`

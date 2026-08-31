@@ -13,8 +13,8 @@ import (
 // Claim claims 'ready', expired 'inflight', and 'deferred' rows whose
 // failures (attempts - delays) are under maxRetries. A leased message key
 // excludes its rows.
-func (d *ExceptionConsumerGroupDatastore) Claim(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
-	var claimed []ExceptionData
+func (d *ExceptionConsumerGroupDatastore) Claim(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionQueueRow, error) {
+	var claimed []ExceptionQueueRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		claimed, err = d.claim(ctx, topicId, groupId, schemaVersion, limit, maxRetries, leaseDuration, deliveryLogMode)
@@ -23,7 +23,7 @@ func (d *ExceptionConsumerGroupDatastore) Claim(ctx context.Context, topicId int
 	return claimed, err
 }
 
-func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
+func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionQueueRow, error) {
 	var claimSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		claimSql = fmt.Sprintf(`
@@ -189,12 +189,12 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 		return nil, err
 	}
 
-	return pgx.CollectRows(rows, pgx.RowToStructByName[ExceptionData])
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ExceptionQueueRow])
 }
 
 // RenewLease extends a claim the caller already won.
 // false -> the lease was taken over by another claim.
-func (d *ExceptionConsumerGroupDatastore) RenewLease(ctx context.Context, exception *ExceptionData, duration time.Duration) (bool, error) {
+func (d *ExceptionConsumerGroupDatastore) RenewLease(ctx context.Context, exception *ExceptionQueueRow, duration time.Duration) (bool, error) {
 	var renewed bool
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -204,7 +204,7 @@ func (d *ExceptionConsumerGroupDatastore) RenewLease(ctx context.Context, except
 	return renewed, err
 }
 
-func (d *ExceptionConsumerGroupDatastore) renewLease(ctx context.Context, exception *ExceptionData, duration time.Duration) (bool, error) {
+func (d *ExceptionConsumerGroupDatastore) renewLease(ctx context.Context, exception *ExceptionQueueRow, duration time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: exceptionconsumer.renewLease
 		UPDATE %s

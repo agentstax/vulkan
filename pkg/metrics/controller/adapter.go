@@ -23,7 +23,7 @@ func toOwner(systemId int64, topicId int64, consumerGroupId int64, topicName str
 	}
 }
 
-func toWorkerSnapshot(data datastore.WorkerSnapshotData) (metrics.WorkerSnapshot, error) {
+func toWorkerSnapshot(data datastore.WorkerSnapshotRow) (metrics.WorkerSnapshot, error) {
 	owner, err := toOwner(data.SystemId, data.TopicId, data.ConsumerGroupId, data.TopicName, data.GroupName)
 	if err != nil {
 		return metrics.WorkerSnapshot{}, err
@@ -54,7 +54,7 @@ func classifyWorker(targetInstances int, liveInstances int) metrics.WorkerStatus
 	}
 }
 
-func toScheduleSnapshot(data datastore.ScheduleSnapshotData) (metrics.ScheduleSnapshot, error) {
+func toScheduleSnapshot(data datastore.ScheduleSnapshotRow) (metrics.ScheduleSnapshot, error) {
 	owner, err := common.NewSystemOwner(data.SystemId)
 	if err != nil {
 		return metrics.ScheduleSnapshot{}, err
@@ -79,7 +79,7 @@ func toScheduleSnapshot(data datastore.ScheduleSnapshotData) (metrics.ScheduleSn
 	return snapshot, nil
 }
 
-func toConsumerGroupSnapshot(consumerGroup string, data *datastore.ConsumerGroupSnapshotData) *metrics.ConsumerGroupSnapshot {
+func toConsumerGroupSnapshot(consumerGroup string, data *datastore.ConsumerGroupSnapshotRow) *metrics.ConsumerGroupSnapshot {
 	snapshot := &metrics.ConsumerGroupSnapshot{
 		ConsumerGroup: consumerGroup,
 		Cursor: metrics.CursorSnapshot{
@@ -103,7 +103,7 @@ func toConsumerGroupSnapshot(consumerGroup string, data *datastore.ConsumerGroup
 	return snapshot
 }
 
-func toAbandonedRoutineSnapshot(abandoned []datastore.EventTimestampData, cleared []datastore.EventTimestampData) *metrics.AbandonedRoutineSnapshot {
+func toAbandonedRoutineSnapshot(abandoned []datastore.EventTimestampRow, cleared []datastore.EventTimestampRow) *metrics.AbandonedRoutineSnapshot {
 	// eventKey is the (message, attempt) identity an abandoned event and its
 	// matching cleared event share -- topicId/group are already fixed by the
 	// routing key both reads filter on, so they're not part of the key.
@@ -136,7 +136,7 @@ func toAbandonedRoutineSnapshot(abandoned []datastore.EventTimestampData, cleare
 	return &snapshot
 }
 
-func toSchemaVersionSnapshot(count *datastore.SchemaVersionCountData, lags []datastore.GroupSchemaVersionLagData) metrics.SchemaVersionSnapshot {
+func toSchemaVersionSnapshot(count *datastore.SchemaVersionCountRow, lags []datastore.GroupSchemaVersionLagRow) metrics.SchemaVersionSnapshot {
 	groups := make([]metrics.GroupSchemaVersionLag, 0, len(lags))
 	for _, lag := range lags {
 		groups = append(groups, metrics.GroupSchemaVersionLag{

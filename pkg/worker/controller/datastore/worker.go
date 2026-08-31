@@ -132,8 +132,8 @@ func (d *WorkerDatastore) appendWorkerConfigLog(ctx context.Context, q datastore
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain; a
 // system owner also reaches every row below it.
-func (d *WorkerDatastore) ListWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersData, error) {
-	var workers []ListWorkersData
+func (d *WorkerDatastore) ListWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersRow, error) {
+	var workers []ListWorkersRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		workers, err = d.listWorkers(ctx, owner)
@@ -142,7 +142,7 @@ func (d *WorkerDatastore) ListWorkers(ctx context.Context, owner *common.Owner) 
 	return workers, err
 }
 
-func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersData, error) {
+func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersRow, error) {
 	// one clause per level of the owner chain
 	// or all workers if owner is system.
 	sql := `
@@ -174,9 +174,9 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) 
 	}
 	defer rows.Close()
 
-	var workers []ListWorkersData
+	var workers []ListWorkersRow
 	for rows.Next() {
-		var data ListWorkersData
+		var data ListWorkersRow
 		if err := rows.Scan(&data.Id, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.Name, &data.Metadata, &data.TargetInstances,
 			&data.OwnerSystemId, &data.OwnerTopicId, &data.TopicName, &data.ConsumerGroup); err != nil {
 			return nil, err
@@ -188,17 +188,17 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) 
 
 // GetWorker reads the (name, owner) worker row. Errors if the row was never
 // declared.
-func (d *WorkerDatastore) GetWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerData, error) {
-	var workerData *WorkerData
+func (d *WorkerDatastore) GetWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerConfigRow, error) {
+	var workerConfigRow *WorkerConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		workerData, err = d.getWorker(ctx, name, owner)
+		workerConfigRow, err = d.getWorker(ctx, name, owner)
 		return err
 	})
-	return workerData, err
+	return workerConfigRow, err
 }
 
-func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerData, error) {
+func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerConfigRow, error) {
 	sql := `
 		-- vulkan: worker.getWorker
 		SELECT 
@@ -215,7 +215,7 @@ func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *com
 			AND topic_id IS NOT DISTINCT FROM $3
 			AND consumer_group_id IS NOT DISTINCT FROM $4;
 	`
-	var data WorkerData
+	var data WorkerConfigRow
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).
 		Scan(&data.Id, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.Name, &data.Metadata, &data.TargetInstances)
 	if errors.Is(err, pgx.ErrNoRows) {

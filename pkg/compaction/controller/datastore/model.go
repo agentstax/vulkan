@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// MessageData is one compacted message row.
-type MessageData struct {
+// MessageLogRow is one compacted message row.
+type MessageLogRow struct {
 	Id             int64           `db:"id"`
 	Payload        json.RawMessage `db:"payload"`
 	CreatedAt      time.Time       `db:"created_at"`

@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type MessageData struct {
+type MessageLogRow struct {
 	Id             int64                  `db:"id"`
 	Payload        json.RawMessage        `db:"payload"`
 	CreatedAt      time.Time              `db:"created_at"`
@@ -19,7 +19,7 @@ type MessageData struct {
 	Options        *common.MessageOptions `db:"options"`
 }
 
-type LeaseData struct {
+type ClaimLeaseRow struct {
 	Token           pgtype.UUID `db:"token"`
 	ConsumerGroupId int64       `db:"consumer_group_id"`
 	Low             int64       `db:"low"`
@@ -31,9 +31,9 @@ type LeaseData struct {
 // a leased window of work -- the messages to process plus the lease that guards
 // them. the worker frees the lease (Commit) once the whole range is done; the
 // lazy roller then advances committed past it.
-type ClaimedRangeData struct {
-	Lease    LeaseData
-	Messages []MessageData
+type ClaimedRange struct {
+	Lease    ClaimLeaseRow
+	Messages []MessageLogRow
 
 	// Quarantined -> the reclaimable range hit max reclaims and was written
 	// out as 'ready' exceptions instead; Messages is empty and the lease is
@@ -53,8 +53,8 @@ const (
 	OutcomeSuccess    OutcomeKind = "success"    // ran clean -- log row only, never a delivery row; callers include it only under DeliveryLogModeAll
 )
 
-// OutcomeData is one resolved message of a claimed range.
-type OutcomeData struct {
+// Outcome is one resolved message of a claimed range.
+type Outcome struct {
 	MessageId   int64
 	MessageKey  string                   // "" if unset
 	Concurrency common.ConcurrencyPolicy // the policy the group resolved for the message
@@ -64,7 +64,7 @@ type OutcomeData struct {
 }
 
 // Low == High means cursor exists but is already at the proven head (nothing to claim)
-type CursorData struct {
+type ConsumerGroupCursorRow struct {
 	Low  int64 `db:"low"`
 	High int64 `db:"high"`
 }

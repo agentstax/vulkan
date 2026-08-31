@@ -150,8 +150,8 @@ func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx,
 // ListBindingLog reads every group's newest attempt row per declarer
 // and status, with the names a listing shows -- one query per topic's
 // binding_config_log table.
-func (d *ConsumerGroupDatastore) ListBindingLog(ctx context.Context) ([]BindingLogData, error) {
-	var declarations []BindingLogData
+func (d *ConsumerGroupDatastore) ListBindingLog(ctx context.Context) ([]BindingConfigLogRow, error) {
+	var declarations []BindingConfigLogRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		declarations, err = d.listBindingLog(ctx)
@@ -160,13 +160,13 @@ func (d *ConsumerGroupDatastore) ListBindingLog(ctx context.Context) ([]BindingL
 	return declarations, err
 }
 
-func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context) ([]BindingLogData, error) {
+func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context) ([]BindingConfigLogRow, error) {
 	topicIds, err := d.listGroupTopicIds(ctx, d.Datastore.Pool)
 	if err != nil {
 		return nil, err
 	}
 
-	var declarations []BindingLogData
+	var declarations []BindingConfigLogRow
 	for _, topicId := range topicIds {
 		topicDeclarations, err := d.listTopicBindingLog(ctx, d.Datastore.Pool, topicId, 0)
 		if err != nil {
@@ -177,7 +177,7 @@ func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context) ([]BindingL
 	return declarations, nil
 }
 
-func (d *ConsumerGroupDatastore) listTopicBindingLog(ctx context.Context, querier datastore.Querier, topicId int64, groupId int64) ([]BindingLogData, error) {
+func (d *ConsumerGroupDatastore) listTopicBindingLog(ctx context.Context, querier datastore.Querier, topicId int64, groupId int64) ([]BindingConfigLogRow, error) {
 	// DISTINCT ON keeps newest-per-declarer in SQL -- a long wait's appended
 	// retry rows never ship to the caller
 	sql := fmt.Sprintf(`
@@ -205,9 +205,9 @@ func (d *ConsumerGroupDatastore) listTopicBindingLog(ctx context.Context, querie
 	}
 	defer rows.Close()
 
-	var declarations []BindingLogData
+	var declarations []BindingConfigLogRow
 	for rows.Next() {
-		var declaration BindingLogData
+		var declaration BindingConfigLogRow
 		if err := rows.Scan(
 			&declaration.Id,
 			&declaration.ConsumerGroupId,
@@ -255,8 +255,8 @@ func (d *ConsumerGroupDatastore) listGroupTopicIds(ctx context.Context, querier 
 
 // NewestInstalledDeclaration picks the highest-id installed row -- the
 // effective set's declaration.
-func NewestInstalledDeclaration(declarations []BindingLogData) (*BindingLogData, bool) {
-	var newest *BindingLogData
+func NewestInstalledDeclaration(declarations []BindingConfigLogRow) (*BindingConfigLogRow, bool) {
+	var newest *BindingConfigLogRow
 	for i := range declarations {
 		if declarations[i].Status != BindingLogInstalled {
 			continue

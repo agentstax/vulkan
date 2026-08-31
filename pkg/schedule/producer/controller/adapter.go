@@ -4,7 +4,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule/producer/controller/datastore"
 )
 
-func toDueSchedule(data *datastore.DueScheduleData) *DueSchedule {
+func toDueSchedule(data *datastore.DueScheduleRow) *DueSchedule {
 	return &DueSchedule{
 		Id:              data.Id,
 		Name:            data.Name,

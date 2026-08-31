@@ -9,8 +9,8 @@ import (
 
 // ConsumerGroupSnapshot is the current cursor/delivery/lease picture for
 // (topicId, consumerGroup).
-func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
-	var snapshot *ConsumerGroupSnapshotData
+func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotRow, error) {
+	var snapshot *ConsumerGroupSnapshotRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		snapshot, err = d.consumerGroupSnapshot(ctx, topicId, consumerGroup)
@@ -19,7 +19,7 @@ func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId in
 	return snapshot, err
 }
 
-func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
+func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotRow, error) {
 	var consumerGroupId int64
 	if err := d.Datastore.Pool.QueryRow(ctx, `
 		-- vulkan: metrics.consumerGroupSnapshot
@@ -71,7 +71,7 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId in
 		WHERE c.consumer_group_id = $1;
 	`, iTopic.MessageLogTable(topicId), iTopic.ExceptionQueueTable(topicId), iTopic.ClaimLeaseTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
 
-	var data ConsumerGroupSnapshotData
+	var data ConsumerGroupSnapshotRow
 	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupId).Scan(
 		&data.Claimed,
 		&data.Committed,

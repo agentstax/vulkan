@@ -103,5 +103,5 @@ func (c *KeyLeaseController) Release(ctx context.Context, claim *KeyLeaseClaim) 
 		return false, fmt.Errorf("only an acquired key lease can be released, got %q", claim.Verdict)
 	}
 
-	return c.datastore.Release(ctx, toKeyLeaseData(claim))
+	return c.datastore.Release(ctx, toKeyLease(claim))
 }

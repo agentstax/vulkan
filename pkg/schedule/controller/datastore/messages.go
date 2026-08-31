@@ -10,8 +10,8 @@ import (
 
 // ListMessages is the schedule's newest limit messages, one row per
 // (message, consumer group that receives it), newest message first.
-func (d *ScheduleDatastore) ListMessages(ctx context.Context, topicId int64, name string, limit int) ([]MessageStatusData, error) {
-	var requests []MessageStatusData
+func (d *ScheduleDatastore) ListMessages(ctx context.Context, topicId int64, name string, limit int) ([]MessageStatus, error) {
+	var requests []MessageStatus
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		requests, err = d.listMessages(ctx, topicId, name, limit)
@@ -20,7 +20,7 @@ func (d *ScheduleDatastore) ListMessages(ctx context.Context, topicId int64, nam
 	return requests, err
 }
 
-func (d *ScheduleDatastore) listMessages(ctx context.Context, topicId int64, name string, limit int) ([]MessageStatusData, error) {
+func (d *ScheduleDatastore) listMessages(ctx context.Context, topicId int64, name string, limit int) ([]MessageStatus, error) {
 	groups, err := d.matchingGroups(ctx, topicId, name)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func (d *ScheduleDatastore) listMessages(ctx context.Context, topicId int64, nam
 	}
 
 	ids := messageIds(messages)
-	var statuses []MessageStatusData
+	var statuses []MessageStatus
 	for _, group := range groups {
 		outcomes, err := d.messageOutcomes(ctx, topicId, group.Id, ids)
 		if err != nil {
@@ -56,7 +56,7 @@ func (d *ScheduleDatastore) listMessages(ctx context.Context, topicId int64, nam
 
 // keyMessages is the newest limit message-log rows on the schedule's message
 // key, newest first.
-func (d *ScheduleDatastore) keyMessages(ctx context.Context, topicId int64, name string, limit int) ([]keyMessageData, error) {
+func (d *ScheduleDatastore) keyMessages(ctx context.Context, topicId int64, name string, limit int) ([]keyMessageRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: schedule.keyMessages
 		SELECT
@@ -75,9 +75,9 @@ func (d *ScheduleDatastore) keyMessages(ctx context.Context, topicId int64, name
 	}
 	defer rows.Close()
 
-	var messages []keyMessageData
+	var messages []keyMessageRow
 	for rows.Next() {
-		var message keyMessageData
+		var message keyMessageRow
 		if err := rows.Scan(&message.Id, &message.ScheduledAt, &message.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -95,11 +95,11 @@ func (d *ScheduleDatastore) keyMessages(ctx context.Context, topicId int64, name
 
 // groupMessageStatuses is one consumer group's row per message, newest
 // message first.
-func groupMessageStatuses(group matchingGroupData, messages []keyMessageData, headId int64, outcomes map[int64]messageOutcomeData) []MessageStatusData {
-	var statuses []MessageStatusData
+func groupMessageStatuses(group matchingGroupRow, messages []keyMessageRow, headId int64, outcomes map[int64]messageOutcomeRow) []MessageStatus {
+	var statuses []MessageStatus
 	for i, message := range messages {
 		outcome := outcomes[message.Id]
-		status := MessageStatusData{
+		status := MessageStatus{
 			ConsumerGroup: group.Name,
 			MessageId:     message.Id,
 			ScheduledAt:   message.ScheduledAt,
@@ -121,7 +121,7 @@ func groupMessageStatuses(group matchingGroupData, messages []keyMessageData, he
 	return statuses
 }
 
-func messageIds(messages []keyMessageData) []int64 {
+func messageIds(messages []keyMessageRow) []int64 {
 	ids := make([]int64, len(messages))
 	for i, message := range messages {
 		ids[i] = message.Id

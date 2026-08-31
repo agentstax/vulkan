@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic/controller/datastore"
 )
 
-func toTopic(data *datastore.TopicData) (*topic.Topic, error) {
+func toTopic(data *datastore.TopicConfigRow) (*topic.Topic, error) {
 	deliveryLogMode, err := deliveryLogModeEnum(data.DeliveryLogMode)
 	if err != nil {
 		return nil, err
@@ -26,8 +26,8 @@ func toTopic(data *datastore.TopicData) (*topic.Topic, error) {
 	}, nil
 }
 
-func toTopicData(systemId int64, name string, cfg *TopicConfig) *datastore.TopicData {
-	return &datastore.TopicData{
+func toTopicConfigRow(systemId int64, name string, cfg *TopicConfig) *datastore.TopicConfigRow {
+	return &datastore.TopicConfigRow{
 		SystemId:               systemId,
 		Name:                   name,
 		PartitionSize:          cfg.PartitionSize,

@@ -8,10 +8,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// KeyLeaseData is the key claim an outcome releases in its own transaction --
+// KeyLease is the key claim an outcome releases in its own transaction --
 // the token match means a lease that expired and was taken over is never
 // released by the old holder.
-type KeyLeaseData struct {
+type KeyLease struct {
 	TopicId         int64
 	ConsumerGroupId int64
 	MessageKey      string
@@ -20,7 +20,7 @@ type KeyLeaseData struct {
 
 // one exception claimed off the exception window for (re)processing -- the lease
 // token guards its resolution: every write against the row matches on it.
-type ExceptionData struct {
+type ExceptionQueueRow struct {
 	ConsumerGroupId int64                  `db:"consumer_group_id"`
 	TopicId         int64                  `db:"topic_id"`
 	MessageId       int64                  `db:"message_id"`
