@@ -107,7 +107,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ ListGroups on an unregistered topic -> %v\n", err)
 
 	step("cleanup: Topic.Destroy drops the family")
-	must(orders.Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(orders.Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	gone, err := orders.Get(ctx)
 	must(err)
 	if gone != nil {

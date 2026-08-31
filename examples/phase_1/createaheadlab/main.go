@@ -118,7 +118,7 @@ func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 		publish(ctx, wpInstance)
 	}
 	must(vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
-		_, err := wpInstance.ProduceInTx(ctx, tx, workFunc, vulkan.ProduceOptions{}) // id 80
+		_, err := wpInstance.ProduceInTx(ctx, tx, workFunc, nil) // id 80
 		return err
 	}))
 	waitForPartition(ctx, ds, tp.Id, 1)
@@ -145,7 +145,7 @@ func register(ctx context.Context, ds *iDatastore.PostgresDatastore, scenario st
 	must(err)
 
 	cleanup := func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}
 	return tp, wpInstance, warns, cleanup
 }
@@ -155,7 +155,7 @@ func workFunc(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error)
 }
 
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work]) {
-	_, err := wpInstance.ProduceFunc(ctx, workFunc, vulkan.ProduceOptions{})
+	_, err := wpInstance.ProduceFunc(ctx, workFunc, nil)
 	must(err)
 }
 
@@ -168,7 +168,7 @@ func publishConcurrent(ctx context.Context, wpInstance *vulkan.ProducerInstance[
 			for range perWorker {
 				work, err := common.NewWork(30, "admin@example.com")
 				must(err)
-				_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
+				_, err = wpInstance.Produce(ctx, work, nil)
 				must(err)
 			}
 		}()

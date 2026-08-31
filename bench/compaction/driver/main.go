@@ -94,7 +94,7 @@ func main() {
 	registered, err := client.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// the table is empty here, so ALTER alone is enough -- every page it ever
@@ -134,7 +134,7 @@ func main() {
 			defer wg.Done()
 			mine := make([]time.Duration, 0, 4096)
 			for produced := 0; phase.Load() != phaseDone; produced++ {
-				options := vulkan.ProduceOptions{}
+				options := &vulkan.ProduceOptions{}
 				if len(keys) > 0 {
 					// rotate the pool from a per-goroutine offset -- maximal
 					// reverse-order pressure at enqueue, the sort's job to absorb

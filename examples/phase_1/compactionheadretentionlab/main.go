@@ -90,7 +90,7 @@ func dropPartitionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -131,7 +131,7 @@ func sweepBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -163,7 +163,7 @@ func sweepBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], key string) {
-	opts := vulkan.ProduceOptions{}
+	opts := &vulkan.ProduceOptions{}
 	if key != "" {
 		compaction, err := vulkan.NewCompactionOptions(0)
 		must(err)

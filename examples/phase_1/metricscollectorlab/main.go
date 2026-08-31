@@ -111,7 +111,7 @@ func run() (err error) {
 		must(err)
 		topicNames = append(topicNames, name)
 		defer func() {
-			must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+			must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 		}()
 
 		for _, group := range groupNames {
@@ -124,7 +124,7 @@ func run() (err error) {
 		for range messagesPerTopic {
 			work, err := common.NewWork(30, "admin@example.com")
 			must(err)
-			_, err = instance.Produce(ctx, work, vulkan.ProduceOptions{})
+			_, err = instance.Produce(ctx, work, nil)
 			must(err)
 		}
 	}

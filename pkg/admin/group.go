@@ -72,9 +72,12 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, groupNa
 // Unless options.Force is set:
 //   - a consumer still runs on the group     -> ErrGroupLive
 //   - the group still holds delivery rows    -> ErrGroupDeliveriesPending
-func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, groupName string, options DestroyOptions) error {
+func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, groupName string, options *DestroyOptions) error {
 	if !a.allowDestroy {
 		return topic.ErrDestroyDisabled
+	}
+	if options == nil {
+		options = &DestroyOptions{}
 	}
 	if topicName == "" {
 		return errors.New("topic name is required")

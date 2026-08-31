@@ -80,7 +80,7 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -244,7 +244,7 @@ func seedSleep(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.W
 			}
 			work.SleepMs = ms
 			return work, nil
-		}, vulkan.ProduceOptions{})
+		}, nil)
 		must(err)
 	}
 }

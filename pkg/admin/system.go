@@ -123,9 +123,12 @@ func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) e
 // Unless options.Force is set:
 //   - a worker instance is still live   -> system.ErrSystemLive
 //   - a non-system topic is registered  -> system.ErrTopicsRegistered
-func (a *MessageAdmin) DestroySystem(ctx context.Context, options DestroyOptions) error {
+func (a *MessageAdmin) DestroySystem(ctx context.Context, options *DestroyOptions) error {
 	if !a.allowDestroy {
 		return topic.ErrDestroyDisabled
+	}
+	if options == nil {
+		options = &DestroyOptions{}
 	}
 
 	sys, err := a.systemController.Get(ctx)

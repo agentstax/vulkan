@@ -73,7 +73,7 @@ func run() error {
 
 	for _, delta := range []int64{100, -30, 55} {
 		_, err := balances.Produce(ctx, &BalanceChanged{AccountId: "acct-1", Delta: delta},
-			vulkan.ProduceOptions{MessageKey: "acct-1"})
+			&vulkan.ProduceOptions{MessageKey: "acct-1"})
 		if err != nil {
 			return err
 		}

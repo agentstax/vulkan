@@ -96,7 +96,7 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 
 	// no IdempotencyKey: Produce creates a fresh v7 per call, so every run is
 	// its own message
-	return instance.Produce(ctx, stored, producer.ProduceOptions{
+	return instance.Produce(ctx, stored, &producer.ProduceOptions{
 		RoutingKey: found.Name,
 		MessageKey: found.Name,
 		Compaction: compaction,

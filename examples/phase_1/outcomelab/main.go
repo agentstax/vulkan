@@ -85,7 +85,7 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	payments, err := client.RegisterProducer[Payment](ctx, tp.Name, nil)
@@ -93,7 +93,7 @@ func run() (err error) {
 
 	ids := map[string]int64{}
 	for _, branch := range []string{"ok", "retry", "declined", "settles-later"} {
-		produced, err := payments.Produce(ctx, &Payment{Branch: branch}, vulkan.ProduceOptions{})
+		produced, err := payments.Produce(ctx, &Payment{Branch: branch}, nil)
 		must(err)
 		ids[branch] = produced.Id
 	}

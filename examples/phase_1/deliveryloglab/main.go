@@ -111,7 +111,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.Postgres
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
@@ -141,7 +141,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresD
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 1)
@@ -182,7 +182,7 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastor
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// registration creates delivery_log_<id> regardless of the flag -- the
@@ -215,7 +215,7 @@ func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastor
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
@@ -265,7 +265,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *iDatastore.Postgres
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 4) // fills partition 0 (ids 1-4), fails id 1
@@ -292,7 +292,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDat
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 1)
@@ -320,7 +320,7 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// a keyed message with its first-delivery 'deferred' row, as the cursor path writes it
@@ -373,7 +373,7 @@ func seed(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work],
 	for range n {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, vulkan.ProduceOptions{})
+		}, nil)
 		must(err)
 	}
 }

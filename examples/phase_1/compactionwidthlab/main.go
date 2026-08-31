@@ -84,14 +84,14 @@ func run() (err error) {
 	narrow, err := client.RegisterTopic(ctx, narrowName, &vulkan.TopicConfig{PartitionSize: narrowPartitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(narrowName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(narrowName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
 	wide, err := client.RegisterTopic(ctx, wideName, &vulkan.TopicConfig{PartitionSize: widePartitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(wideName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(wideName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	step("seed both topics with the identical 40-message workload")
@@ -163,7 +163,7 @@ func publish(ctx context.Context, wp *vulkan.ProducerInstance[Record], key strin
 	must(err)
 	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Record, error) {
 		return &Record{Key: key}, nil
-	}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
+	}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 

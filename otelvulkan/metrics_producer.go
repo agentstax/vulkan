@@ -68,7 +68,7 @@ func (p *MetricsProducerInstance) Produce(ctx context.Context, measurement *metr
 		return nil, err
 	}
 
-	return p.instance.Produce(ctx, measurement, producer.ProduceOptions{
+	return p.instance.Produce(ctx, measurement, &producer.ProduceOptions{
 		RoutingKey: measurement.Name,
 		MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 		Compaction: compaction,

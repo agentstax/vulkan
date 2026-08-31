@@ -61,18 +61,18 @@ func run() (err error) {
 	must(err)
 
 	const topicName = "test.producerregister"
-	_ = client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}) // clean slate from any crashed prior run
+	_ = client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}) // clean slate from any crashed prior run
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// ===== Register on Background =====
 	step("Register(context.Background()) -- a build step, no lifetime to enforce")
 	instance, err := client.RegisterProducer[Message](ctx, tp.Name, nil)
 	must(err)
-	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, vulkan.ProduceOptions{})
+	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, nil)
 	must(err)
 	fmt.Printf("  ✓ produced %+v id=%d duplicate=%t\n", *produced.Message, produced.Id, produced.Duplicate)
 
@@ -80,12 +80,12 @@ func run() (err error) {
 	step("Produce with a cancelled ctx -- refused, nothing published")
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel() // stands in for SIGINT/SIGTERM: the app's shutdown context has fired
-	_, err = instance.Produce(cancelled, &Message{Data: "too late"}, vulkan.ProduceOptions{})
+	_, err = instance.Produce(cancelled, &Message{Data: "too late"}, nil)
 	requireIs(err, context.Canceled)
 
 	// ===== the instance holds no lifetime =====
 	step("produce again on a live ctx -- the same instance still accepts work")
-	_, err = instance.Produce(ctx, &Message{Data: "second life"}, vulkan.ProduceOptions{})
+	_, err = instance.Produce(ctx, &Message{Data: "second life"}, nil)
 	must(err)
 	fmt.Println("  ✓ same instance produces after the cancelled call")
 
@@ -93,7 +93,7 @@ func run() (err error) {
 	step("Register again -- an independent instance from the same factory")
 	sibling, err := client.RegisterProducer[Message](ctx, tp.Name, nil)
 	must(err)
-	_, err = sibling.Produce(ctx, &Message{Data: "sibling"}, vulkan.ProduceOptions{})
+	_, err = sibling.Produce(ctx, &Message{Data: "sibling"}, nil)
 	must(err)
 	fmt.Println("  ✓ sibling instance produces")
 

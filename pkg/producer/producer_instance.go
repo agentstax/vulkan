@@ -58,27 +58,34 @@ func NewProducerInstance[Message topic.Versioned](resolvedTopic *topic.TopicData
 // (or your own crash) without double-publishing, supply an IdempotencyKey:
 // the rerun dedups against whatever actually landed, reported as
 // ProduceResult.Duplicate == true.
-func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, options ProduceOptions) (*ProduceResult[Message], error) {
+//
+// options may be nil for the defaults.
+func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, options *ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
 	ctx = logging.WithLogBuffer(ctx)
 
-	options.Message = options.Message.Fill(p.Config.Message)
-	if err := options.Validate(); err != nil {
+	resolved := ProduceOptions{}
+	if options != nil {
+		resolved = *options
+	}
+
+	resolved.Message = resolved.Message.Fill(p.Config.Message)
+	if err := resolved.Validate(); err != nil {
 		return nil, err
 	}
 
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
-	if options.IdempotencyKey != "" {
+	if resolved.IdempotencyKey != "" {
 		passthrough := func(context.Context, Tx, string) (*Message, error) { return message, nil }
-		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, options)
+		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, resolved)
 		if err != nil {
 			return nil, err
 		}
 		return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 	}
 
-	appended, err := p.batcher.Produce(ctx, message, options)
+	appended, err := p.batcher.Produce(ctx, message, resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -130,15 +137,21 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
-func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], options ProduceOptions) (*ProduceResult[Message], error) {
+// options may be nil for the defaults.
+func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], options *ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
 
-	options.Message = options.Message.Fill(p.Config.Message)
-	if err := options.Validate(); err != nil {
+	resolved := ProduceOptions{}
+	if options != nil {
+		resolved = *options
+	}
+
+	resolved.Message = resolved.Message.Fill(p.Config.Message)
+	if err := resolved.Validate(); err != nil {
 		return nil, err
 	}
 
-	appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, options)
+	appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -163,15 +176,20 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // rollback) and InTransaction never reruns your closure -- retry it
 // yourself. Ordering these calls by message key avoids the cycle;
 // batched Produce sorts the same way, so a consistent order composes.
-func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options ProduceOptions) (*ProduceResult[Message], error) {
+func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options *ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
 
-	options.Message = options.Message.Fill(p.Config.Message)
-	if err := options.Validate(); err != nil {
+	resolved := ProduceOptions{}
+	if options != nil {
+		resolved = *options
+	}
+
+	resolved.Message = resolved.Message.Fill(p.Config.Message)
+	if err := resolved.Validate(); err != nil {
 		return nil, err
 	}
 
-	appended, err := p.controller.AppendMessageInTx(ctx, tx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, options)
+	appended, err := p.controller.AppendMessageInTx(ctx, tx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, resolved)
 	if err != nil {
 		return nil, err
 	}

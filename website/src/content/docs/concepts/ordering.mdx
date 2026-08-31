@@ -26,7 +26,7 @@ group:
 
 ```go
 produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
-	vulkan.ProduceOptions{
+	&vulkan.ProduceOptions{
 		MessageKey: "acct-42",
 		Message:    &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyExclusive},
 	})

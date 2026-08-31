@@ -82,7 +82,7 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -152,7 +152,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[RankedReco
 	must(err)
 	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*RankedRecord, error) {
 		return &RankedRecord{Key: key, Label: label}, nil
-	}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
+	}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 

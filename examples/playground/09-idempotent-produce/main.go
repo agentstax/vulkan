@@ -66,7 +66,7 @@ func run() error {
 	// the upstream delivers evt_123 twice
 	for range 2 {
 		event := &WebhookEvent{EventId: "evt_123", Kind: "charge.succeeded"}
-		produced, err := webhooks.Produce(ctx, event, vulkan.ProduceOptions{
+		produced, err := webhooks.Produce(ctx, event, &vulkan.ProduceOptions{
 			IdempotencyKey: event.EventId,
 		})
 		if err != nil {

@@ -88,12 +88,12 @@ func run() (err error) {
 	for range 3 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, vulkan.ProduceOptions{})
+		}, nil)
 		must(err)
 	}
 
 	step("a registered user topic refuses the destroy")
-	err = client.System().Destroy(ctx, vulkan.DestroyOptions{})
+	err = client.System().Destroy(ctx, nil)
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("a running consumer refuses it first -- the worker guard outranks the topic guard")
@@ -111,7 +111,7 @@ func run() (err error) {
 	}()
 	waitLiveInstances(ctx, true)
 
-	err = client.System().Destroy(ctx, vulkan.DestroyOptions{})
+	err = client.System().Destroy(ctx, nil)
 	assertErrorIs("ErrSystemLive", err, system.ErrSystemLive)
 
 	stopConsumer()
@@ -119,7 +119,7 @@ func run() (err error) {
 	waitLiveInstances(ctx, false)
 
 	step("consumer stopped: the topic guard is back")
-	err = client.System().Destroy(ctx, vulkan.DestroyOptions{})
+	err = client.System().Destroy(ctx, nil)
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("user topic destroyed: the unforced destroy succeeds")
@@ -128,8 +128,8 @@ func run() (err error) {
 	var alertsTopicId int64
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = '__system.alerts';`).Scan(&alertsTopicId))
 
-	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
-	must(client.System().Destroy(ctx, vulkan.DestroyOptions{}))
+	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.System().Destroy(ctx, nil))
 
 	for _, table := range controlPlaneTables {
 		assertTableExists(ctx, table, false)
@@ -137,7 +137,7 @@ func run() (err error) {
 	assertTableExists(ctx, fmt.Sprintf("message_log_%d", alertsTopicId), false)
 
 	step("a second destroy is a no-op, not an error")
-	must(client.System().Destroy(ctx, vulkan.DestroyOptions{}))
+	must(client.System().Destroy(ctx, nil))
 	fmt.Println("  ✓ destroy of an already-destroyed system returned nil")
 
 	step("RegisterSystem stands the schema back up")

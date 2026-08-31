@@ -295,7 +295,7 @@ func run() (err error) {
 	fmt.Println("  ✓ expired swept, live kept")
 
 	step("destroying the topic drops its message_key_lease table")
-	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	var keyLeaseTable *string
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("message_key_lease_%d", topicId)).Scan(&keyLeaseTable))
 	if keyLeaseTable != nil {
@@ -318,7 +318,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key 
 	must(err)
 	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
-	}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
+	}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 

@@ -74,10 +74,10 @@ func run() (err error) {
 	must(err)
 	_, err = client.Topic(userTopic.Name).Rename(ctx, common.SystemTopicPrefix+"evil")
 	assertReserved("RenameTopic(user name -> __system.evil)", err)
-	must(client.Topic(userTopic.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(userTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	step("DestroyTopic refused on the system topic")
-	err = client.Topic(metrics.TopicName).Destroy(ctx, vulkan.DestroyOptions{Force: true})
+	err = client.Topic(metrics.TopicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true})
 	assertReserved("DestroyTopic(__system.metrics)", err)
 
 	step("re-running RegisterSystem keeps the same row and re-declares its config")

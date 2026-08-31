@@ -70,7 +70,7 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -111,7 +111,7 @@ func run() (err error) {
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work]) {
 	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
-	}, vulkan.ProduceOptions{})
+	}, nil)
 	must(err)
 }
 

@@ -112,7 +112,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, nil)
 		return err
 	})
 
@@ -137,7 +137,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 	for range 2 {
 		work, err := common.NewWork(31, "keyed@example.com")
 		must(err)
-		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{IdempotencyKey: key})
+		_, err = wpInstance.Produce(ctx, work, &vulkan.ProduceOptions{IdempotencyKey: key})
 		must(err)
 	}
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total+1, "a caller-keyed Produce routed per-call and deduped its retry")
@@ -159,7 +159,7 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	items := make([]*vulkan.ProduceItem[rawPayload], 0, total)
 	for s := range total {
 		payload := rawPayload(fmt.Sprintf(`{"seq": %d}`, s))
-		item, err := vulkan.NewProduceItem(&payload, vulkan.ProduceOptions{})
+		item, err := vulkan.NewProduceItem(&payload, nil)
 		must(err)
 		items = append(items, item)
 	}
@@ -192,7 +192,7 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 		if s == 2 {
 			payload = rawPayload(`{"seq": "\u0000"}`)
 		}
-		item, err := vulkan.NewProduceItem(&payload, vulkan.ProduceOptions{})
+		item, err := vulkan.NewProduceItem(&payload, nil)
 		must(err)
 		badItems = append(badItems, item)
 	}
@@ -207,7 +207,7 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 
 	// caller keys are single-Produce-only; an empty batch is a usage error
 	keyedPayload := rawPayload(`{"seq": 0}`)
-	if _, err := vulkan.NewProduceItem(&keyedPayload, vulkan.ProduceOptions{IdempotencyKey: uuid.NewV7().String()}); err == nil {
+	if _, err := vulkan.NewProduceItem(&keyedPayload, &vulkan.ProduceOptions{IdempotencyKey: uuid.NewV7().String()}); err == nil {
 		die("NewProduceItem accepted a caller IdempotencyKey")
 	}
 	if _, err := wpInstance.ProduceBatch(ctx); err == nil {
@@ -242,7 +242,7 @@ func faultIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 			case brokenSeq:
 				payload = rawPayload(`{"broken`)
 			}
-			_, errs[s] = wpInstance.Produce(ctx, &payload, vulkan.ProduceOptions{})
+			_, errs[s] = wpInstance.Produce(ctx, &payload, nil)
 		})
 	}
 	wg.Wait()
@@ -288,7 +288,7 @@ func hotCompactedKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{MessageKey: fmt.Sprintf("hot:%d", (p+s)%keys), Compaction: compaction})
+		_, err = wpInstance.Produce(ctx, work, &vulkan.ProduceOptions{MessageKey: fmt.Sprintf("hot:%d", (p+s)%keys), Compaction: compaction})
 		return err
 	})
 
@@ -325,7 +325,7 @@ func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	for range 15 {
 		work, err := common.NewWork(30, "admin@example.com")
 		must(err)
-		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, nil)
 		must(err)
 	}
 	produceConcurrently(8, 5, func(p, s int) error {
@@ -333,7 +333,7 @@ func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, nil)
 		return err
 	})
 
@@ -350,11 +350,11 @@ func throughputScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	total := producers * msgs
 
 	batched := timeArm(ctx, ds, "batched", producers, msgs, func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
+		_, err := wpInstance.Produce(ctx, work, nil)
 		return err
 	})
 	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, vulkan.Tx, string) (*common.Work, error) { return work, nil }, vulkan.ProduceOptions{})
+		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, vulkan.Tx, string) (*common.Work, error) { return work, nil }, nil)
 		return err
 	})
 
@@ -365,7 +365,7 @@ func throughputScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	// (a per-call arm would need a pool connection per caller).
 	const satProducers, satMsgs = 800, 50
 	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
+		_, err := wpInstance.Produce(ctx, work, nil)
 		return err
 	})
 	satRate := float64(satProducers*satMsgs) / saturated.Seconds()
@@ -424,7 +424,7 @@ func registerTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, label 
 	tp, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	return tp, client, func() {
-		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}
 }
 

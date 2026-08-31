@@ -138,7 +138,7 @@ func (i *ScheduleProducerInstance) produceDue(ctx context.Context, id int64) err
 		passthrough := func(context.Context, producer.Tx, string) (*schedule.StoredMessage, error) {
 			return stored, nil
 		}
-		produced, err := target.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
+		produced, err := target.ProduceInTx(ctx, tx, passthrough, &producer.ProduceOptions{
 			RoutingKey:     row.Name,
 			MessageKey:     row.Name,
 			Compaction:     compaction,

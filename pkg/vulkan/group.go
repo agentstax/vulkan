@@ -32,6 +32,6 @@ func (g *Group) ListWorkers(ctx context.Context) ([]*WorkerData, error) {
 // Destroy permanently deletes the group: its cursor, bindings, leases,
 // delivery rows, group-owned workers and schedules. The topic and its
 // messages are untouched. Refused unless ClientConfig.AllowDestroy is set.
-func (g *Group) Destroy(ctx context.Context, options DestroyOptions) error {
+func (g *Group) Destroy(ctx context.Context, options *DestroyOptions) error {
 	return g.client.admin.DestroyGroup(ctx, g.topicName, g.name, options)
 }

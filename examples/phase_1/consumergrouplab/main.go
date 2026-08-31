@@ -140,7 +140,7 @@ func run() (err error) {
 	must(err)
 	var seededHead int64
 	for n := 1; n <= 3; n++ {
-		produced, err := producing.Produce(ctx, &labMessage{N: n}, vulkan.ProduceOptions{})
+		produced, err := producing.Produce(ctx, &labMessage{N: n}, nil)
 		must(err)
 		seededHead = produced.Id
 	}
@@ -151,7 +151,7 @@ func run() (err error) {
 	})
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, seededHead, "after Register at the head")
-	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, vulkan.ProduceOptions{})
+	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, nil)
 	must(err)
 	consumeCtx, stop := context.WithCancel(ctx)
 	time.AfterFunc(20*time.Second, stop)
@@ -174,7 +174,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ cursor created at %d, only message 4 delivered, a later Register left the row alone\n", seededHead)
 
 	step("destroying a topic destroys ITS groups and no one else's")
-	must(client.Topic(topicB.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(topicB.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	var bRows int
 	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`, other.Id).Scan(&bRows))
 	if bRows != 0 {
@@ -210,7 +210,7 @@ func run() (err error) {
 	// cleanup
 	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
 	must(err)
-	must(client.Topic(topicA.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(topicA.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	fmt.Printf("\n✅ consumer group registry lab PASSED\n")
 	return nil
@@ -227,10 +227,10 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, clien
 
 	locked, err := vulkan.NewClient(ds, nil)
 	must(err)
-	if err := locked.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, topic.ErrDestroyDisabled) {
+	if err := locked.Topic(topicA.Name).Group(doomedName).Destroy(ctx, nil); !errors.Is(err, topic.ErrDestroyDisabled) {
 		die(fmt.Sprintf("destroy without AllowDestroy: want ErrDestroyDisabled, got %v", err))
 	}
-	if err := client.Topic(topicA.Name).Group(doomedName+".missing").Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupNotFound) {
+	if err := client.Topic(topicA.Name).Group(doomedName+".missing").Destroy(ctx, nil); !errors.Is(err, consumergroup.ErrGroupNotFound) {
 		die(fmt.Sprintf("destroy of an unregistered group: want ErrGroupNotFound, got %v", err))
 	}
 	fmt.Printf("  ✓ AllowDestroy gate and not-found error\n")
@@ -249,7 +249,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, clien
 	if claimed == nil {
 		die("the lab's own worker claim was declined")
 	}
-	if err := client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupLive) {
+	if err := client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, nil); !errors.Is(err, consumergroup.ErrGroupLive) {
 		die(fmt.Sprintf("destroy with a live worker instance: want ErrGroupLive, got %v", err))
 	}
 	must(workers.ReleaseInstance(ctx, claimed.Id, claimed.Token))
@@ -265,10 +265,10 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, clien
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_key_lease_%d (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'labkey', gen_random_uuid(), now());`, topicA.Id), doomed.Id)
 	must(err)
-	if err := client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
+	if err := client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, nil); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
 		die(fmt.Sprintf("destroy with delivery rows: want ErrGroupDeliveriesPending, got %v", err))
 	}
-	must(client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	for what, sql := range map[string]string{
 		"group rows":        `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`,

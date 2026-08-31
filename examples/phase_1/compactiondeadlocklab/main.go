@@ -97,7 +97,7 @@ func run() (err error) {
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err = client.RegisterProducer[labMessage](ctx, topicName, nil)
@@ -151,7 +151,7 @@ func batcherAbsenceScenario(ctx context.Context) {
 					record(err)
 					return
 				}
-				if _, err := instance.Produce(ctx, &labMessage{Note: key}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction}); err != nil {
+				if _, err := instance.Produce(ctx, &labMessage{Note: key}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction}); err != nil {
 					record(err)
 					return
 				}
@@ -186,7 +186,7 @@ func produceInTxDeadlockScenario(ctx context.Context) {
 	for _, key := range []string{"tx-a", "tx-b"} {
 		compaction, err := vulkan.NewCompactionOptions(0)
 		must(err)
-		_, err = wpInstance.Produce(ctx, &labMessage{Note: "seed"}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
+		_, err = wpInstance.Produce(ctx, &labMessage{Note: "seed"}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 		must(err)
 	}
 	deadlocksBefore := deadlockCount(ctx)
@@ -279,7 +279,7 @@ func produceKeyInTx(ctx context.Context, tx vulkan.Tx, key string, idempotencyKe
 	}
 	_, err = wpInstance.ProduceInTx(ctx, tx, func(ctx context.Context, tx vulkan.Tx, _ string) (*labMessage, error) {
 		return &labMessage{Note: key}, nil
-	}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
+	}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
 	return err
 }
 

@@ -63,7 +63,7 @@ func run() error {
 		return err
 	}
 
-	produced, err := orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, vulkan.ProduceOptions{})
+	produced, err := orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, nil)
 	if err != nil {
 		return err
 	}

@@ -330,7 +330,7 @@ func executorSection(ctx context.Context) {
 	// one write gives the lab topic its first partition
 	labInstance, err := client.RegisterProducer[labMessage](ctx, labTopic.Name, nil)
 	must(err)
-	_, err = labInstance.Produce(ctx, &labMessage{Value: "seed"}, vulkan.ProduceOptions{})
+	_, err = labInstance.Produce(ctx, &labMessage{Value: "seed"}, nil)
 	must(err)
 
 	otherGroup := registerGroup(ctx, prefix+".other", "some.other.job")
@@ -554,7 +554,7 @@ func cleanup() {
 	exec(ctx, fmt.Sprintf(`DELETE FROM compaction_head_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
 	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE message_key = ANY($1);`, alertsTopic.Id), keys)
 
-	must(client.Topic(labTopic.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
 		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),

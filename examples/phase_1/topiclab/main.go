@@ -97,7 +97,7 @@ func run() (err error) {
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
 		for _, t := range []*topic.TopicData{topicA, topicB, topicC, topicD} {
-			must(client.Topic(t.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+			must(client.Topic(t.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 		}
 	}()
 
@@ -233,7 +233,7 @@ func run() (err error) {
 func publish(ctx context.Context, wp *vulkan.ProducerInstance[common.Work], routingKey string) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
-	}, vulkan.ProduceOptions{RoutingKey: routingKey})
+	}, &vulkan.ProduceOptions{RoutingKey: routingKey})
 	must(err)
 }
 

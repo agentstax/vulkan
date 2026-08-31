@@ -473,7 +473,7 @@ func run() (err error) {
 	fmt.Println("  ✓ deferred behind the crashed holder, ran after expiry via takeover")
 
 	step("Exclusive without a MessageKey is refused at produce time")
-	if _, err := wpInstance.Produce(ctx, &Rec{Version: 1}, vulkan.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyExclusive}}); err == nil {
+	if _, err := wpInstance.Produce(ctx, &Rec{Version: 1}, &vulkan.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyExclusive}}); err == nil {
 		die("produce must refuse Exclusive without a MessageKey")
 	}
 	fmt.Println("  ✓ refused")
@@ -625,7 +625,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ v4 ran once, v1-v3 audited out superseded (v1=%d v2=%d v3=%d v4=%d)\n", tv1, tv2, tv3, tv4)
 
 	step("destroying the topic drops the exception queue")
-	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	fmt.Println("  ✓ destroyed")
 
 	fmt.Println("\n✅ EXCLUSIVE LAB PASSED")
@@ -787,7 +787,7 @@ func ran(key string, version int) bool {
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key string, version int, policy common.ConcurrencyPolicy) {
 	compaction, err := vulkan.NewCompactionOptions(0)
 	must(err)
-	opts := vulkan.ProduceOptions{MessageKey: key, Compaction: compaction}
+	opts := &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction}
 	if policy != "" {
 		opts.Message = &common.MessageOptions{Concurrency: policy}
 	}
@@ -802,7 +802,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key 
 func publishUncompacted(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key string, version int) {
 	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
-	}, vulkan.ProduceOptions{
+	}, &vulkan.ProduceOptions{
 		MessageKey: key,
 		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyExclusive},
 	})
@@ -812,7 +812,7 @@ func publishUncompacted(ctx context.Context, wpInstance *vulkan.ProducerInstance
 func publishUnkeyed(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], version int) {
 	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Rec, error) {
 		return &Rec{Version: version}, nil
-	}, vulkan.ProduceOptions{})
+	}, nil)
 	must(err)
 }
 

@@ -125,7 +125,7 @@ func main() {
 	registered, err := client.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// the tables are empty here, so ALTER alone is enough -- every page they
@@ -292,7 +292,7 @@ func prefillTopic(ctx context.Context, client *vulkan.Client, topicName string, 
 				}
 
 				fail := sequence%1000 < failThousandths
-				if _, err := instance.Produce(ctx, &benchMessage{Fail: fail}, vulkan.ProduceOptions{}); err != nil {
+				if _, err := instance.Produce(ctx, &benchMessage{Fail: fail}, nil); err != nil {
 					record(err)
 					return
 				}

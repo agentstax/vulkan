@@ -86,7 +86,7 @@ func run() (err error) {
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// ===== install + join =====
@@ -172,7 +172,7 @@ func run() (err error) {
 
 	wpInstance, err := client.RegisterProducer[labMessage](ctx, topicName, nil)
 	must(err)
-	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, vulkan.ProduceOptions{RoutingKey: "payments.charge"})
+	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, &vulkan.ProduceOptions{RoutingKey: "payments.charge"})
 	must(err)
 	select {
 	case note := <-received:

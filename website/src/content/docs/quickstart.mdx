@@ -90,7 +90,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	instance, err := client.RegisterProducer[WelcomeEmail](ctx, registered.Name, nil)
    	must(err)
 
-   	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, vulkan.ProduceOptions{})
+   	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, nil)
    	must(err)
    	fmt.Printf("produced message id=%d\n", produced.Id)
    }
@@ -253,7 +253,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    			return nil, err
    		}
    		return &WelcomeEmail{UserId: "user-123"}, nil
-   	}, vulkan.ProduceOptions{})
+   	}, nil)
    ```
 
    To produce to several topics atomically, `vulkan.InTransaction` opens

@@ -36,7 +36,7 @@ func (t *Topic) Rename(ctx context.Context, newName string) (*TopicData, error) 
 
 // Destroy permanently deletes the topic, its messages, and every consumer
 // group on it. Refused unless ClientConfig.AllowDestroy is set.
-func (t *Topic) Destroy(ctx context.Context, options DestroyOptions) error {
+func (t *Topic) Destroy(ctx context.Context, options *DestroyOptions) error {
 	return t.client.admin.DestroyTopic(ctx, t.name, options)
 }
 

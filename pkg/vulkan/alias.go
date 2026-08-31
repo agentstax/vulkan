@@ -96,8 +96,8 @@ func Delay(delay time.Duration) error {
 }
 
 // NewProduceItem pairs one message with its options for a multi-message
-// produce call.
-func NewProduceItem[Message Versioned](message *Message, options ProduceOptions) (*ProduceItem[Message], error) {
+// produce call. options may be nil for the defaults.
+func NewProduceItem[Message Versioned](message *Message, options *ProduceOptions) (*ProduceItem[Message], error) {
 	return producer.NewProduceItem[Message](message, options)
 }
 

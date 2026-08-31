@@ -101,7 +101,7 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -250,7 +250,7 @@ func run() (err error) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[KeyedRecord], key string, version int, deleted bool) {
-	opts := vulkan.ProduceOptions{}
+	opts := &vulkan.ProduceOptions{}
 	if key != "" {
 		compaction, err := vulkan.NewCompactionOptions(0)
 		must(err)

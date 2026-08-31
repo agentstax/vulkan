@@ -40,7 +40,7 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 	if err != nil {
 		return "", err
 	}
-	if _, err := c.alerts.Produce(ctx, published, producer.ProduceOptions{
+	if _, err := c.alerts.Produce(ctx, published, &producer.ProduceOptions{
 		RoutingKey: published.RoutingKey(),
 		MessageKey: messageKey,
 		Compaction: compaction,

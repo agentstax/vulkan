@@ -60,7 +60,7 @@ func CreateOrder(ctx context.Context, instance *vulkan.ProducerInstance[OrderCre
 				return nil, err
 			}
 			return &OrderCreated{OrderId: order.Id}, nil
-		}, vulkan.ProduceOptions{})
+		}, nil)
 	return err
 }
 ```
@@ -103,7 +103,7 @@ workaround (send-after-commit hooks, with their own failure window).
    			return nil, err
    		}
    		return nil, errors.New("rollback on purpose")
-   	}, vulkan.ProduceOptions{})
+   	}, nil)
    ```
 
 2. Check both tables — **neither** row exists. Resolve the topic's id
@@ -139,13 +139,13 @@ err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) err
 	if _, err := invoices.ProduceInTx(ctx, tx,
 		func(context.Context, vulkan.Tx, string) (*InvoicePaid, error) {
 			return &InvoicePaid{OrderId: orderId}, nil
-		}, vulkan.ProduceOptions{}); err != nil {
+		}, nil); err != nil {
 		return err
 	}
 	_, err := receipts.ProduceInTx(ctx, tx,
 		func(context.Context, vulkan.Tx, string) (*ReceiptRequested, error) {
 			return &ReceiptRequested{OrderId: orderId}, nil
-		}, vulkan.ProduceOptions{})
+		}, nil)
 	return err
 })
 ```

@@ -37,6 +37,6 @@ func (s *System) Migrate(ctx context.Context, targetVersion int64) error {
 // Destroy permanently deletes every topic, schedule, consumer group,
 // worker, and the shared control-plane tables. Refused unless
 // ClientConfig.AllowDestroy is set.
-func (s *System) Destroy(ctx context.Context, options DestroyOptions) error {
+func (s *System) Destroy(ctx context.Context, options *DestroyOptions) error {
 	return s.client.admin.DestroySystem(ctx, options)
 }

@@ -13,7 +13,7 @@ the key permits, loosest to strictest: `parallel`, `exclusive`,
 
 ```go
 produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
-	vulkan.ProduceOptions{
+	&vulkan.ProduceOptions{
 		MessageKey: "acct-42",
 		Message:    &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyOrdered},
 	})

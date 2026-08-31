@@ -64,7 +64,7 @@ func run() (err error) {
 
 	step("RegisterSchedule returns the handle; Get reads the row")
 	scheduleName := fmt.Sprintf("schedulepermitlab.nightly.%d", run)
-	nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx, scheduleName, "0 3 * * *", topicName, &ReportRequestedV1{Kind: "nightly"}, nil)
+	nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx, vulkan.ScheduleSpec{Name: scheduleName, Topic: topicName, Cron: "0 3 * * *"}, &ReportRequestedV1{Kind: "nightly"}, nil)
 	must(err)
 	row, err := nightly.Get(ctx)
 	must(err)
@@ -108,7 +108,7 @@ func run() (err error) {
 
 	step("cleanup")
 	must(nightly.Destroy(ctx))
-	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	fmt.Println("\n✅ SCHEDULE PERMIT LAB PASSED")
 	return nil

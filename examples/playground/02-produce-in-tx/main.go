@@ -84,7 +84,7 @@ func run() error {
 				return nil, err
 			}
 			return &OrderPlacedV1{OrderId: "ord-2"}, nil
-		}, vulkan.ProduceOptions{})
+		}, nil)
 	if err != nil {
 		return err
 	}
@@ -98,13 +98,13 @@ func run() error {
 		if _, err := orders.ProduceInTx(ctx, tx,
 			func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderPlacedV1, error) {
 				return &OrderPlacedV1{OrderId: "ord-3"}, nil
-			}, vulkan.ProduceOptions{}); err != nil {
+			}, nil); err != nil {
 			return err
 		}
 		_, err := inventory.ProduceInTx(ctx, tx,
 			func(ctx context.Context, tx vulkan.Tx, _ string) (*InventoryReservedV1, error) {
 				return &InventoryReservedV1{OrderId: "ord-3", Sku: "sku-9"}, nil
-			}, vulkan.ProduceOptions{})
+			}, nil)
 		return err
 	}); err != nil {
 		return err

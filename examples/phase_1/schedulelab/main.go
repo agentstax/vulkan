@@ -207,7 +207,7 @@ func targetSection(ctx context.Context) {
 	_, err = registerSchedule(ctx, prefix+".standalone", "@hourly", target.Name, payload, nil)
 	must(err)
 
-	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	cascaded, err := client.Schedule(prefix + ".cascade").Get(ctx)
 	must(err)
@@ -769,7 +769,7 @@ func statusFor(statuses []*schedule.GroupStatus, group string) *schedule.GroupSt
 }
 
 func cleanupTarget() {
-	must(client.Topic(target.Name).Destroy(context.Background(), vulkan.DestroyOptions{Force: true}))
+	must(client.Topic(target.Name).Destroy(context.Background(), &vulkan.DestroyOptions{Force: true}))
 }
 
 // --- assertion helpers ---

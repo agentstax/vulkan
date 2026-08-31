@@ -132,7 +132,7 @@ messages).`,
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying the system in %q... ", databaseName)
 			}
-			if err := client.System().Destroy(ctx, vulkan.DestroyOptions{Force: force}); err != nil {
+			if err := client.System().Destroy(ctx, &vulkan.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}

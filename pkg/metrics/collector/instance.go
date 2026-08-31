@@ -309,7 +309,7 @@ func (i *MetricsCollectorInstance) collectConsumerGroup(ctx context.Context, sna
 		if err != nil {
 			return err
 		}
-		item, err := producer.NewProduceItem(measurement, producer.ProduceOptions{
+		item, err := producer.NewProduceItem(measurement, &producer.ProduceOptions{
 			RoutingKey: measurement.Name,
 			MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 			Compaction: compaction,
@@ -330,7 +330,7 @@ func (i *MetricsCollectorInstance) produceMeasurement(ctx context.Context, measu
 		return err
 	}
 
-	_, err = i.producerInstance.Produce(ctx, measurement, producer.ProduceOptions{
+	_, err = i.producerInstance.Produce(ctx, measurement, &producer.ProduceOptions{
 		RoutingKey: measurement.Name,
 		MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 		Compaction: compaction,

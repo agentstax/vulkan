@@ -67,7 +67,7 @@ func run() (err error) {
 	created, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 720 * time.Hour})
 	must(err)
 	defer func() {
-		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 	if count := topicLogCount(ctx, ds, created.Id); count != 1 {
 		die(fmt.Sprintf("topic_config_log rows after create = %d, want 1", count))

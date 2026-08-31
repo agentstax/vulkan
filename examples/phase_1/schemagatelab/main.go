@@ -84,8 +84,8 @@ func run() (err error) {
 	sysOwner, err := controller.SystemOwner(ctx)
 	must(err)
 	defer func() {
-		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
-		must(client.Topic(siblingName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(siblingName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// 1. supported schema -> Register succeeds -----------------------------------

@@ -78,7 +78,7 @@ rows are discarded).`,
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying %q... ", groupName)
 			}
-			if err := client.Topic(topicName).Group(groupName).Destroy(ctx, vulkan.DestroyOptions{Force: force}); err != nil {
+			if err := client.Topic(topicName).Group(groupName).Destroy(ctx, &vulkan.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}

@@ -111,7 +111,7 @@ func run() (err error) {
 	registered, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wp1Instance, err := client.RegisterProducer[V1Order](ctx, name, nil)
@@ -122,7 +122,7 @@ func run() (err error) {
 		cents := int64(i+1) * 100
 		compaction, err := vulkan.NewCompactionOptions(0)
 		must(err)
-		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
+		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 		must(err)
 		fmt.Printf("  wrote %s cents=%d as V1Order\n", key, cents)
 	}
@@ -158,7 +158,7 @@ func run() (err error) {
 		if err != nil {
 			return err
 		}
-		_, err = wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, vulkan.ProduceOptions{
+		_, err = wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, &vulkan.ProduceOptions{
 			MessageKey:     work.Key,
 			Compaction:     compaction,
 			IdempotencyKey: bridgeIdempotencyKey(meta.Id),
@@ -230,7 +230,7 @@ func liveWrite(ctx context.Context, wp *vulkan.ProducerInstance[V2Order], key st
 	if err != nil {
 		return err
 	}
-	_, err = wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
+	_, err = wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	return err
 }
 

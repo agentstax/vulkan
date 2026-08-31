@@ -90,7 +90,7 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -104,7 +104,7 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 		wg.Go(func() {
 			produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
-			}, vulkan.ProduceOptions{IdempotencyKey: key})
+			}, &vulkan.ProduceOptions{IdempotencyKey: key})
 			must(err)
 			if produced.Duplicate {
 				duplicateCount.Add(1)
@@ -142,7 +142,7 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *iDatastore.Postgres
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -154,7 +154,7 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *iDatastore.Postgres
 			key := uuid.NewV7().String()
 			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
-			}, vulkan.ProduceOptions{IdempotencyKey: key})
+			}, &vulkan.ProduceOptions{IdempotencyKey: key})
 			must(err)
 		})
 	}

@@ -69,7 +69,7 @@ func run() error {
 			}
 
 			return work, nil
-		}, vulkan.ProduceOptions{RoutingKey: *routingKeyPtr})
+		}, &vulkan.ProduceOptions{RoutingKey: *routingKeyPtr})
 		if err != nil {
 			return err
 		}

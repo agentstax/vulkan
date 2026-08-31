@@ -123,14 +123,14 @@ func (c *Client) RegisterProducer[Message Versioned](ctx context.Context, topicN
 	return messageProducer.Register[Message](ctx, topicName)
 }
 
-// RegisterSchedule declares the schedule named name on the target topic and
+// RegisterSchedule declares the schedule spec names on its target topic and
 // returns its handle. The newest declaration wins. cfg may be nil or
 // sparse.
-func (c *Client) RegisterSchedule[Message Versioned](ctx context.Context, name string, expression string, topicName string, payload *Message, cfg *ScheduleConfig) (*Schedule, error) {
-	if _, err := c.scheduler.Register[Message](ctx, name, expression, topicName, payload, cfg); err != nil {
+func (c *Client) RegisterSchedule[Message Versioned](ctx context.Context, spec ScheduleSpec, payload *Message, cfg *ScheduleConfig) (*Schedule, error) {
+	if _, err := c.scheduler.Register[Message](ctx, spec.Name, spec.Cron, spec.Topic, payload, cfg); err != nil {
 		return nil, err
 	}
-	return c.Schedule(name), nil
+	return c.Schedule(spec.Name), nil
 }
 
 // RegisterTopic declares the named topic, creating its tables on first

@@ -83,7 +83,7 @@ func run() error {
 
 	// Put
 	_, err = configs.Produce(ctx, &DeviceConfig{DeviceId: "dev-7", Interval: 30},
-		vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
+		&vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func run() error {
 		_, err = configs.ProduceInTx(ctx, tx,
 			func(ctx context.Context, tx vulkan.Tx, _ string) (*DeviceConfig, error) {
 				return &next, nil
-			}, vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
+			}, &vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
 		return err
 	}); err != nil {
 		return err

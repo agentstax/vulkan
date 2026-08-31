@@ -83,7 +83,7 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -175,7 +175,7 @@ func run() (err error) {
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], routingKey string) string {
 	produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
-	}, vulkan.ProduceOptions{RoutingKey: routingKey})
+	}, &vulkan.ProduceOptions{RoutingKey: routingKey})
 	must(err)
 	return fmt.Sprintf("work=%s routing_key=%q", produced.Message.Id, routingKey)
 }

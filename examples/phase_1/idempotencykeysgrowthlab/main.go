@@ -96,7 +96,7 @@ func accumulationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -142,7 +142,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -166,7 +166,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 				default:
 					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 						return common.NewWork(30, "admin@example.com")
-					}, vulkan.ProduceOptions{})
+					}, nil)
 					must(err)
 					published.Add(1)
 				}
@@ -250,7 +250,7 @@ func publishConcurrent(ctx context.Context, wpInstance *vulkan.ProducerInstance[
 			for range count {
 				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
-				}, vulkan.ProduceOptions{})
+				}, nil)
 				must(err)
 			}
 		})

@@ -33,7 +33,7 @@ err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) err
 	_, err := receipts.ProduceInTx(ctx, tx,
 		func(context.Context, vulkan.Tx, string) (*ReceiptRequested, error) {
 			return &ReceiptRequested{OrderId: orderId}, nil
-		}, vulkan.ProduceOptions{})
+		}, nil)
 	return err
 })
 ```
@@ -72,7 +72,7 @@ Make the email a message:
 _, err := emails.ProduceInTx(ctx, tx,
 	func(context.Context, vulkan.Tx, string) (*EmailRequested, error) {
 		return &EmailRequested{To: "jamie@example.com", Template: "payment-received"}, nil
-	}, vulkan.ProduceOptions{})
+	}, nil)
 ```
 
 An `email-sender` consumer group calls `sendEmailConfirmation()` in
@@ -93,7 +93,7 @@ mint fresh per call, so a naive rerun produces the message twice.
 ```go
 // any stable string works as the key -- here the order id already is one
 produced, err := instance.Produce(ctx, &OrderCreated{OrderId: order.Id},
-	vulkan.ProduceOptions{IdempotencyKey: "order-created-" + order.Id})
+	&vulkan.ProduceOptions{IdempotencyKey: "order-created-" + order.Id})
 if err != nil {
 	return err
 }

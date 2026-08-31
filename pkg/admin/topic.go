@@ -147,9 +147,12 @@ type DestroyOptions struct {
 // MessageAdminConfig.AllowDestroy is set, ErrTopicNotFound if name isn't
 // registered, and ErrTopicNotEmpty if the topic still holds
 // messages and options.Force isn't set.
-func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, options DestroyOptions) error {
+func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, options *DestroyOptions) error {
 	if !a.allowDestroy {
 		return topic.ErrDestroyDisabled
+	}
+	if options == nil {
+		options = &DestroyOptions{}
 	}
 	if name == "" {
 		return errors.New("topic name is required")

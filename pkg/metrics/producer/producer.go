@@ -155,7 +155,7 @@ func (p *MetricsProducer) flushGoRoutineEvents(ctx context.Context, instance *iP
 func (p *MetricsProducer) produceGoRoutineEvents(ctx context.Context, instance *iProducer.ProducerInstance[metrics.GoRoutineEvent], events []*metrics.GoRoutineEvent) error {
 	items := make([]*iProducer.ProduceItem[metrics.GoRoutineEvent], 0, len(events))
 	for _, event := range events {
-		item, err := iProducer.NewProduceItem(event, iProducer.ProduceOptions{RoutingKey: metrics.AbandonedRoutineKey(event.TopicId, event.Group)})
+		item, err := iProducer.NewProduceItem(event, &iProducer.ProduceOptions{RoutingKey: metrics.AbandonedRoutineKey(event.TopicId, event.Group)})
 		if err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ func (p *MetricsProducer) flushSessionCounters(ctx context.Context, instance *iP
 			p.Logger.WarnContext(ctx, "could not produce session counters", "group", attributes["group"], "topic", attributes["topic"], "session", attributes["session"], "error", err)
 			return
 		}
-		item, err := iProducer.NewProduceItem(measurement, iProducer.ProduceOptions{
+		item, err := iProducer.NewProduceItem(measurement, &iProducer.ProduceOptions{
 			RoutingKey: measurement.Name,
 			MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 			Compaction: compaction,

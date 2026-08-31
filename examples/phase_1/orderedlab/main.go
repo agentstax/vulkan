@@ -81,7 +81,7 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	adjustments, err := client.RegisterProducer[Adjustment](ctx, tp.Name, nil)
@@ -89,17 +89,17 @@ func run() (err error) {
 
 	step("produce-time guards")
 	ordered := &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyOrdered}
-	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, vulkan.ProduceOptions{Message: ordered}); err == nil {
+	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, &vulkan.ProduceOptions{Message: ordered}); err == nil {
 		die("ordered without a MessageKey must be refused")
 	}
-	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, vulkan.ProduceOptions{MessageKey: "acct-0", Message: ordered, Compaction: &vulkan.CompactionOptions{Enable: true}}); err == nil {
+	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, &vulkan.ProduceOptions{MessageKey: "acct-0", Message: ordered, Compaction: &vulkan.CompactionOptions{Enable: true}}); err == nil {
 		die("ordered with Compaction enabled must be refused")
 	}
 	fmt.Println("PASS: ordered needs a key and refuses compaction")
 
 	ids := map[string]int64{}
 	produce := func(account string, seq int) {
-		produced, err := adjustments.Produce(ctx, &Adjustment{Account: account, Seq: seq}, vulkan.ProduceOptions{MessageKey: account, Message: ordered})
+		produced, err := adjustments.Produce(ctx, &Adjustment{Account: account, Seq: seq}, &vulkan.ProduceOptions{MessageKey: account, Message: ordered})
 		must(err)
 		ids[fmt.Sprintf("%s/%d", account, seq)] = produced.Id
 	}

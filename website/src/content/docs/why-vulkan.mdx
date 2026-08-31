@@ -67,7 +67,7 @@ produced, err := instance.ProduceFunc(ctx,
 			return nil, err
 		}
 		return &OrderCreated{OrderId: order.Id}, nil
-	}, vulkan.ProduceOptions{})
+	}, nil)
 ```
 
 <ThreadAside label="TIP" title="This is the headline feature">

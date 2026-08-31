@@ -155,7 +155,7 @@ func (i *PartitionCountInstance) produceCheckSummary(ctx context.Context, evalua
 		if err != nil {
 			return err
 		}
-		item, err := producer.NewProduceItem(measurement, producer.ProduceOptions{
+		item, err := producer.NewProduceItem(measurement, &producer.ProduceOptions{
 			RoutingKey: measurement.Name,
 			MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 			Compaction: compaction,

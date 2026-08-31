@@ -95,7 +95,7 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -109,7 +109,7 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 		wg.Go(func() {
 			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
-			}, vulkan.ProduceOptions{MessageKey: "hot-key", Compaction: compaction})
+			}, &vulkan.ProduceOptions{MessageKey: "hot-key", Compaction: compaction})
 			must(err)
 		})
 	}
@@ -134,7 +134,7 @@ func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: scalePartitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	insertStaleRow(ctx, ds, tp.Id)

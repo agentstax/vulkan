@@ -91,7 +91,7 @@ func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -122,14 +122,14 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 		return fmt.Sprintf("key-%d", g) // each goroutine owns a distinct key -- no cross-goroutine contention
 	})
 	defer func() {
-		must(client.Topic(manyKeysTopic).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(manyKeysTopic).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
 	})
 	defer func() {
-		must(client.Topic(oneKeyTopic).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(oneKeyTopic).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	time.Sleep(1 * time.Second) // let PG's stats collector flush before reading it
@@ -155,7 +155,7 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 func timeSequential(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
-		opts := vulkan.ProduceOptions{}
+		opts := &vulkan.ProduceOptions{}
 		if key := keyFn(i); key != "" {
 			compaction, err := vulkan.NewCompactionOptions(0)
 			must(err)
@@ -193,7 +193,7 @@ func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label
 				must(err)
 				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
-				}, vulkan.ProduceOptions{MessageKey: keyFn(g, i), Compaction: compaction})
+				}, &vulkan.ProduceOptions{MessageKey: keyFn(g, i), Compaction: compaction})
 				must(err)
 			}
 		})

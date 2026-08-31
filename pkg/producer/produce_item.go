@@ -13,16 +13,22 @@ type ProduceItem[Message topic.Versioned] struct {
 
 // A set Options.IdempotencyKey is rejected: one hot key would stall the
 // batch's whole shared transaction, so keyed messages go through Produce.
-func NewProduceItem[Message topic.Versioned](message *Message, options ProduceOptions) (*ProduceItem[Message], error) {
+// options may be nil for the defaults.
+func NewProduceItem[Message topic.Versioned](message *Message, options *ProduceOptions) (*ProduceItem[Message], error) {
 	if message == nil {
 		return nil, errors.New("message must not be nil")
 	}
-	if options.IdempotencyKey != "" {
+
+	resolved := ProduceOptions{}
+	if options != nil {
+		resolved = *options
+	}
+	if resolved.IdempotencyKey != "" {
 		return nil, errors.New("IdempotencyKey is not supported in a batch -- produce keyed messages individually")
 	}
 
 	return &ProduceItem[Message]{
 		Message: message,
-		Options: options,
+		Options: resolved,
 	}, nil
 }
