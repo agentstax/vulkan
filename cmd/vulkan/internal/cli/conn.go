@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const databaseURLEnv = "VULKAN_ADMIN_DATABASE_URL"
@@ -131,12 +131,12 @@ func openDatastore(ctx context.Context, databaseURL string) (*datastore.Postgres
 	return ds, func() { ds.Close() }, nil
 }
 
-// openAdmin is openDatastore plus a MessageAdmin. AllowDestroy is set here
+// openClient is openDatastore plus a Client. AllowDestroy is set here
 // because this binary IS the privileged admin tool -- the gate exists for
 // library embedders, not the CLI (ADMIN_CLI.md). The datastore is returned
-// too, so destroy can build a topic controller for the one thing
-// MessageAdmin doesn't expose (an emptiness probe).
-func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *datastore.PostgresDatastore, func(), error) {
+// too, so destroy can build a topic controller for the one thing the
+// client doesn't expose (an emptiness probe).
+func openClient(ctx context.Context, databaseURL string) (*vulkan.Client, *datastore.PostgresDatastore, func(), error) {
 	ds, closeDS, err := openDatastore(ctx, databaseURL)
 	if err != nil {
 		return nil, nil, nil, err
@@ -146,14 +146,14 @@ func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *d
 	// and only at ERROR: the library's routine INFO/WARN lines ("topic
 	// registered", "topic destroyed") are implementation noise here -- the CLI's
 	// own ✓/error output is the interface.
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{
 		AllowDestroy: true,
 		Logger:       logging.NewDefaultLogger(os.Stderr, slog.LevelError),
 	})
 	if err != nil {
 		closeDS()
-		return nil, nil, nil, failOp("could not initialize admin: %v", err)
+		return nil, nil, nil, failOp("could not initialize client: %v", err)
 	}
 
-	return mAdmin, ds, closeDS, nil
+	return client, ds, closeDS, nil
 }

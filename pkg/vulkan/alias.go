@@ -33,9 +33,11 @@ type (
 	ProducerInstance[Message Versioned] = producer.ProducerInstance[Message]
 	ProduceOptions                      = producer.ProduceOptions
 	ProduceResult[Message Versioned]    = producer.ProduceResult[Message]
-	Tx                                  = producer.Tx
+	ProduceItem[Message Versioned]      = producer.ProduceItem[Message]
 
 	SchedulerInstance[Message Versioned] = scheduler.SchedulerInstance[Message]
+	CompactionOptions                    = producer.CompactionOptions
+	CursorPosition                       = consumergroup.CursorPosition
 	ScheduleConfig                       = schedulecontroller.ScheduleConfig
 
 	TopicConfig          = topiccontroller.TopicConfig
@@ -91,4 +93,26 @@ func Terminal(cause error) error {
 // failure.
 func Delay(delay time.Duration) error {
 	return consumergroup.Delay(delay)
+}
+
+// NewProduceItem pairs one message with its options for a multi-message
+// produce call.
+func NewProduceItem[Message Versioned](message *Message, options ProduceOptions) (*ProduceItem[Message], error) {
+	return producer.NewProduceItem[Message](message, options)
+}
+
+// NewCompactionOptions enables compaction for a produced message at rank.
+func NewCompactionOptions(rank int64) (*CompactionOptions, error) {
+	return producer.NewCompactionOptions(rank)
+}
+
+// Beginning positions a new group's cursor at the oldest retained message.
+func Beginning() CursorPosition {
+	return consumergroup.Beginning()
+}
+
+// Head positions a new group's cursor at MAX(id) of the message log when
+// the cursor row is written.
+func Head() CursorPosition {
+	return consumergroup.Head()
 }

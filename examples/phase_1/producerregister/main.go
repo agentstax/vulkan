@@ -14,10 +14,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type Message struct {
@@ -59,25 +57,22 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	const topicName = "test.producerregister"
-	_ = mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
+	_ = client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}) // clean slate from any crashed prior run
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
-
-	p, err := producer.NewProducer(ds, nil)
-	must(err)
 
 	// ===== Register on Background =====
 	step("Register(context.Background()) -- a build step, no lifetime to enforce")
-	instance, err := p.Register[Message](ctx, tp.Name)
+	instance, err := client.RegisterProducer[Message](ctx, tp.Name, nil)
 	must(err)
-	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
+	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, vulkan.ProduceOptions{})
 	must(err)
 	fmt.Printf("  ✓ produced %+v id=%d duplicate=%t\n", *produced.Message, produced.Id, produced.Duplicate)
 
@@ -85,20 +80,20 @@ func run() (err error) {
 	step("Produce with a cancelled ctx -- refused, nothing published")
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel() // stands in for SIGINT/SIGTERM: the app's shutdown context has fired
-	_, err = instance.Produce(cancelled, &Message{Data: "too late"}, producer.ProduceOptions{})
+	_, err = instance.Produce(cancelled, &Message{Data: "too late"}, vulkan.ProduceOptions{})
 	requireIs(err, context.Canceled)
 
 	// ===== the instance holds no lifetime =====
 	step("produce again on a live ctx -- the same instance still accepts work")
-	_, err = instance.Produce(ctx, &Message{Data: "second life"}, producer.ProduceOptions{})
+	_, err = instance.Produce(ctx, &Message{Data: "second life"}, vulkan.ProduceOptions{})
 	must(err)
 	fmt.Println("  ✓ same instance produces after the cancelled call")
 
 	// ===== Register many times =====
 	step("Register again -- an independent instance from the same factory")
-	sibling, err := p.Register[Message](ctx, tp.Name)
+	sibling, err := client.RegisterProducer[Message](ctx, tp.Name, nil)
 	must(err)
-	_, err = sibling.Produce(ctx, &Message{Data: "sibling"}, producer.ProduceOptions{})
+	_, err = sibling.Produce(ctx, &Message{Data: "sibling"}, vulkan.ProduceOptions{})
 	must(err)
 	fmt.Println("  ✓ sibling instance produces")
 

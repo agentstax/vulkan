@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"os"
 
-	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type OrderPlacedV1 struct {

@@ -23,15 +23,13 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller"
 	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const group = "phase9.deletetopiclab.group"
@@ -69,11 +67,11 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase9.deletetopiclab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: 1000})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -82,9 +80,7 @@ func run() (err error) {
 	must(err)
 	deliveryConsumers, err := deliveryconsumergroupcontroller.NewDeliveryConsumerGroupController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
 	step("seed a row in every topic-scoped table")
@@ -93,14 +89,14 @@ func run() (err error) {
 	_, err = cd.DeclareBindings(ctx, tp.Id, groupId, []string{"orders.*"}, time.Now())
 	must(err)
 
-	fn := func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+	fn := func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}
 	// Compaction seeds compaction_head; the default (protected) idempotency
 	// claim seeds idempotency_key -- one Produce call, two tables.
-	compaction, err := producer.NewCompactionOptions(0)
+	compaction, err := vulkan.NewCompactionOptions(0)
 	must(err)
-	_, err = wpInstance.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", MessageKey: "seed-key", Compaction: compaction})
+	_, err = wpInstance.ProduceFunc(ctx, fn, vulkan.ProduceOptions{RoutingKey: "orders.created", MessageKey: "seed-key", Compaction: compaction})
 	must(err)
 
 	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures)
@@ -134,7 +130,7 @@ func run() (err error) {
 	assertIdempotencyKeyRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
-	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 
 	assertGroupGone(ctx, ds, groupId)
 	for _, table := range []string{

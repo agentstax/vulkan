@@ -13,7 +13,7 @@ import (
 	"github.com/agentstax/vulkan/otelvulkan"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/migrate"
-	"github.com/agentstax/vulkan/pkg/systemmanager"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -52,9 +52,7 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 			// output -- full info level, still on stderr by convention
 			runLogger := logging.NewDefaultLogger(os.Stderr, slog.LevelInfo)
 
-			systemManager, err := systemmanager.NewSystemManager(ds, &systemmanager.SystemManagerConfig{
-				Logger: runLogger,
-			})
+			client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{Logger: runLogger})
 			if err != nil {
 				return failOp("%s", err.Error())
 			}
@@ -94,7 +92,7 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 			}
 
 			// a signal cancels ctx; Run drains its worker claims and returns nil
-			if err := systemManager.Run(runCtx); err != nil {
+			if err := client.RunManager(runCtx); err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
 					return errSystemNotRegistered()
 				}

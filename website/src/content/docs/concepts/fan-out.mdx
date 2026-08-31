@@ -37,7 +37,7 @@ queue you bind next quarter receives only what's published after it
 exists.
 
 A group that only wants live traffic says so once, at registration:
-`Start: consumergroup.Head()` on its consumer config places the new
+`Start: vulkan.Head()` on its consumer config places the new
 cursor at the head of the log instead of 0
 ([where a new group starts](/guides/new-group-start/)). The default
 stays the beginning.
@@ -81,7 +81,7 @@ Retention is per-topic config, set at registration:
 
 ```go
 registered, err := messageAdmin.RegisterTopic(ctx, "orders",
-	&topiccontroller.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
+	&vulkan.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
 ```
 
 The default is `0` — keep everything forever. With a TTL set, the topic

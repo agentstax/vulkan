@@ -61,13 +61,13 @@ pretending otherwise. The outbox *is* the platform.
 ```go
 // One transaction. The order row and the message commit together, or neither does.
 produced, err := instance.ProduceFunc(ctx,
-	func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderCreated, error) {
+	func(ctx context.Context, tx vulkan.Tx, _ uuid.UUID) (*OrderCreated, error) {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO orders (id, total) VALUES ($1, $2)`, order.Id, order.Total); err != nil {
 			return nil, err
 		}
 		return &OrderCreated{OrderId: order.Id}, nil
-	}, producer.ProduceOptions{})
+	}, vulkan.ProduceOptions{})
 ```
 
 <ThreadAside label="TIP" title="This is the headline feature">

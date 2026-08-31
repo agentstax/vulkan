@@ -28,10 +28,9 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -50,11 +49,11 @@ const (
 
 var (
 	ds        *iDatastore.PostgresDatastore
-	mAdmin    *admin.MessageAdmin
+	client    *vulkan.Client
 	topicName string
 	topicId   int64
 	// wpInstance is the shared instance scenario 2 seeds and produces through.
-	wpInstance *producer.ProducerInstance[labMessage]
+	wpInstance *vulkan.ProducerInstance[labMessage]
 )
 
 func main() {
@@ -90,20 +89,18 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err = admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err = vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName = fmt.Sprintf("compactiondeadlocklab.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, topicName, nil)
+	registered, err := client.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err = wp.Register[labMessage](ctx, topicName)
+	wpInstance, err = client.RegisterProducer[labMessage](ctx, topicName, nil)
 	must(err)
 
 	batcherAbsenceScenario(ctx)
@@ -125,11 +122,9 @@ func batcherAbsenceScenario(ctx context.Context) {
 	step("default produce: concurrent batchers over a hot key pool never deadlock")
 	deadlocksBefore := deadlockCount(ctx)
 
-	instances := make([]*producer.ProducerInstance[labMessage], producerCount)
+	instances := make([]*vulkan.ProducerInstance[labMessage], producerCount)
 	for i := range instances {
-		wp, err := producer.NewProducer(ds, nil)
-		must(err)
-		instance, err := wp.Register[labMessage](ctx, topicName)
+		instance, err := client.RegisterProducer[labMessage](ctx, topicName, nil)
 		must(err)
 		instances[i] = instance
 	}
@@ -147,16 +142,16 @@ func batcherAbsenceScenario(ctx context.Context) {
 	var wg sync.WaitGroup
 	for i := range goroutineCount {
 		wg.Add(1)
-		go func(instance *producer.ProducerInstance[labMessage], offset int) {
+		go func(instance *vulkan.ProducerInstance[labMessage], offset int) {
 			defer wg.Done()
 			for produced := range producesPerGoroutine {
 				key := keys[(offset+produced)%len(keys)]
-				compaction, err := producer.NewCompactionOptions(0)
+				compaction, err := vulkan.NewCompactionOptions(0)
 				if err != nil {
 					record(err)
 					return
 				}
-				if _, err := instance.Produce(ctx, &labMessage{Note: key}, producer.ProduceOptions{MessageKey: key, Compaction: compaction}); err != nil {
+				if _, err := instance.Produce(ctx, &labMessage{Note: key}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction}); err != nil {
 					record(err)
 					return
 				}
@@ -189,9 +184,9 @@ func produceInTxDeadlockScenario(ctx context.Context) {
 
 	// seed both head rows so the second produces contend on existing rows
 	for _, key := range []string{"tx-a", "tx-b"} {
-		compaction, err := producer.NewCompactionOptions(0)
+		compaction, err := vulkan.NewCompactionOptions(0)
 		must(err)
-		_, err = wpInstance.Produce(ctx, &labMessage{Note: "seed"}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
+		_, err = wpInstance.Produce(ctx, &labMessage{Note: "seed"}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 		must(err)
 	}
 	deadlocksBefore := deadlockCount(ctx)
@@ -248,7 +243,7 @@ func runCallerWithRetry(ctx context.Context, firstKey string, secondKey string, 
 	result := callerResult{}
 	for range 5 {
 		started := time.Now()
-		err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+		err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
 			if err := produceKeyInTx(ctx, tx, firstKey, firstIdempotencyKey); err != nil {
 				return err
 			}
@@ -277,14 +272,14 @@ func runCallerWithRetry(ctx context.Context, firstKey string, secondKey string, 
 	return result
 }
 
-func produceKeyInTx(ctx context.Context, tx producer.Tx, key string, idempotencyKey string) error {
-	compaction, err := producer.NewCompactionOptions(0)
+func produceKeyInTx(ctx context.Context, tx vulkan.Tx, key string, idempotencyKey string) error {
+	compaction, err := vulkan.NewCompactionOptions(0)
 	if err != nil {
 		return err
 	}
-	_, err = wpInstance.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ string) (*labMessage, error) {
+	_, err = wpInstance.ProduceInTx(ctx, tx, func(ctx context.Context, tx vulkan.Tx, _ string) (*labMessage, error) {
 		return &labMessage{Note: key}, nil
-	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
+	}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
 	return err
 }
 

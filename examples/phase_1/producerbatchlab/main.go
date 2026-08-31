@@ -37,12 +37,8 @@ import (
 	"uuid"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/producer/batcher"
-	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const largePartitionSize = int64(1_000_000) // never rolls -- partition churn is its own scenario
@@ -105,12 +101,10 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 	step("batched exactly-once: concurrent Produce calls share txns, land once each")
 
 	const producers, msgs = 50, 20
-	tp, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
+	tp, client, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -118,7 +112,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
 		return err
 	})
 
@@ -143,7 +137,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 	for range 2 {
 		work, err := common.NewWork(31, "keyed@example.com")
 		must(err)
-		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{IdempotencyKey: key})
+		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{IdempotencyKey: key})
 		must(err)
 	}
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total+1, "a caller-keyed Produce routed per-call and deduped its retry")
@@ -156,18 +150,16 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	step("ProduceBatch: one transaction, argument order, all-or-nothing")
 
 	const total = 30
-	tp, cleanup := registerTopic(ctx, ds, "producebatch", largePartitionSize)
+	tp, client, cleanup := registerTopic(ctx, ds, "producebatch", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[rawPayload](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[rawPayload](ctx, tp.Name, nil)
 	must(err)
 
-	items := make([]*producer.ProduceItem[rawPayload], 0, total)
+	items := make([]*vulkan.ProduceItem[rawPayload], 0, total)
 	for s := range total {
 		payload := rawPayload(fmt.Sprintf(`{"seq": %d}`, s))
-		item, err := producer.NewProduceItem(&payload, producer.ProduceOptions{})
+		item, err := vulkan.NewProduceItem(&payload, vulkan.ProduceOptions{})
 		must(err)
 		items = append(items, item)
 	}
@@ -194,13 +186,13 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 
 	// all-or-nothing: item 2 is rejected server-side (jsonb refuses \u0000),
 	// so items 0-1 that already appended must roll back with it
-	badItems := make([]*producer.ProduceItem[rawPayload], 0, 5)
+	badItems := make([]*vulkan.ProduceItem[rawPayload], 0, 5)
 	for s := range 5 {
 		payload := rawPayload(fmt.Sprintf(`{"seq": %d}`, s))
 		if s == 2 {
 			payload = rawPayload(`{"seq": "\u0000"}`)
 		}
-		item, err := producer.NewProduceItem(&payload, producer.ProduceOptions{})
+		item, err := vulkan.NewProduceItem(&payload, vulkan.ProduceOptions{})
 		must(err)
 		badItems = append(badItems, item)
 	}
@@ -215,7 +207,7 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 
 	// caller keys are single-Produce-only; an empty batch is a usage error
 	keyedPayload := rawPayload(`{"seq": 0}`)
-	if _, err := producer.NewProduceItem(&keyedPayload, producer.ProduceOptions{IdempotencyKey: uuid.NewV7().String()}); err == nil {
+	if _, err := vulkan.NewProduceItem(&keyedPayload, vulkan.ProduceOptions{IdempotencyKey: uuid.NewV7().String()}); err == nil {
 		die("NewProduceItem accepted a caller IdempotencyKey")
 	}
 	if _, err := wpInstance.ProduceBatch(ctx); err == nil {
@@ -233,12 +225,10 @@ func faultIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 	const total = 20
 	const poisonSeq, brokenSeq = 7, 13
-	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
+	tp, client, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[rawPayload](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[rawPayload](ctx, tp.Name, nil)
 	must(err)
 
 	errs := make([]error, total)
@@ -252,7 +242,7 @@ func faultIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 			case brokenSeq:
 				payload = rawPayload(`{"broken`)
 			}
-			_, errs[s] = wpInstance.Produce(ctx, &payload, producer.ProduceOptions{})
+			_, errs[s] = wpInstance.Produce(ctx, &payload, vulkan.ProduceOptions{})
 		})
 	}
 	wg.Wait()
@@ -282,13 +272,11 @@ func hotCompactedKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 	step("hot compacted keys: concurrent batches contend on compaction_head without deadlock")
 
 	const producers, msgs, keys = 20, 20, 3
-	tp, cleanup := registerTopic(ctx, ds, "hotkeys", largePartitionSize)
+	tp, client, cleanup := registerTopic(ctx, ds, "hotkeys", largePartitionSize)
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	wp, err := producer.NewProducer(ds, &producer.ProducerConfig{Batch: batcher.BatcherConfig{MaxSize: 5}})
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, &vulkan.ProducerConfig{Batch: vulkan.BatcherConfig{MaxSize: 5}})
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -296,11 +284,11 @@ func hotCompactedKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 		if err != nil {
 			return err
 		}
-		compaction, err := producer.NewCompactionOptions(0)
+		compaction, err := vulkan.NewCompactionOptions(0)
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{MessageKey: fmt.Sprintf("hot:%d", (p+s)%keys), Compaction: compaction})
+		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{MessageKey: fmt.Sprintf("hot:%d", (p+s)%keys), Compaction: compaction})
 		return err
 	})
 
@@ -327,19 +315,17 @@ func hotCompactedKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("partition heal: a burst past the create-ahead self-heals, no janitor running")
 
-	tp, cleanup := registerTopic(ctx, ds, "heal", 10)
+	tp, client, cleanup := registerTopic(ctx, ds, "heal", 10)
 	defer cleanup()
 
 	// a batch of 5 can straddle a 10-row boundary: the rerun heals a second time
-	wp, err := producer.NewProducer(ds, &producer.ProducerConfig{Batch: batcher.BatcherConfig{MaxSize: 5}})
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, &vulkan.ProducerConfig{Batch: vulkan.BatcherConfig{MaxSize: 5}})
 	must(err)
 
 	for range 15 {
 		work, err := common.NewWork(30, "admin@example.com")
 		must(err)
-		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
 		must(err)
 	}
 	produceConcurrently(8, 5, func(p, s int) error {
@@ -347,7 +333,7 @@ func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
 		return err
 	})
 
@@ -363,12 +349,12 @@ func throughputScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	const producers, msgs = 50, 400 // ~2s per arm -- sub-second runs are all warmup noise
 	total := producers * msgs
 
-	batched := timeArm(ctx, ds, "batched", producers, msgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.Produce(ctx, work, producer.ProduceOptions{})
+	batched := timeArm(ctx, ds, "batched", producers, msgs, func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error {
+		_, err := wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
 		return err
 	})
-	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, producer.Tx, string) (*common.Work, error) { return work, nil }, producer.ProduceOptions{})
+	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error {
+		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, vulkan.Tx, string) (*common.Work, error) { return work, nil }, vulkan.ProduceOptions{})
 		return err
 	})
 
@@ -378,8 +364,8 @@ func throughputScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	// batches ride at Batch.MaxSize, which only the batched path can absorb
 	// (a per-call arm would need a pool connection per caller).
 	const satProducers, satMsgs = 800, 50
-	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.Produce(ctx, work, producer.ProduceOptions{})
+	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error {
+		_, err := wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
 		return err
 	})
 	satRate := float64(satProducers*satMsgs) / saturated.Seconds()
@@ -396,13 +382,11 @@ func throughputScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // timeArm registers its own topic, warms the pool untimed, then times the
 // full concurrent run -- asserting afterward that every publish landed
 // exactly once (throughput that loses messages doesn't count).
-func timeArm(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, producers, msgs int, produce func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error) time.Duration {
-	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
+func timeArm(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, producers, msgs int, produce func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error) time.Duration {
+	tp, client, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
 	// warm pool connections so the first arm doesn't pay the dial cost
@@ -432,15 +416,15 @@ func timeArm(ctx context.Context, ds *iDatastore.PostgresDatastore, label string
 // ---- helpers ----
 
 // registerTopic registers a lab-unique topic and returns it with its cleanup.
-func registerTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.TopicData, func()) {
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+func registerTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*vulkan.TopicData, *vulkan.Client, func()) {
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
-	return tp, func() {
-		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
+	return tp, client, func() {
+		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}
 }
 

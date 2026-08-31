@@ -32,16 +32,14 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller/datastore"
 	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -85,11 +83,11 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	register := func(name string) *topic.TopicData {
-		t, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+		t, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{PartitionSize: partitionSize})
 		must(err)
 		return t
 	}
@@ -99,7 +97,7 @@ func run() (err error) {
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
 		for _, t := range []*topic.TopicData{topicA, topicB, topicC, topicD} {
-			must(mAdmin.DestroyTopic(ctx, t.Name, admin.DestroyOptions{Force: true}))
+			must(client.Topic(t.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 		}
 	}()
 
@@ -114,13 +112,9 @@ func run() (err error) {
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
-	wpA, err := producer.NewProducer(ds, nil)
+	wpAInstance, err := client.RegisterProducer[common.Work](ctx, topicA.Name, nil)
 	must(err)
-	wpAInstance, err := wpA.Register[common.Work](ctx, topicA.Name)
-	must(err)
-	wpB, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpBInstance, err := wpB.Register[common.Work](ctx, topicB.Name)
+	wpBInstance, err := client.RegisterProducer[common.Work](ctx, topicB.Name, nil)
 	must(err)
 	for range 3 {
 		publish(ctx, wpAInstance, "")
@@ -153,9 +147,7 @@ func run() (err error) {
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
-	wpC, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpCInstance, err := wpC.Register[common.Work](ctx, topicC.Name)
+	wpCInstance, err := client.RegisterProducer[common.Work](ctx, topicC.Name, nil)
 	must(err)
 	groupRoute := "topiclab.route"
 	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute, consumergroup.Beginning()))
@@ -182,9 +174,7 @@ func run() (err error) {
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
-	wpD, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpDInstance, err := wpD.Register[common.Work](ctx, topicD.Name)
+	wpDInstance, err := client.RegisterProducer[common.Work](ctx, topicD.Name, nil)
 	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
@@ -240,10 +230,10 @@ func run() (err error) {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.ProducerInstance[common.Work], routingKey string) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+func publish(ctx context.Context, wp *vulkan.ProducerInstance[common.Work], routingKey string) {
+	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
-	}, producer.ProduceOptions{RoutingKey: routingKey})
+	}, vulkan.ProduceOptions{RoutingKey: routingKey})
 	must(err)
 }
 

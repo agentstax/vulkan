@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
@@ -38,9 +37,9 @@ import (
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/topic"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -60,7 +59,7 @@ func (labMessage) SchemaVersion() int { return 1 }
 
 var (
 	ds     *iDatastore.PostgresDatastore
-	mAdmin *admin.MessageAdmin
+	client *vulkan.Client
 
 	schedulesTopic *topic.TopicData
 	alertsTopic    *topic.TopicData
@@ -106,13 +105,13 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err = admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err = vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
+	must(client.RegisterSystem(ctx, nil))
 
-	schedulesTopic, err = mAdmin.GetTopic(ctx, schedule.TopicName)
+	schedulesTopic, err = client.Topic(schedule.TopicName).Get(ctx)
 	must(err)
-	alertsTopic, err = mAdmin.GetTopic(ctx, alert.TopicName)
+	alertsTopic, err = client.Topic(alert.TopicName).Get(ctx)
 	must(err)
 	if schedulesTopic == nil || alertsTopic == nil {
 		die("RegisterSystem must create the schedules and alerts topics")
@@ -127,8 +126,8 @@ func run() (err error) {
 	// the executor's embedded consumer spawns a schedule producer -- suspend the
 	// alert schedules so only the lab's run-nows produce requests (a suspended
 	// job still runs on run-now)
-	must(mAdmin.SuspendSchedule(ctx, partitioncount.JobName))
-	must(mAdmin.SuspendSchedule(ctx, compactionreadcost.JobName))
+	must(client.Schedule(partitioncount.JobName).Suspend(ctx))
+	must(client.Schedule(compactionreadcost.JobName).Suspend(ctx))
 
 	executorCapture = newCaptureLogger()
 	stopExecutor := startExecutor(ctx)
@@ -146,7 +145,7 @@ func run() (err error) {
 func seedingSection(ctx context.Context) {
 	step("seeding: jobs/groups/bindings/workers exist; declared threshold applies, suspended survives")
 
-	partitionCountJob, err := mAdmin.GetSchedule(ctx, partitioncount.JobName)
+	partitionCountJob, err := client.Schedule(partitioncount.JobName).Get(ctx)
 	must(err)
 	if partitionCountJob == nil {
 		die("RegisterSystem must seed the " + partitioncount.JobName + " schedule")
@@ -156,13 +155,13 @@ func seedingSection(ctx context.Context) {
 	if seeded.Threshold != 0 || partitionCountJob.Concurrency != common.ConcurrencyExclusive {
 		die(fmt.Sprintf("seeded job: want threshold 0 + defer, got %d %s", seeded.Threshold, partitionCountJob.Concurrency))
 	}
-	readCostJob, err := mAdmin.GetSchedule(ctx, compactionreadcost.JobName)
+	readCostJob, err := client.Schedule(compactionreadcost.JobName).Get(ctx)
 	must(err)
 	if readCostJob == nil {
 		die("RegisterSystem must seed the " + compactionreadcost.JobName + " schedule")
 	}
 
-	declarations, err := mAdmin.ListDeclarations(ctx)
+	declarations, err := client.ListDeclarations(ctx)
 	must(err)
 	for _, jobName := range []string{partitioncount.JobName, compactionreadcost.JobName} {
 		declared := false
@@ -194,31 +193,31 @@ func seedingSection(ctx context.Context) {
 
 	// a declared threshold applies on every RegisterSystem, and a suspended
 	// alert job stays suspended through one
-	must(mAdmin.SuspendSchedule(ctx, compactionreadcost.JobName))
+	must(client.Schedule(compactionreadcost.JobName).Suspend(ctx))
 	declareThreshold(ctx, 7)
 
-	reread, err := mAdmin.GetSchedule(ctx, partitioncount.JobName)
+	reread, err := client.Schedule(partitioncount.JobName).Get(ctx)
 	must(err)
 	var redeclared alert.JobPayload
 	must(json.Unmarshal(reread.Payload, &redeclared))
 	if redeclared.Threshold != 7 {
 		die(fmt.Sprintf("declared threshold must apply on re-register, got %d", redeclared.Threshold))
 	}
-	readCostJob, err = mAdmin.GetSchedule(ctx, compactionreadcost.JobName)
+	readCostJob, err = client.Schedule(compactionreadcost.JobName).Get(ctx)
 	must(err)
 	if !readCostJob.Suspended {
 		die("a suspended alert schedule must survive re-register")
 	}
 
 	declareThreshold(ctx, 0)
-	must(mAdmin.UnsuspendSchedule(ctx, compactionreadcost.JobName))
+	must(client.Schedule(compactionreadcost.JobName).Unsuspend(ctx))
 	fmt.Println("  ✓ declared threshold applied, suspended state survived re-register")
 }
 
 // declareThreshold re-declares the partition_count alert at threshold, through
 // the same call a user changing it would make.
 func declareThreshold(ctx context.Context, threshold int64) {
-	must(mAdmin.RegisterSystem(ctx, &admin.RegisterSystemConfig{
+	must(client.RegisterSystem(ctx, &vulkan.RegisterSystemConfig{
 		PartitionCount: &partitioncount.JobConfig{Threshold: threshold},
 	}))
 }
@@ -227,14 +226,12 @@ func classifySection(ctx context.Context) {
 	step("classify: edge WARN, quiet hold, repeat republish, silent severity change, resolve INFO")
 
 	var err error
-	labTopic, err = mAdmin.RegisterTopic(ctx, prefix+".topic", nil)
+	labTopic, err = client.RegisterTopic(ctx, prefix+".topic", nil)
 	must(err)
 	labTopicOwner, err = common.NewTopicOwner(labTopic.SystemId, labTopic.Id, labTopic.Name)
 	must(err)
 
-	alertProducer, err := producer.NewProducer(ds, nil)
-	must(err)
-	instance, err := alertProducer.Register[alert.Alert](ctx, alert.TopicName)
+	instance, err := client.RegisterProducer[alert.Alert](ctx, alert.TopicName, nil)
 	must(err)
 	heads, err := compactioncontroller.NewCompactionController(ds, nil)
 	must(err)
@@ -331,11 +328,9 @@ func executorSection(ctx context.Context) {
 	step("executor: threshold-1 run alerts, repeat-interval run is quiet, foreign groups untouched")
 
 	// one write gives the lab topic its first partition
-	labProducer, err := producer.NewProducer(ds, nil)
+	labInstance, err := client.RegisterProducer[labMessage](ctx, labTopic.Name, nil)
 	must(err)
-	labInstance, err := labProducer.Register[labMessage](ctx, labTopic.Name)
-	must(err)
-	_, err = labInstance.Produce(ctx, &labMessage{Value: "seed"}, producer.ProduceOptions{})
+	_, err = labInstance.Produce(ctx, &labMessage{Value: "seed"}, vulkan.ProduceOptions{})
 	must(err)
 
 	otherGroup := registerGroup(ctx, prefix+".other", "some.other.job")
@@ -343,12 +338,12 @@ func executorSection(ctx context.Context) {
 
 	declareThreshold(ctx, 1)
 
-	firstRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
+	firstRun, err := client.Schedule(partitioncount.JobName).Run(ctx, nil)
 	must(err)
 	waitDelivered(ctx, firstRun.Id, "success")
 
 	// the running executor's Register declared the group's set
-	declarations, err := mAdmin.ListDeclarations(ctx)
+	declarations, err := client.ListDeclarations(ctx)
 	must(err)
 	declared := false
 	for _, declaration := range declarations {
@@ -388,7 +383,7 @@ func executorSection(ctx context.Context) {
 
 	// inside the system's 4h repeat interval the same finding publishes nothing
 	published := alertMessageCount(ctx, labKey)
-	secondRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
+	secondRun, err := client.Schedule(partitioncount.JobName).Run(ctx, nil)
 	must(err)
 	waitDelivered(ctx, secondRun.Id, "success")
 	if got := alertMessageCount(ctx, labKey); got != published {
@@ -408,9 +403,9 @@ func executorSection(ctx context.Context) {
 
 	// exact-name dispatch: the live consumer never claims another job's
 	// request, and alert traffic leaves other groups alone
-	readCostRun, err := mAdmin.RunSchedule(ctx, compactionreadcost.JobName, nil)
+	readCostRun, err := client.Schedule(compactionreadcost.JobName).Run(ctx, nil)
 	must(err)
-	thirdRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
+	thirdRun, err := client.Schedule(partitioncount.JobName).Run(ctx, nil)
 	must(err)
 	waitDelivered(ctx, thirdRun.Id, "success")
 	if got := scalarInt64(ctx, fmt.Sprintf(
@@ -446,7 +441,7 @@ func isolationSection(ctx context.Context) {
 		`UPDATE message_log_%d SET payload = '"corrupt"'::jsonb WHERE id = $1;`, alertsTopic.Id), corruptedHead)
 
 	declareThreshold(ctx, 0)
-	resolveRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
+	resolveRun, err := client.Schedule(partitioncount.JobName).Run(ctx, nil)
 	must(err)
 
 	// the attempt fails on the corrupted owner -- but the same attempt
@@ -549,8 +544,8 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 func cleanup() {
 	ctx := context.Background()
 
-	must(mAdmin.UnsuspendSchedule(ctx, partitioncount.JobName))
-	must(mAdmin.UnsuspendSchedule(ctx, compactionreadcost.JobName))
+	must(client.Schedule(partitioncount.JobName).Unsuspend(ctx))
+	must(client.Schedule(compactionreadcost.JobName).Unsuspend(ctx))
 
 	labKey := partitionCountKey(labTopicOwner)
 	checkKey, err := alert.MessageKey(labCheckName, labTopicOwner)
@@ -559,7 +554,7 @@ func cleanup() {
 	exec(ctx, fmt.Sprintf(`DELETE FROM compaction_head_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
 	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE message_key = ANY($1);`, alertsTopic.Id), keys)
 
-	must(mAdmin.DestroyTopic(ctx, labTopic.Name, admin.DestroyOptions{Force: true}))
+	must(client.Topic(labTopic.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
 		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),
@@ -637,7 +632,7 @@ func (c *captureLogger) count(level string, alertName string, ownerName string) 
 // name -- the latest run's counts, read the same way `vulkan metrics list`
 // reads them.
 func readCheckSummary(ctx context.Context) map[string]float64 {
-	heads, err := mAdmin.ListMeasurements(ctx)
+	heads, err := client.ListMeasurements(ctx)
 	must(err)
 	attributes := map[string]string{"alert": partitioncountcontroller.AlertPartitionCount}
 	byKey := make(map[string]float64, len(heads))

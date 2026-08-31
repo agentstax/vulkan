@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 
-	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type OrderPlacedV1 struct {
@@ -53,12 +53,10 @@ func run() error {
 		return err
 	}
 
-	// START - not needed every time
 	registered, err := client.RegisterTopic(ctx, "orders.placed", nil)
 	if err != nil {
 		return err
 	}
-	// END - not needed every time
 
 	orders, err := client.RegisterProducer[OrderPlacedV1](ctx, registered.Name, nil)
 	if err != nil {

@@ -20,10 +20,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 func main() {
@@ -59,16 +58,16 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("registeridempotency.lab.%d", time.Now().UnixNano())
 
 	step("first register creates the topic")
-	created, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{RetentionTTL: 720 * time.Hour})
+	created, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 720 * time.Hour})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 	if count := topicLogCount(ctx, ds, created.Id); count != 1 {
 		die(fmt.Sprintf("topic_config_log rows after create = %d, want 1", count))
@@ -78,7 +77,7 @@ func run() (err error) {
 	step("re-register SAME config is idempotent, not a mismatch")
 	// Fresh Config with the identical caller-set field -- RegisterTopic mutates
 	// what it's given via WithDefaults, so don't reuse the first one.
-	again, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{RetentionTTL: 720 * time.Hour})
+	again, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 720 * time.Hour})
 	if err != nil {
 		die(fmt.Sprintf("re-register with identical config must succeed, got: %v", err))
 	}
@@ -91,7 +90,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ re-register resolved same id=%d, no mismatch, nothing appended\n", again.Id)
 
 	step("re-register DIFFERENT config replaces the stored mutable config")
-	redeclared, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour})
+	redeclared, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 168 * time.Hour})
 	must(err)
 	if redeclared.Id != created.Id {
 		die(fmt.Sprintf("re-declare resolved a different id: got %d, want %d", redeclared.Id, created.Id))
@@ -105,7 +104,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ newest declaration won: retention now %v on the same id=%d, snapshot appended\n", redeclared.RetentionTTL, redeclared.Id)
 
 	step("re-register DIFFERENT PartitionSize is rejected")
-	_, err = mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour, PartitionSize: created.PartitionSize + 1})
+	_, err = client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 168 * time.Hour, PartitionSize: created.PartitionSize + 1})
 	if !errors.Is(err, topic.ErrTopicConfigMismatch) {
 		die(fmt.Sprintf("re-register with a different PartitionSize must return ErrTopicConfigMismatch, got: %v", err))
 	}

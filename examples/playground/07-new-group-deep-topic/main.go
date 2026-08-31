@@ -4,7 +4,7 @@
 // It wants live traffic only.
 //
 // Concepts held before domain code (8): the 7 from scenario 03, plus
-// ConsumerConfig.Start (consumergroup.Head()).
+// ConsumerConfig.Start (vulkan.Head()).
 //
 // Traps hit:
 //   - Start is read once, when Register creates the group's cursor row. A
@@ -18,10 +18,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type OrderPlaced struct {
@@ -40,7 +38,7 @@ func main() {
 }
 
 func run() error {
-	ctx, stop := common.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
@@ -50,14 +48,14 @@ func run() error {
 	}
 	defer ds.Close()
 
-	scoringConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Start: consumergroup.Head(),
-	})
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
 
-	scoring, err := scoringConsumer.Register[OrderPlaced](ctx, "fraud-scoring", "orders.placed", nil)
+	scoring, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring", "orders.placed", nil, &vulkan.ConsumerConfig{
+		Start: vulkan.Head(),
+	})
 	if err != nil {
 		return err
 	}

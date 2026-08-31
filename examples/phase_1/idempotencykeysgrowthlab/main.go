@@ -31,11 +31,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const largePartitionSize = int64(1_000_000) // never rolls -- partition churn isn't what's being measured
@@ -91,19 +89,17 @@ func run() (err error) {
 func accumulationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("accumulation: idempotency_key_<id> size vs. message_log size, no sweep running")
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
 	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
@@ -139,19 +135,17 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 	const duration = 3 * time.Second
 	const publishers = 30
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.keepup.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
@@ -170,9 +164,9 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 				case <-stop:
 					return
 				default:
-					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 						return common.NewWork(30, "admin@example.com")
-					}, producer.ProduceOptions{})
+					}, vulkan.ProduceOptions{})
 					must(err)
 					published.Add(1)
 				}
@@ -242,7 +236,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 
 // ---- helpers ----
 
-func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n, goroutines int) {
+func publishConcurrent(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], n, goroutines int) {
 	perGoroutine := n / goroutines
 	remainder := n % goroutines
 
@@ -254,9 +248,9 @@ func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstanc
 		}
 		wg.Go(func() {
 			for range count {
-				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
-				}, producer.ProduceOptions{})
+				}, vulkan.ProduceOptions{})
 				must(err)
 			}
 		})

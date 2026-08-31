@@ -28,9 +28,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type TranscodeRequested struct {
@@ -49,7 +48,7 @@ func main() {
 }
 
 func run() error {
-	ctx, stop := common.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
@@ -59,14 +58,14 @@ func run() error {
 	}
 	defer ds.Close()
 
-	transcodeConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Message:    &common.MessageOptions{Timeout: 2 * time.Minute},
-		MessageMax: &common.MessageOptions{Timeout: time.Hour},
-	})
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-	transcodes, err := transcodeConsumer.Register[TranscodeRequested](ctx, "transcoder", "videos.transcode", nil)
+	transcodes, err := client.RegisterConsumer[TranscodeRequested](ctx, "transcoder", "videos.transcode", nil, &vulkan.ConsumerConfig{
+		Message:    &vulkan.MessageOptions{Timeout: 2 * time.Minute},
+		MessageMax: &vulkan.MessageOptions{Timeout: time.Hour},
+	})
 	if err != nil {
 		return err
 	}

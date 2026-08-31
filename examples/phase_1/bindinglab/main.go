@@ -23,12 +23,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupjanitorcontroller "github.com/agentstax/vulkan/pkg/consumergroup/janitor/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type labMessage struct {
@@ -41,7 +39,7 @@ const groupName = "bindinglab.group"
 
 var (
 	ds        *iDatastore.PostgresDatastore
-	mAdmin    *admin.MessageAdmin
+	client    *vulkan.Client
 	topicName string
 	topicId   int64
 	groupId   int64
@@ -80,28 +78,27 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err = admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err = vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName = fmt.Sprintf("bindinglab.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, topicName, nil)
+	registered, err := client.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// ===== install + join =====
 	step("Register declares the set; a same-set Register joins without writing")
-	incumbentConsumer := newConsumer()
-	incumbent, err := incumbentConsumer.Register[labMessage](ctx, groupName, topicName, []string{"orders.*"})
+	incumbent, err := registerConsumer(ctx, []string{"orders.*"})
 	must(err)
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
 		registered.Id, groupName).Scan(&groupId))
 	assertInt("one installed row", installedRows(ctx), 1)
 	assertString("binding rows", bindingDisplays(ctx), "orders.*")
 
-	_, err = newConsumer().Register[labMessage](ctx, groupName, topicName, []string{"orders.*"})
+	_, err = registerConsumer(ctx, []string{"orders.*"})
 	must(err)
 	assertInt("still one installed row after the same set re-registers", installedRows(ctx), 1)
 	fmt.Println("  ✓ installed once, joined on re-register")
@@ -117,7 +114,7 @@ func run() (err error) {
 	}()
 	waitLiveInstance(ctx)
 
-	divergent, err := newConsumer().Register[labMessage](ctx, groupName, topicName, []string{"payments.*"})
+	divergent, err := registerConsumer(ctx, []string{"payments.*"})
 	must(err)
 	received := make(chan string, 1)
 	divergentCtx, stopDivergent := context.WithCancel(ctx)
@@ -173,11 +170,9 @@ func run() (err error) {
 	}
 	fmt.Println("  ✓ swapped once the incumbent's heartbeats lapsed; wait left the listing")
 
-	wp, err := producer.NewProducer(ds, nil)
+	wpInstance, err := client.RegisterProducer[labMessage](ctx, topicName, nil)
 	must(err)
-	wpInstance, err := wp.Register[labMessage](ctx, topicName)
-	must(err)
-	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, producer.ProduceOptions{RoutingKey: "payments.charge"})
+	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, vulkan.ProduceOptions{RoutingKey: "payments.charge"})
 	must(err)
 	select {
 	case note := <-received:
@@ -223,14 +218,14 @@ func run() (err error) {
 	return nil
 }
 
-func newConsumer() *consumer.Consumer {
-	labConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+// registerConsumer declares the lab group's set with the lab's tight
+// heartbeat and retry knobs.
+func registerConsumer(ctx context.Context, bindings []string) (*vulkan.ConsumerInstance[labMessage], error) {
+	return client.RegisterConsumer[labMessage](ctx, groupName, topicName, bindings, &vulkan.ConsumerConfig{
 		ClaimPollRate:        500 * time.Millisecond,
 		InstanceTTL:          2 * time.Second,
 		BindingRetryInterval: 300 * time.Millisecond,
 	})
-	must(err)
-	return labConsumer
 }
 
 // waitLiveInstance blocks until the consuming incumbent's heartbeat rows
@@ -297,7 +292,7 @@ func bindingDisplays(ctx context.Context) string {
 // labDeclarations reads the listing surface and returns the lab group's
 // installed row and open waiting row (nil when absent).
 func labDeclarations(ctx context.Context) (*consumergroup.Declaration, *consumergroup.Declaration) {
-	declarations, err := mAdmin.ListDeclarations(ctx)
+	declarations, err := client.ListDeclarations(ctx)
 	must(err)
 	var installed *consumergroup.Declaration
 	var waiter *consumergroup.Declaration

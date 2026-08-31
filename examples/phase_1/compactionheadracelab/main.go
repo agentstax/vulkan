@@ -31,10 +31,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const scalePartitionSize = int64(10)
@@ -90,30 +88,28 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	step("concurrent same-key publishes converge to the true max id")
 
 	const n = 50
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.race.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: 1000})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
-	compaction, err := producer.NewCompactionOptions(0)
+	compaction, err := vulkan.NewCompactionOptions(0)
 	must(err)
 
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
-			}, producer.ProduceOptions{MessageKey: "hot-key", Compaction: compaction})
+			}, vulkan.ProduceOptions{MessageKey: "hot-key", Compaction: compaction})
 			must(err)
 		})
 	}
@@ -131,14 +127,14 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("O(1) rerun: the same never-superseded row, re-measured against compaction_head as history grows")
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.scale.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: scalePartitionSize})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: scalePartitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	insertStaleRow(ctx, ds, tp.Id)

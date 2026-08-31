@@ -26,10 +26,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/systemmanager"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -48,7 +46,7 @@ func main() {
 }
 
 func run() error {
-	ctx, stop := common.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
@@ -58,22 +56,17 @@ func run() error {
 	}
 	defer ds.Close()
 
-	manager, err := systemmanager.NewSystemManager(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-
-	orderConsumer, err := consumer.NewConsumer(ds, nil)
-	if err != nil {
-		return err
-	}
-	shipping, err := orderConsumer.Register[OrderPlaced](ctx, "shipping", "orders.placed", nil)
+	shipping, err := client.RegisterConsumer[OrderPlaced](ctx, "shipping", "orders.placed", nil, nil)
 	if err != nil {
 		return err
 	}
 
 	group, ctx := errgroup.WithContext(ctx)
-	group.Go(func() error { return manager.Run(ctx) })
+	group.Go(func() error { return client.RunManager(ctx) })
 	group.Go(func() error {
 		return shipping.Consume(ctx, func(ctx context.Context, order *OrderPlaced) error {
 			fmt.Printf("shipping %s\n", order.OrderId)

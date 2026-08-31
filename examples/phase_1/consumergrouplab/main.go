@@ -31,14 +31,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
@@ -81,16 +79,16 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
 
 	suffix := time.Now().UnixNano()
-	topicA, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.a.%d", suffix), nil)
+	topicA, err := client.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.a.%d", suffix), nil)
 	must(err)
-	topicB, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.b.%d", suffix), nil)
+	topicB, err := client.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.b.%d", suffix), nil)
 	must(err)
 
 	step("RegisterGroup registers the group with its children in one txn")
@@ -138,26 +136,22 @@ func run() (err error) {
 	fmt.Printf("  ✓ 10 concurrent registrations -> one registry row\n")
 
 	step("Start: consumergroup.Head() places a new group's cursor at MAX(id); an existing group keeps its position")
-	labProducer, err := producer.NewProducer(ds, nil)
-	must(err)
-	producing, err := labProducer.Register[labMessage](ctx, topicA.Name)
+	producing, err := client.RegisterProducer[labMessage](ctx, topicA.Name, nil)
 	must(err)
 	var seededHead int64
 	for n := 1; n <= 3; n++ {
-		produced, err := producing.Produce(ctx, &labMessage{N: n}, producer.ProduceOptions{})
+		produced, err := producing.Produce(ctx, &labMessage{N: n}, vulkan.ProduceOptions{})
 		must(err)
 		seededHead = produced.Id
 	}
-	headConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Start:         consumergroup.Head(),
+	headGroup := fmt.Sprintf("consumergrouplab.head.%d", suffix)
+	headInstance, err := client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, nil, &vulkan.ConsumerConfig{
+		Start:         vulkan.Head(),
 		ClaimPollRate: 200 * time.Millisecond,
 	})
 	must(err)
-	headGroup := fmt.Sprintf("consumergrouplab.head.%d", suffix)
-	headInstance, err := headConsumer.Register[labMessage](ctx, headGroup, topicA.Name, nil)
-	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, seededHead, "after Register at the head")
-	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, producer.ProduceOptions{})
+	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, vulkan.ProduceOptions{})
 	must(err)
 	consumeCtx, stop := context.WithCancel(ctx)
 	time.AfterFunc(20*time.Second, stop)
@@ -174,15 +168,13 @@ func run() (err error) {
 		die(fmt.Sprintf("group at the head saw %v, want only the post-register message 4 (id %d)", seen, fresh.Id))
 	}
 	before := readCursor(ctx, ds, topicA.Id, headGroup)
-	beginningConsumer, err := consumer.NewConsumer(ds, nil)
-	must(err)
-	_, err = beginningConsumer.Register[labMessage](ctx, headGroup, topicA.Name, nil)
+	_, err = client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, nil, nil)
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, before, "after a second Register at the beginning")
 	fmt.Printf("  ✓ cursor created at %d, only message 4 delivered, a later Register left the row alone\n", seededHead)
 
 	step("destroying a topic destroys ITS groups and no one else's")
-	must(mAdmin.DestroyTopic(ctx, topicB.Name, admin.DestroyOptions{Force: true}))
+	must(client.Topic(topicB.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	var bRows int
 	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`, other.Id).Scan(&bRows))
 	if bRows != 0 {
@@ -213,18 +205,18 @@ func run() (err error) {
 	assertChildren(ctx, ds, topicA.Id, registered.Id, 0, "after the group row's delete")
 	fmt.Printf("  ✓ group %d deleted, cursor cascaded away\n", registered.Id)
 
-	destroySection(ctx, ds, mAdmin, cd, topicA, suffix)
+	destroySection(ctx, ds, client, cd, topicA, suffix)
 
 	// cleanup
 	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
 	must(err)
-	must(mAdmin.DestroyTopic(ctx, topicA.Name, admin.DestroyOptions{Force: true}))
+	must(client.Topic(topicA.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 
 	fmt.Printf("\n✅ consumer group registry lab PASSED\n")
 	return nil
 }
 
-func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.TopicData, suffix int64) {
+func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, client *vulkan.Client, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.TopicData, suffix int64) {
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)
@@ -233,12 +225,12 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	_, err = cd.DeclareBindings(ctx, topicA.Id, doomed.Id, []string{"some.routing.key"}, time.Now())
 	must(err)
 
-	locked, err := admin.NewMessageAdmin(ds, nil)
+	locked, err := vulkan.NewClient(ds, nil)
 	must(err)
-	if err := locked.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{}); !errors.Is(err, topic.ErrDestroyDisabled) {
+	if err := locked.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, topic.ErrDestroyDisabled) {
 		die(fmt.Sprintf("destroy without AllowDestroy: want ErrDestroyDisabled, got %v", err))
 	}
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, doomedName+".missing", admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupNotFound) {
+	if err := client.Topic(topicA.Name).Group(doomedName+".missing").Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupNotFound) {
 		die(fmt.Sprintf("destroy of an unregistered group: want ErrGroupNotFound, got %v", err))
 	}
 	fmt.Printf("  ✓ AllowDestroy gate and not-found error\n")
@@ -257,7 +249,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	if claimed == nil {
 		die("the lab's own worker claim was declined")
 	}
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupLive) {
+	if err := client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupLive) {
 		die(fmt.Sprintf("destroy with a live worker instance: want ErrGroupLive, got %v", err))
 	}
 	must(workers.ReleaseInstance(ctx, claimed.Id, claimed.Token))
@@ -273,10 +265,10 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_key_lease_%d (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'labkey', gen_random_uuid(), now());`, topicA.Id), doomed.Id)
 	must(err)
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
+	if err := client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
 		die(fmt.Sprintf("destroy with delivery rows: want ErrGroupDeliveriesPending, got %v", err))
 	}
-	must(mAdmin.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{Force: true}))
+	must(client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 
 	for what, sql := range map[string]string{
 		"group rows":        `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`,

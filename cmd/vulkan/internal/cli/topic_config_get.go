@@ -31,13 +31,13 @@ func newTopicConfigGetCmd(g *globalFlags) *cobra.Command {
 				entries = []topicConfigKey{entry}
 			}
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			found, err := mAdmin.GetTopic(ctx, name)
+			found, err := client.Topic(name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

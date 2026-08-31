@@ -32,12 +32,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
-	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const slowMs = 1000
@@ -77,23 +73,21 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase14a.concurrencylab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
-	runOrdering(ctx, ds, wpInstance, tp.Name)
-	runThroughput(ctx, ds, wpInstance, tp.Name)
+	runOrdering(ctx, client, wpInstance, tp.Name)
+	runThroughput(ctx, client, wpInstance, tp.Name)
 
 	fmt.Println("\n✅ CONCURRENCY LAB PASSED")
 	fmt.Println("   a slow message only blocks the rest of its batch when the pool can't run")
@@ -104,12 +98,12 @@ func run() (err error) {
 
 // ---- scenario 1: ordering ----
 
-func runOrdering(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
+func runOrdering(ctx context.Context, client *vulkan.Client, wpInstance *vulkan.ProducerInstance[common.Work], topicName string) {
 	step("ORDERING -- one slow message, three fast ones, same batch")
 	seedSleep(ctx, wpInstance, []int{slowMs, 0, 0, 0})
 
 	step("pool=1 -- dispatch is serial, fast messages can't start until the slow one releases its only permit")
-	slowAt, fastAt := drain(ctx, ds, topicName, "phase14a.concurrencylab.n1", 1, 4)
+	slowAt, fastAt := drain(ctx, client, topicName, "phase14a.concurrencylab.n1", 1, 4)
 	for i, at := range fastAt {
 		if at < slowAt {
 			die(fmt.Sprintf("pool=1: fast message %d completed at %s, before the slow message finished at %s -- dispatch should have been serial", i, at, slowAt))
@@ -118,7 +112,7 @@ func runOrdering(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInstan
 	fmt.Printf("  ✓ all 3 fast completions landed after the slow one (%s)\n", slowAt)
 
 	step("pool=4 -- fast messages dispatch to their own permits immediately, finish while the slow one is still running")
-	slowAt, fastAt = drain(ctx, ds, topicName, "phase14a.concurrencylab.n4", 4, 4)
+	slowAt, fastAt = drain(ctx, client, topicName, "phase14a.concurrencylab.n4", 4, 4)
 	for i, at := range fastAt {
 		if at > slowAt {
 			die(fmt.Sprintf("pool=4: fast message %d completed at %s, after the slow message finished at %s -- it should have run concurrently with it", i, at, slowAt))
@@ -130,18 +124,16 @@ func runOrdering(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInstan
 // drain runs group over topicName's full backlog (assumed to fit in one
 // claim -- batchLimit must cover it) at the given pool size, returning the
 // slow message's completion offset from start and each fast message's.
-func drain(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
-	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+func drain(ctx context.Context, client *vulkan.Client, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, nil, &vulkan.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
 		QueueSize:               batchLimit + poolSize,
 		MessageConcurrency:      poolSize,
-		Message:                 &iCommon.MessageOptions{Timeout: 10 * time.Second},
+		Message:                 &vulkan.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		RecordMargin:            2 * time.Second,
 	})
-	must(err)
-	wcInstance, err := wc.Register[common.Work](ctx, group, topicName, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -183,7 +175,7 @@ const (
 	minSpeedup      = 3.0 // conservative vs pool=8's 8x theoretical ceiling -- avoids flaking on a loaded machine
 )
 
-func runThroughput(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
+func runThroughput(ctx context.Context, client *vulkan.Client, wpInstance *vulkan.ProducerInstance[common.Work], topicName string) {
 	step("THROUGHPUT -- 40 fixed-cost messages, pool=1 (serial) vs pool=8 (parallel)")
 
 	sleeps := make([]int, throughputCount)
@@ -192,11 +184,11 @@ func runThroughput(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInst
 	}
 	seedSleep(ctx, wpInstance, sleeps)
 
-	elapsed1 := drainTimed(ctx, ds, topicName, "phase14a.concurrencylab.tput1", 1, throughputCount)
+	elapsed1 := drainTimed(ctx, client, topicName, "phase14a.concurrencylab.tput1", 1, throughputCount)
 	tput1 := float64(throughputCount) / elapsed1.Seconds()
 	fmt.Printf("RESULT pool=1 processed=%d elapsed=%s throughput=%.1f/s\n", throughputCount, elapsed1, tput1)
 
-	elapsed8 := drainTimed(ctx, ds, topicName, "phase14a.concurrencylab.tput8", 8, throughputCount)
+	elapsed8 := drainTimed(ctx, client, topicName, "phase14a.concurrencylab.tput8", 8, throughputCount)
 	tput8 := float64(throughputCount) / elapsed8.Seconds()
 	fmt.Printf("RESULT pool=8 processed=%d elapsed=%s throughput=%.1f/s\n", throughputCount, elapsed8, tput8)
 
@@ -207,18 +199,16 @@ func runThroughput(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInst
 	}
 }
 
-func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, group string, poolSize, target int) time.Duration {
-	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+func drainTimed(ctx context.Context, client *vulkan.Client, topicName, group string, poolSize, target int) time.Duration {
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, nil, &vulkan.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
 		QueueSize:               target + poolSize,
 		MessageConcurrency:      poolSize,
-		Message:                 &iCommon.MessageOptions{Timeout: 10 * time.Second},
+		Message:                 &vulkan.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		RecordMargin:            2 * time.Second,
 	})
-	must(err)
-	wcInstance, err := wc.Register[common.Work](ctx, group, topicName, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -245,16 +235,16 @@ func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName
 
 // ---- helpers ----
 
-func seedSleep(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], sleepMsList []int) {
+func seedSleep(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], sleepMsList []int) {
 	for _, ms := range sleepMsList {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			work, err := common.NewWork(30, "admin@example.com")
 			if err != nil {
 				return nil, err
 			}
 			work.SleepMs = ms
 			return work, nil
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 		must(err)
 	}
 }

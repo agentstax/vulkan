@@ -1,6 +1,6 @@
 package main
 
-// multi-target transactional enqueue lab: does producer.InTransaction +
+// multi-target transactional enqueue lab: does vulkan.InTransaction +
 // Producer.ProduceInTx actually deliver the atomicity/isolation
 // guarantees the design promises?
 //
@@ -33,16 +33,13 @@ import (
 	"uuid"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var fn = func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+var fn = func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 	return common.NewWork(30, "admin@example.com")
 }
 
@@ -102,11 +99,11 @@ func atomicPublishScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
 	defer cleanupB()
 
-	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
+	err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{}); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{})
+		_, err := wpB.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{})
 		return err
 	})
 	must(err)
@@ -125,13 +122,13 @@ func rollbackOnFailureScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 	defer cleanupB()
 
 	wantErr := errors.New("second target refuses to publish")
-	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
+	err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{}); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		_, err := wpB.ProduceInTx(ctx, tx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return nil, wantErr
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 		return err
 	})
 	if !errors.Is(err, wantErr) {
@@ -153,17 +150,17 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *iDatastore.Post
 	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 2)
 	defer cleanupB()
 
-	_, err := wpB.ProduceFunc(ctx, fn, producer.ProduceOptions{})
+	_, err := wpB.ProduceFunc(ctx, fn, vulkan.ProduceOptions{})
 	must(err)
 	assertMessageLogCount(ctx, ds, topicB.Id, 1)
 
 	betweenCalls := 0
-	err = producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
+	err = vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{}); err != nil {
 			return err
 		}
-		betweenCalls++                                                    // stands in for a caller side effect like sendEmailConfirmation
-		_, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}) // misses its partition, self-heals
+		betweenCalls++                                                  // stands in for a caller side effect like sendEmailConfirmation
+		_, err := wpB.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{}) // misses its partition, self-heals
 		return err
 	})
 	must(err)
@@ -187,11 +184,11 @@ func ambiguousCommitScenario(ctx context.Context, ds *iDatastore.PostgresDatasto
 	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
 	defer cleanupB()
 
-	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
+	err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{}); err != nil {
 			return err
 		}
-		if _, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
+		if _, err := wpB.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{}); err != nil {
 			return err
 		}
 		// passes now (deferred) -- fails when Commit checks the constraint
@@ -228,16 +225,16 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	keyA := uuid.NewV7().String()
 	keyB := uuid.NewV7().String()
 
-	closure := func(ctx context.Context, tx producer.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{IdempotencyKey: keyA}); err != nil {
+	closure := func(ctx context.Context, tx vulkan.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{IdempotencyKey: keyA}); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{IdempotencyKey: keyB})
+		_, err := wpB.ProduceInTx(ctx, tx, fn, vulkan.ProduceOptions{IdempotencyKey: keyB})
 		return err
 	}
 
-	must(producer.InTransaction(ctx, ds, closure)) // the publish whose confirmation was "lost"
-	must(producer.InTransaction(ctx, ds, closure)) // the caller's retry
+	must(vulkan.InTransaction(ctx, ds, closure)) // the publish whose confirmation was "lost"
+	must(vulkan.InTransaction(ctx, ds, closure)) // the caller's retry
 
 	assertMessageLogCount(ctx, ds, topicA.Id, 1)
 	assertMessageLogCount(ctx, ds, topicB.Id, 1)
@@ -246,20 +243,18 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 // ---- fixtures ----
 
-func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.TopicData, *producer.ProducerInstance[common.Work], func()) {
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*vulkan.TopicData, *vulkan.ProducerInstance[common.Work], func()) {
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 	return tp, wpInstance, func() {
-		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}
 }
 

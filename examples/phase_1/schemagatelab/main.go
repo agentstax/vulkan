@@ -24,12 +24,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -70,14 +69,14 @@ func run() (err error) {
 	defer ds.Close()
 	pool := ds.Pool
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("schemagate.lab.%d", time.Now().UnixNano())
 	siblingName := name + ".sibling"
-	topicRow, err := mAdmin.RegisterTopic(ctx, name, nil)
+	topicRow, err := client.RegisterTopic(ctx, name, nil)
 	must(err)
-	_, err = mAdmin.RegisterTopic(ctx, siblingName, nil)
+	_, err = client.RegisterTopic(ctx, siblingName, nil)
 	must(err)
 
 	controller, err := migratecontroller.NewController(ds, nil)
@@ -85,26 +84,26 @@ func run() (err error) {
 	sysOwner, err := controller.SystemOwner(ctx)
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
-		must(mAdmin.DestroyTopic(ctx, siblingName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+		must(client.Topic(siblingName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// 1. supported schema -> Register succeeds -----------------------------------
 	section("producer Register succeeds at the supported schema (v1)")
-	_, err = newProducer(ds).Register[event](ctx, name)
+	_, err = client.RegisterProducer[event](ctx, name, nil)
 	check(err == nil, "Register accepted at v1")
 
 	// 2. additive skew: schema ahead, nothing breaking -> Register succeeds ------
 	section("system schema ahead by an additive step -> Register still succeeds")
 	bump(ctx, pool, sysOwner, 2, 0)
-	_, err = newProducer(ds).Register[event](ctx, name)
+	_, err = client.RegisterProducer[event](ctx, name, nil)
 	check(err == nil, "Register accepted at v2 with no breaking step -- the rolling-deploy window")
 	unbump(ctx, pool, sysOwner, 2)
 
 	// 3. breaking step past the binary (system) -> Register refused --------------
 	section("system schema ahead by a breaking step -> Register refused")
 	bump(ctx, pool, sysOwner, 2, 2)
-	_, err = newProducer(ds).Register[event](ctx, name)
+	_, err = client.RegisterProducer[event](ctx, name, nil)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind system, version 2") && strings.Contains(err.Error(), "min_compatible_version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version, the requirement, and the fix")
@@ -114,23 +113,17 @@ func run() (err error) {
 	section("breaking step past one topic -> that topic refused, sibling accepted")
 	topicOwner := mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name))
 	bump(ctx, pool, topicOwner, 2, 2)
-	_, err = newProducer(ds).Register[event](ctx, name)
+	_, err = client.RegisterProducer[event](ctx, name, nil)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind topic, version 2") && strings.Contains(err.Error(), "min_compatible_version 2"),
 		"refused, naming the topic version and the requirement")
-	_, err = newProducer(ds).Register[event](ctx, siblingName)
+	_, err = client.RegisterProducer[event](ctx, siblingName, nil)
 	check(err == nil, "sibling topic still registers -- each family gates on its own rows")
 	unbump(ctx, pool, topicOwner, 2)
 
 	fmt.Println("\n✅ SCHEMA GATE LAB PASSED")
 	fmt.Println("   Register rides out additive skew and fails fast, legibly, on a breaking step past the build.")
 	return nil
-}
-
-func newProducer(ds *iDatastore.PostgresDatastore) *producer.Producer {
-	p, err := producer.NewProducer(ds, nil)
-	must(err)
-	return p
 }
 
 // bump records a success at ver, so the gate reads that scope as version ver

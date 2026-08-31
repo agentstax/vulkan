@@ -17,12 +17,7 @@ type InvoiceRun struct {
 
 func (InvoiceRun) SchemaVersion() int { return 1 }
 
-invoiceScheduler, err := scheduler.NewScheduler(ds, nil)
-if err != nil {
-	return err
-}
-
-nightly, err := invoiceScheduler.Register[InvoiceRun](ctx, "invoices.nightly", "0 2 * * *",
+nightly, err := client.RegisterSchedule[InvoiceRun](ctx, "invoices.nightly", "0 2 * * *",
 	"invoices", &InvoiceRun{Region: "eu"}, nil)
 if err != nil {
 	return err
@@ -34,25 +29,25 @@ return nightly.Schedule(ctx)
 And in whichever service does the invoicing, nothing about cron:
 
 ```go
-invoices, err := invoiceConsumer.Register[InvoiceRun](ctx, "invoice-runner",
-	"invoices", nil)
+invoices, err := client.RegisterConsumer[InvoiceRun](ctx, "invoice-runner",
+	"invoices", nil, nil)
 if err != nil {
 	return err
 }
 
 return invoices.Consume(ctx, func(ctx context.Context, run *InvoiceRun) error {
-	meta, _ := consumergroup.MetaFromContext(ctx)
+	meta, _ := vulkan.MetaFromContext(ctx)
 	fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
 	return nil
 })
 ```
 
-This is the same three-call shape as the other two handles: `New` a
-handle, `Register[Message]` a named resource on it, run the instance.
-For a producer - `Register` resolves the topic and `Produce` writes.
-For a consumer - `Register` declares the group and `Consume` runs it.
-For a scheduler - `Register` declares the schedule and `Schedule`
-keeps the system producing it.
+This is the same shape as the other two register verbs: declare a named
+resource on the client, run what comes back. For a producer -
+`RegisterProducer` resolves the topic and `Produce` writes. For a
+consumer - `RegisterConsumer` declares the group and `Consume` runs it.
+For a schedule - `RegisterSchedule` declares it and the handle's
+`Schedule` keeps the system producing it.
 
 ## What Register stores
 
@@ -110,7 +105,7 @@ transaction with the `schedule_cursor` advance:
 
 ## Worked case
 
-`invoices` is topic id `4`. `invoiceScheduler.Register[InvoiceRun]` writes:
+`invoices` is topic id `4`. `RegisterSchedule[InvoiceRun]` writes:
 
 ```sql
 SELECT id, name, topic_id, expression, payload, schema_version
@@ -137,15 +132,15 @@ was named anywhere in the schedule.
 ## Admin verbs
 
 Everything an operator does to a schedule needs no type argument and
-no running process, so it stays on `MessageAdmin` and the CLI, one
-noun on both:
+no running process, so it stays on the `Schedule` handle and the CLI,
+one noun on both:
 
-| admin | CLI | what it does |
+| client | CLI | what it does |
 | --- | --- | --- |
-| `RunSchedule(name)` | `vulkan schedule run` | produces one message now, off-schedule, from the stored payload |
-| `SuspendSchedule` / `UnsuspendSchedule` | `vulkan schedule suspend` / `unsuspend` | stops and resumes the schedule; a time that came due while suspended is dropped |
-| `ScheduleStatus`, `ScheduleMessages` | `vulkan schedule get` / `get --messages` | per-group outcomes, read from the target topic's `delivery_log` by message key; a `succeeded` count needs the target topic's `DeliveryLogMode: all` (the default keeps failures only) - `Register` warns [VK0058](/errors/VK0058) when it isn't |
-| `DestroySchedule` | `vulkan schedule destroy` | deletes the row; gated by `AllowDestroy` |
+| `Schedule(name).Run` | `vulkan schedule run` | produces one message now, off-schedule, from the stored payload |
+| `Suspend` / `Unsuspend` | `vulkan schedule suspend` / `unsuspend` | stops and resumes the schedule; a time that came due while suspended is dropped |
+| `Status`, `ListMessages` | `vulkan schedule get` / `get --messages` | per-group outcomes, read from the target topic's `delivery_log` by message key; a `succeeded` count needs the target topic's `DeliveryLogMode: all` (the default keeps failures only) - `Register` warns [VK0058](/errors/VK0058) when it isn't |
+| `Destroy` | `vulkan schedule destroy` | deletes the row; gated by `AllowDestroy` |
 
 Temporal and EventBridge Scheduler use the same noun for the same
 thing; "cron job" stays the name of K8s's resource, where what fires

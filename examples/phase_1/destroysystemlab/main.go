@@ -21,11 +21,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/system"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 // every table createSystemTables creates -- the teardown assertion list
@@ -77,36 +75,32 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
+	must(client.RegisterSystem(ctx, nil))
 
 	step("seed a user topic with messages")
 	topicName := fmt.Sprintf("destroysystemlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, nil)
+	tp, err := client.RegisterTopic(ctx, topicName, nil)
 	must(err)
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 	for range 3 {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 		must(err)
 	}
 
 	step("a registered user topic refuses the destroy")
-	err = mAdmin.DestroySystem(ctx, admin.DestroyOptions{})
+	err = client.System().Destroy(ctx, vulkan.DestroyOptions{})
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("a running consumer refuses it first -- the worker guard outranks the topic guard")
-	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, "destroysystemlab-group", tp.Name, nil, &vulkan.ConsumerConfig{
 		ClaimPollRate: 500 * time.Millisecond,
 		InstanceTTL:   2 * time.Second,
 	})
-	must(err)
-	wcInstance, err := wc.Register[common.Work](ctx, "destroysystemlab-group", tp.Name, nil)
 	must(err)
 	consumeCtx, stopConsumer := context.WithCancel(ctx)
 	consumeDone := make(chan error, 1)
@@ -117,7 +111,7 @@ func run() (err error) {
 	}()
 	waitLiveInstances(ctx, true)
 
-	err = mAdmin.DestroySystem(ctx, admin.DestroyOptions{})
+	err = client.System().Destroy(ctx, vulkan.DestroyOptions{})
 	assertErrorIs("ErrSystemLive", err, system.ErrSystemLive)
 
 	stopConsumer()
@@ -125,7 +119,7 @@ func run() (err error) {
 	waitLiveInstances(ctx, false)
 
 	step("consumer stopped: the topic guard is back")
-	err = mAdmin.DestroySystem(ctx, admin.DestroyOptions{})
+	err = client.System().Destroy(ctx, vulkan.DestroyOptions{})
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("user topic destroyed: the unforced destroy succeeds")
@@ -134,8 +128,8 @@ func run() (err error) {
 	var alertsTopicId int64
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = '__system.alerts';`).Scan(&alertsTopicId))
 
-	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
-	must(mAdmin.DestroySystem(ctx, admin.DestroyOptions{}))
+	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
+	must(client.System().Destroy(ctx, vulkan.DestroyOptions{}))
 
 	for _, table := range controlPlaneTables {
 		assertTableExists(ctx, table, false)
@@ -143,11 +137,11 @@ func run() (err error) {
 	assertTableExists(ctx, fmt.Sprintf("message_log_%d", alertsTopicId), false)
 
 	step("a second destroy is a no-op, not an error")
-	must(mAdmin.DestroySystem(ctx, admin.DestroyOptions{}))
+	must(client.System().Destroy(ctx, vulkan.DestroyOptions{}))
 	fmt.Println("  ✓ destroy of an already-destroyed system returned nil")
 
 	step("RegisterSystem stands the schema back up")
-	must(mAdmin.RegisterSystem(ctx, nil))
+	must(client.RegisterSystem(ctx, nil))
 	for _, table := range controlPlaneTables {
 		assertTableExists(ctx, table, true)
 	}

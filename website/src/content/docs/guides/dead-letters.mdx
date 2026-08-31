@@ -11,7 +11,7 @@ separates production-grade messaging from toys is: **where do those
 messages go, and how do you get them back?**
 
 In Vulkan, after a message exhausts its retries for a group — or the
-handler returns `consumergroup.Terminal(err)`, which says no retry
+handler returns `vulkan.Terminal(err)`, which says no retry
 will help — its delivery row flips to `dead` — attempt count and final error on the
 row, the payload still in the message log beside it, per consumer
 group. Nothing expires behind your back (dead rows live until the

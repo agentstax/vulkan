@@ -18,13 +18,13 @@ func newMigrateInitCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
+			if err := client.RegisterSystem(ctx, nil); err != nil {
 				return translateAdminError(err)
 			}
 

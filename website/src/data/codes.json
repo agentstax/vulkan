@@ -35,7 +35,7 @@
       "kind": "error",
       "problem": "topic not found",
       "recovery": "permanent",
-      "fix": "register it with MessageAdmin.RegisterTopic first",
+      "fix": "register it with Client.RegisterTopic first",
       "queries": [
         {
           "label": "the topic row under this name",
@@ -93,7 +93,7 @@
       "kind": "error",
       "problem": "destroy is disabled",
       "recovery": "permanent",
-      "fix": "set MessageAdminConfig.AllowDestroy"
+      "fix": "set ClientConfig.AllowDestroy"
     },
     "VK0009": {
       "code": "VK0009",
@@ -128,7 +128,7 @@
       "kind": "error",
       "problem": "schedule not found",
       "recovery": "permanent",
-      "fix": "register \"{schedule}\" with Scheduler.Register first",
+      "fix": "register \"{schedule}\" with Client.RegisterSchedule first",
       "fix_placeholders": [
         "schedule"
       ]
@@ -202,7 +202,7 @@
       "kind": "error",
       "problem": "schema not registered",
       "recovery": "permanent",
-      "fix": "register the system with MessageAdmin.RegisterSystem first"
+      "fix": "register the system with Client.RegisterSystem first"
     },
     "VK0018": {
       "code": "VK0018",

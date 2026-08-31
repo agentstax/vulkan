@@ -19,12 +19,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const partitionSize = int64(100)
@@ -66,12 +63,9 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
-	must(err)
-
-	perCallScenario(ctx, ds, mAdmin)
-	batchedScenario(ctx, ds, mAdmin)
-	inTxScenario(ctx, ds, mAdmin)
+	perCallScenario(ctx, ds)
+	batchedScenario(ctx, ds)
+	inTxScenario(ctx, ds)
 
 	fmt.Println("\n✅ CREATE-AHEAD LAB PASSED")
 	fmt.Println("   Every append path created the next partition at the 80% trigger point,")
@@ -81,9 +75,9 @@ func run() (err error) {
 
 // perCallScenario: ProduceFunc publishes one at a time -- the single-id
 // trigger path (shouldTriggerWithId inside AppendMessage).
-func perCallScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+func perCallScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("per-call ProduceFunc: partition 1 exists before the boundary")
-	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "percall")
+	tp, wpInstance, warns, cleanup := register(ctx, ds, "percall")
 	defer cleanup()
 
 	for range triggerPublishes {
@@ -99,9 +93,9 @@ func perCallScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdm
 
 // batchedScenario: payload-only Produce calls ride the batcher -- the id-range
 // trigger path (shouldTriggerWithRange inside AppendMessageBatch).
-func batchedScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+func batchedScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("batched Produce: a batch's id range fires the trigger before the boundary")
-	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "batched")
+	tp, wpInstance, warns, cleanup := register(ctx, ds, "batched")
 	defer cleanup()
 
 	// 85 concurrent publishes cover id 80 inside some batch's range but stay
@@ -115,16 +109,16 @@ func batchedScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdm
 
 // inTxScenario: the trigger id lands via ProduceInTx -- it fires pre-commit,
 // and the create backs off until this tx's commit releases the parent lock.
-func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("ProduceInTx: pre-commit trigger, create lands after the caller commits")
-	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "intx")
+	tp, wpInstance, warns, cleanup := register(ctx, ds, "intx")
 	defer cleanup()
 
 	for range triggerPublishes - 1 {
 		publish(ctx, wpInstance)
 	}
-	must(producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-		_, err := wpInstance.ProduceInTx(ctx, tx, workFunc, producer.ProduceOptions{}) // id 80
+	must(vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+		_, err := wpInstance.ProduceInTx(ctx, tx, workFunc, vulkan.ProduceOptions{}) // id 80
 		return err
 	}))
 	waitForPartition(ctx, ds, tp.Id, 1)
@@ -137,34 +131,35 @@ func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin 
 
 // ---- helpers ----
 
-func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, scenario string) (*topic.TopicData, *producer.ProducerInstance[common.Work], *WarnCounter, func()) {
-	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
-	must(err)
-
+func register(ctx context.Context, ds *iDatastore.PostgresDatastore, scenario string) (*vulkan.TopicData, *vulkan.ProducerInstance[common.Work], *WarnCounter, func()) {
 	warns, err := NewWarnCounter(logging.NewDefaultLogger(os.Stdout))
 	must(err)
-	wp, err := producer.NewProducer(ds, &producer.ProducerConfig{Logger: warns})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true, Logger: warns})
 	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+
+	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	must(err)
+
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
 	cleanup := func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}
 	return tp, wpInstance, warns, cleanup
 }
 
-func workFunc(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+func workFunc(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 	return common.NewWork(30, "admin@example.com")
 }
 
-func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work]) {
-	_, err := wpInstance.ProduceFunc(ctx, workFunc, producer.ProduceOptions{})
+func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work]) {
+	_, err := wpInstance.ProduceFunc(ctx, workFunc, vulkan.ProduceOptions{})
 	must(err)
 }
 
-func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], workers int, perWorker int) {
+func publishConcurrent(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], workers int, perWorker int) {
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
@@ -173,7 +168,7 @@ func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstanc
 			for range perWorker {
 				work, err := common.NewWork(30, "admin@example.com")
 				must(err)
-				_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
+				_, err = wpInstance.Produce(ctx, work, vulkan.ProduceOptions{})
 				must(err)
 			}
 		}()

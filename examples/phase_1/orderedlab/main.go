@@ -26,13 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
-	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const (
@@ -80,33 +75,31 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	adjustmentProducer, err := producer.NewProducer(ds, nil)
-	must(err)
-	adjustments, err := adjustmentProducer.Register[Adjustment](ctx, tp.Name)
+	adjustments, err := client.RegisterProducer[Adjustment](ctx, tp.Name, nil)
 	must(err)
 
 	step("produce-time guards")
-	ordered := &iCommon.MessageOptions{Concurrency: iCommon.ConcurrencyOrdered}
-	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, producer.ProduceOptions{Message: ordered}); err == nil {
+	ordered := &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyOrdered}
+	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, vulkan.ProduceOptions{Message: ordered}); err == nil {
 		die("ordered without a MessageKey must be refused")
 	}
-	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, producer.ProduceOptions{MessageKey: "acct-0", Message: ordered, Compaction: &producer.CompactionOptions{Enable: true}}); err == nil {
+	if _, err := adjustments.Produce(ctx, &Adjustment{Account: "acct-0"}, vulkan.ProduceOptions{MessageKey: "acct-0", Message: ordered, Compaction: &vulkan.CompactionOptions{Enable: true}}); err == nil {
 		die("ordered with Compaction enabled must be refused")
 	}
 	fmt.Println("PASS: ordered needs a key and refuses compaction")
 
 	ids := map[string]int64{}
 	produce := func(account string, seq int) {
-		produced, err := adjustments.Produce(ctx, &Adjustment{Account: account, Seq: seq}, producer.ProduceOptions{MessageKey: account, Message: ordered})
+		produced, err := adjustments.Produce(ctx, &Adjustment{Account: account, Seq: seq}, vulkan.ProduceOptions{MessageKey: account, Message: ordered})
 		must(err)
 		ids[fmt.Sprintf("%s/%d", account, seq)] = produced.Id
 	}
@@ -120,18 +113,16 @@ func run() (err error) {
 		produce("acct-4", seq)
 	}
 
-	adjustmentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	instance, err := client.RegisterConsumer[Adjustment](ctx, group, tp.Name, nil, &vulkan.ConsumerConfig{
 		BatchLimit:              50,
 		MessageConcurrency:      4,
 		ClaimPollRate:           100 * time.Millisecond,
 		ExceptionInitialBackoff: 500 * time.Millisecond,
-		Message: &iCommon.MessageOptions{
+		Message: &vulkan.MessageOptions{
 			Timeout: 5 * time.Second,
-			Retry:   &iCommon.RetryPolicy{MaxRetries: 3, BaseDelay: 200 * time.Millisecond},
+			Retry:   &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: 200 * time.Millisecond},
 		},
 	})
-	must(err)
-	instance, err := adjustmentConsumer.Register[Adjustment](ctx, group, tp.Name, nil)
 	must(err)
 	groupId := groupIdOf(ctx, ds, tp.Id)
 
@@ -153,7 +144,7 @@ func run() (err error) {
 			case adjustment.Account == "acct-1" && adjustment.Seq == 1 && runs == 1:
 				return errors.New("ledger unavailable")
 			case adjustment.Account == "acct-2" && adjustment.Seq == 1:
-				return consumergroup.Terminal(errors.New("account closed"))
+				return vulkan.Terminal(errors.New("account closed"))
 			}
 			return nil
 		})

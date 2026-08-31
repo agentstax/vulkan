@@ -10,10 +10,9 @@ infrastructure. This page takes you from an empty database to producing,
 consuming, and inspecting messages, ending with the headline: producing a
 message in the same transaction as your own writes.
 
-Vulkan's constructors are deliberately explicit. You will write a few more
-lines than a one-call facade would need — and every one of them is a seam
-you own: the connection pool, the admin surface, the retry policy, the
-consumer group. Nothing on this page is pseudocode; every sample compiles
+You write two constructors: the connection pool and the client over it.
+The pool stays yours to close; topics, producing, and consuming are calls
+on the client. Nothing on this page is pseudocode; every sample compiles
 against the shipped library.
 
 <ThreadAside label="NOTE" title="Prerequisites">
@@ -63,11 +62,8 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	"fmt"
    	"os"
 
-   	"github.com/agentstax/vulkan/pkg/admin"
    	"github.com/agentstax/vulkan/pkg/datastore"
-   	"github.com/agentstax/vulkan/pkg/producer"
-   	"github.com/agentstax/vulkan/pkg/topic"
-   	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+   	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
    )
 
    type WelcomeEmail struct {
@@ -84,19 +80,17 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	must(err)
    	defer ds.Close()
 
-   	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+   	client, err := vulkan.NewClient(ds, nil)
    	must(err)
 
-   	registered, err := messageAdmin.RegisterTopic(ctx, "signup.welcome-email",
-   		&topiccontroller.TopicConfig{})
+   	registered, err := client.RegisterTopic(ctx, "signup.welcome-email",
+   		&vulkan.TopicConfig{})
    	must(err)
 
-   	emailProducer, err := producer.NewProducer(ds, nil)
-   	must(err)
-   	instance, err := emailProducer.Register[WelcomeEmail](ctx, registered.Name)
+   	instance, err := client.RegisterProducer[WelcomeEmail](ctx, registered.Name, nil)
    	must(err)
 
-   	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, producer.ProduceOptions{})
+   	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, vulkan.ProduceOptions{})
    	must(err)
    	fmt.Printf("produced message id=%d\n", produced.Id)
    }
@@ -119,8 +113,8 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    Consumption is a consumer group: an independent reader with its own
    cursor, its own retry budget, and its own dead-lettered messages. The
    handler receives your typed payload; returning an error schedules a
-   retry with exponential backoff (`consumergroup.Terminal` and
-   `consumergroup.Delay` are the other two answers —
+   retry with exponential backoff (`vulkan.Terminal` and
+   `vulkan.Delay` are the other two answers —
    [handler outcomes](/guides/handler-outcomes/)).
 
    ```go
@@ -132,11 +126,8 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	"os"
    	"time"
 
-   	"github.com/agentstax/vulkan/pkg/admin"
-   	"github.com/agentstax/vulkan/pkg/common"
-   	"github.com/agentstax/vulkan/pkg/consumer"
    	"github.com/agentstax/vulkan/pkg/datastore"
-   	"github.com/agentstax/vulkan/pkg/topic"
+   	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
    )
 
    type WelcomeEmail struct {
@@ -146,7 +137,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    func (WelcomeEmail) SchemaVersion() int { return 1 }
 
    func main() {
-   	ctx, stop := common.LifecycleContext(nil)
+   	ctx, stop := vulkan.LifecycleContext(nil)
    	defer stop()
 
    	ds, err := datastore.NewPostgresDatastore(ctx, "app_user", "localhost", "app_db",
@@ -154,25 +145,23 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	must(err)
    	defer ds.Close()
 
-   	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+   	client, err := vulkan.NewClient(ds, nil)
    	must(err)
 
-   	registered, err := messageAdmin.GetTopic(ctx, "signup.welcome-email")
+   	registered, err := client.Topic("signup.welcome-email").Get(ctx)
    	must(err)
    	if registered == nil {
    		fmt.Println("topic not registered -- run the producer first")
    		os.Exit(1)
    	}
 
-   	emailConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-   		Message: &common.MessageOptions{
-   			Timeout: 5 * time.Second,
-   			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: time.Second},
-   		},
-   	})
-   	must(err)
-
-   	instance, err := emailConsumer.Register[WelcomeEmail](ctx, "email-sender", registered.Name, nil)
+   	instance, err := client.RegisterConsumer[WelcomeEmail](ctx, "email-sender", registered.Name, nil,
+   		&vulkan.ConsumerConfig{
+   			Message: &vulkan.MessageOptions{
+   				Timeout: 5 * time.Second,
+   				Retry:   &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: time.Second},
+   			},
+   		})
    	must(err)
 
    	must(instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
@@ -191,12 +180,12 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    Two things here are load-bearing:
 
-   - `common.LifecycleContext` wires SIGINT/SIGTERM into the context.
+   - `vulkan.LifecycleContext` wires SIGINT/SIGTERM into the context.
      `Consume` requires a cancellable context — it refuses
      `context.Background()` — because graceful shutdown is part of the
      contract, not an option. Ctrl-C drains cleanly.
-   - The `nil` last argument to `Register` is the group's binding set:
-     `nil` means the whole topic. Handlers should be idempotent —
+   - The `nil` bindings argument to `RegisterConsumer` is the group's
+     binding set: `nil` means the whole topic. Handlers should be idempotent —
      redelivery after a crash or timeout is normal at-least-once behavior.
 
 5. **Look inside with psql**
@@ -259,15 +248,15 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    ```go
    produced, err := instance.ProduceFunc(ctx,
-   	func(ctx context.Context, tx producer.Tx, _ string) (*WelcomeEmail, error) {
+   	func(ctx context.Context, tx vulkan.Tx, _ string) (*WelcomeEmail, error) {
    		if _, err := tx.Exec(ctx, `INSERT INTO users (id) VALUES ($1)`, "user-123"); err != nil {
    			return nil, err
    		}
    		return &WelcomeEmail{UserId: "user-123"}, nil
-   	}, producer.ProduceOptions{})
+   	}, vulkan.ProduceOptions{})
    ```
 
-   To produce to several topics atomically, `producer.InTransaction` opens
+   To produce to several topics atomically, `vulkan.InTransaction` opens
    one transaction and hands your closure a `Tx` that each instance's
    `ProduceInTx` accepts. Do your own statements first and produce last:
    producing holds a lock on consumer progress for the topic until commit,

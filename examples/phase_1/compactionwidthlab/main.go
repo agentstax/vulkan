@@ -27,10 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const (
@@ -79,31 +77,27 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
-	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, &topiccontroller.TopicConfig{PartitionSize: narrowPartitionSize})
+	narrow, err := client.RegisterTopic(ctx, narrowName, &vulkan.TopicConfig{PartitionSize: narrowPartitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, narrowName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(narrowName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
-	wide, err := mAdmin.RegisterTopic(ctx, wideName, &topiccontroller.TopicConfig{PartitionSize: widePartitionSize})
+	wide, err := client.RegisterTopic(ctx, wideName, &vulkan.TopicConfig{PartitionSize: widePartitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, wideName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(wideName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	step("seed both topics with the identical 40-message workload")
-	narrowProducer, err := producer.NewProducer(ds, nil)
+	narrowProducerInstance, err := client.RegisterProducer[Record](ctx, narrow.Name, nil)
 	must(err)
-	narrowProducerInstance, err := narrowProducer.Register[Record](ctx, narrow.Name)
-	must(err)
-	wideProducer, err := producer.NewProducer(ds, nil)
-	must(err)
-	wideProducerInstance, err := wideProducer.Register[Record](ctx, wide.Name)
+	wideProducerInstance, err := client.RegisterProducer[Record](ctx, wide.Name, nil)
 	must(err)
 	seed(ctx, narrowProducerInstance)
 	seed(ctx, wideProducerInstance)
@@ -155,7 +149,7 @@ func run() (err error) {
 // of them ever match another row's compaction subplan), then two versions of
 // one key published back to back. Partition boundaries self-heal on the
 // produce path.
-func seed(ctx context.Context, wp *producer.ProducerInstance[Record]) {
+func seed(ctx context.Context, wp *vulkan.ProducerInstance[Record]) {
 	publish(ctx, wp, "stale") // never superseded
 	for i := range 37 {
 		publish(ctx, wp, fmt.Sprintf("filler:%d", i)) // each a distinct key
@@ -164,12 +158,12 @@ func seed(ctx context.Context, wp *producer.ProducerInstance[Record]) {
 	publish(ctx, wp, "fresh") // v2 -- immediately supersedes v1
 }
 
-func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key string) {
-	compaction, err := producer.NewCompactionOptions(0)
+func publish(ctx context.Context, wp *vulkan.ProducerInstance[Record], key string) {
+	compaction, err := vulkan.NewCompactionOptions(0)
 	must(err)
-	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*Record, error) {
+	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Record, error) {
 		return &Record{Key: key}, nil
-	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
+	}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 

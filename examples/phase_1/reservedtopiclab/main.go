@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 func main() {
@@ -49,12 +49,12 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	step("RegisterSystem creates __system.metrics idempotently")
-	must(mAdmin.RegisterSystem(ctx, nil))
-	metricsTopic, err := mAdmin.GetTopic(ctx, metrics.TopicName)
+	must(client.RegisterSystem(ctx, nil))
+	metricsTopic, err := client.Topic(metrics.TopicName).Get(ctx)
 	must(err)
 	if metricsTopic == nil {
 		die("expected __system.metrics to exist after RegisterSystem")
@@ -63,26 +63,26 @@ func run() (err error) {
 		metricsTopic.Id, metricsTopic.RetentionTTL, metricsTopic.PartitionSize, metricsTopic.DeliveryLogMode)
 
 	step("RegisterTopic rejects a user name under the reserved prefix")
-	_, err = mAdmin.RegisterTopic(ctx, common.SystemTopicPrefix+"evil", nil)
+	_, err = client.RegisterTopic(ctx, common.SystemTopicPrefix+"evil", nil)
 	assertReserved("RegisterTopic(__system.evil)", err)
 
 	step("RenameTopic refused both directions")
-	_, err = mAdmin.RenameTopic(ctx, metrics.TopicName, fmt.Sprintf("reservedtopiclab.stolen.%d", run))
+	_, err = client.Topic(metrics.TopicName).Rename(ctx, fmt.Sprintf("reservedtopiclab.stolen.%d", run))
 	assertReserved("RenameTopic(__system.metrics -> user name)", err)
 
-	userTopic, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("reservedtopiclab.user.%d", run), nil)
+	userTopic, err := client.RegisterTopic(ctx, fmt.Sprintf("reservedtopiclab.user.%d", run), nil)
 	must(err)
-	_, err = mAdmin.RenameTopic(ctx, userTopic.Name, common.SystemTopicPrefix+"evil")
+	_, err = client.Topic(userTopic.Name).Rename(ctx, common.SystemTopicPrefix+"evil")
 	assertReserved("RenameTopic(user name -> __system.evil)", err)
-	must(mAdmin.DestroyTopic(ctx, userTopic.Name, admin.DestroyOptions{Force: true}))
+	must(client.Topic(userTopic.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 
 	step("DestroyTopic refused on the system topic")
-	err = mAdmin.DestroyTopic(ctx, metrics.TopicName, admin.DestroyOptions{Force: true})
+	err = client.Topic(metrics.TopicName).Destroy(ctx, vulkan.DestroyOptions{Force: true})
 	assertReserved("DestroyTopic(__system.metrics)", err)
 
 	step("re-running RegisterSystem keeps the same row and re-declares its config")
-	must(mAdmin.RegisterSystem(ctx, nil))
-	afterRerun, err := mAdmin.GetTopic(ctx, metrics.TopicName)
+	must(client.RegisterSystem(ctx, nil))
+	afterRerun, err := client.Topic(metrics.TopicName).Get(ctx)
 	must(err)
 	assertInt64("topic id unchanged across re-run", afterRerun.Id, metricsTopic.Id)
 	assertDuration("declared retention across re-run", afterRerun.RetentionTTL, metricscontroller.TopicConfig().RetentionTTL)

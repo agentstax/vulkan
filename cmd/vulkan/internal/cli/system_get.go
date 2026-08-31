@@ -18,15 +18,18 @@ func newSystemGetCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			sys, err := mAdmin.GetSystem(ctx)
+			sys, err := client.System().Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
+			}
+			if sys == nil {
+				return failOp("system schema not registered -- run `vulkan migrate init` first")
 			}
 
 			if g.jsonOutput() {

@@ -35,8 +35,8 @@ machine:
 ```
 
 The handler has two more answers than nil-or-error.
-`consumergroup.Terminal(err)` skips the retries and writes the row
-`dead` on this attempt; `consumergroup.Delay(d)` writes a `ready` row
+`vulkan.Terminal(err)` skips the retries and writes the row
+`dead` on this attempt; `vulkan.Delay(d)` writes a `ready` row
 with `can_run_after` = now + `d` and counts it in `delays`, not as a
 failure. [Handler outcomes](/guides/handler-outcomes/) has the table.
 
@@ -52,16 +52,17 @@ trail — by default every outcome except success (the topic's
 ## Retries & backoff
 
 The retry budget and curve are ordinary config — set once on the
-consumer, or requested per message at produce time (messages *request*,
+consumer group, or requested per message at produce time (messages *request*,
 consumers *clamp*):
 
 ```go
-fraudConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-	Message: &common.MessageOptions{
-		Timeout: 30 * time.Second,
-		Retry:   &common.RetryPolicy{MaxRetries: 5, BaseDelay: 2 * time.Second},
-	},
-})
+fraud, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring", "orders.placed",
+	nil, &vulkan.ConsumerConfig{
+		Message: &vulkan.MessageOptions{
+			Timeout: 30 * time.Second,
+			Retry:   &vulkan.RetryPolicy{MaxRetries: 5, BaseDelay: 2 * time.Second},
+		},
+	})
 ```
 
 The delay before attempt *n* is `BaseDelay × Exponent^n`, capped at
@@ -98,7 +99,7 @@ leases are reclaimed by the same claim queries that do the normal work.
 Leases mean a slow-but-alive handler and a reclaim can occasionally both
 process the same message — the same trade SQS, Pulsar, and every real
 queue makes. Vulkan is honest about being **at-least-once**: write
-idempotent handlers. `consumergroup.MetaFromContext(ctx)` gives you the
+idempotent handlers. `vulkan.MetaFromContext(ctx)` gives you the
 message id inside your handler — a natural idempotency key. Systems that
 promise exactly-once delivery are selling you exactly-once *something
 else*.

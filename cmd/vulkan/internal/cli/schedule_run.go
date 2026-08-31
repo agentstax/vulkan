@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +29,7 @@ func newScheduleRunCmd(g *globalFlags) *cobra.Command {
 			f := cmd.Flags()
 
 			// Build a sparse config from only the flags that were passed.
-			cfg := &admin.RunScheduleConfig{}
+			cfg := &vulkan.RunScheduleConfig{}
 			if f.Changed("concurrency") {
 				cfg.Concurrency = common.ConcurrencyPolicy(concurrency)
 			}
@@ -42,13 +42,13 @@ func newScheduleRunCmd(g *globalFlags) *cobra.Command {
 				return failUsage("invalid config: %s", err)
 			}
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			produced, err := mAdmin.RunSchedule(ctx, name, cfg)
+			produced, err := client.Schedule(name).Run(ctx, cfg)
 			if err != nil {
 				if errors.Is(err, schedule.ErrScheduleNotFound) {
 					return errScheduleNotFound(name)

@@ -25,7 +25,7 @@ against the orders table, keep it consistent with live traffic, and
 pray during the cutover. In Vulkan, a newly registered group's cursor
 starts at zero by default — it reads everything retention still holds
 (a group that wants live traffic only sets
-[`Start: consumergroup.Head()`](/guides/new-group-start/)):
+[`Start: vulkan.Head()`](/guides/new-group-start/)):
 
 ```go
 indexer, err := searchConsumer.Register(ctx, "search-indexer",
@@ -57,10 +57,10 @@ mis-handles EU orders. Wednesday: you notice. The proposed loop:
    ```go
    // PROPOSED — not shipped API.
    err := messageAdmin.RewindGroup(ctx, "warehouse-sync", registered.Name,
-       consumergroup.AtTime(tuesdayMorning))
+       vulkan.AtTime(tuesdayMorning))
    ```
 
-   The position is the same `consumergroup.CursorPosition` a new
+   The position is the same `vulkan.CursorPosition` a new
    group's [`Start`](/guides/new-group-start/) takes -- one type for
    every verb that places a cursor; `AtTime` and `AtMessageId` are the
    two constructors this verb adds.
@@ -93,7 +93,7 @@ keep, set per topic at registration:
 
 ```go
 registered, err := messageAdmin.RegisterTopic(ctx, "orders",
-	&topiccontroller.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
+	&vulkan.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
 ```
 
 The default keeps everything forever; a TTL trades replayable history

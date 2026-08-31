@@ -20,11 +20,11 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			mAdmin, ds, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, ds, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
 			controller, err := migratecontroller.NewController(ds, nil)
 			if err != nil {
@@ -46,7 +46,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
-			topics, err := mAdmin.ListTopics(ctx)
+			topics, err := client.ListTopics(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

@@ -19,13 +19,13 @@ func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			declarations, err := mAdmin.ListDeclarations(ctx)
+			declarations, err := client.ListDeclarations(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

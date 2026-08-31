@@ -1,6 +1,6 @@
 // Command outcomelab proves the four handler outcomes end to end through a
-// real Consume: nil succeeds, a plain error retries, consumergroup.Terminal
-// dead-letters on the spot, and consumergroup.Delay runs later without
+// real Consume: nil succeeds, a plain error retries, vulkan.Terminal
+// dead-letters on the spot, and vulkan.Delay runs later without
 // counting a failure.
 //
 // Registers its own topic (destroyed on exit), self-seeds four messages,
@@ -30,13 +30,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
-	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const (
@@ -84,37 +79,33 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	paymentProducer, err := producer.NewProducer(ds, nil)
-	must(err)
-	payments, err := paymentProducer.Register[Payment](ctx, tp.Name)
+	payments, err := client.RegisterProducer[Payment](ctx, tp.Name, nil)
 	must(err)
 
 	ids := map[string]int64{}
 	for _, branch := range []string{"ok", "retry", "declined", "settles-later"} {
-		produced, err := payments.Produce(ctx, &Payment{Branch: branch}, producer.ProduceOptions{})
+		produced, err := payments.Produce(ctx, &Payment{Branch: branch}, vulkan.ProduceOptions{})
 		must(err)
 		ids[branch] = produced.Id
 	}
 
-	paymentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	instance, err := client.RegisterConsumer[Payment](ctx, group, tp.Name, nil, &vulkan.ConsumerConfig{
 		ClaimPollRate:           100 * time.Millisecond,
 		ExceptionInitialBackoff: 500 * time.Millisecond,
-		Message: &iCommon.MessageOptions{
+		Message: &vulkan.MessageOptions{
 			Timeout: 5 * time.Second,
-			Retry:   &iCommon.RetryPolicy{MaxRetries: 3, MaxDelays: 1, BaseDelay: 200 * time.Millisecond},
+			Retry:   &vulkan.RetryPolicy{MaxRetries: 3, MaxDelays: 1, BaseDelay: 200 * time.Millisecond},
 		},
 	})
-	must(err)
-	instance, err := paymentConsumer.Register[Payment](ctx, group, tp.Name, nil)
 	must(err)
 	groupId := groupIdOf(ctx, ds, tp.Id)
 
@@ -126,7 +117,7 @@ func run() (err error) {
 	consumeDone := make(chan error, 1)
 	go func() {
 		consumeDone <- instance.Consume(consumeCtx, func(ctx context.Context, payment *Payment) error {
-			meta, _ := consumergroup.MetaFromContext(ctx)
+			meta, _ := vulkan.MetaFromContext(ctx)
 			mu.Lock()
 			runs[payment.Branch]++
 			run := runs[payment.Branch]
@@ -140,7 +131,7 @@ func run() (err error) {
 				}
 				return nil
 			case "declined":
-				return consumergroup.Terminal(errors.New("issuer said no"))
+				return vulkan.Terminal(errors.New("issuer said no"))
 			case "settles-later":
 				if run == 1 && (meta.Attempts != 0 || meta.Delays != 0) {
 					die(fmt.Sprintf("first run: meta.Attempts=%d meta.Delays=%d, want 0/0", meta.Attempts, meta.Delays))
@@ -148,7 +139,7 @@ func run() (err error) {
 				if run == 2 && (meta.Attempts != 1 || meta.Delays != 1) {
 					die(fmt.Sprintf("second run: meta.Attempts=%d meta.Delays=%d, want 1/1", meta.Attempts, meta.Delays))
 				}
-				return consumergroup.Delay(delay)
+				return vulkan.Delay(delay)
 			}
 			return nil
 		})

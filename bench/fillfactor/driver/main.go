@@ -32,11 +32,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type benchMessage struct {
@@ -118,16 +116,16 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
+	must(client.RegisterSystem(ctx, nil))
 
 	// fresh topic per cell -- clean tables, no cross-cell contamination
 	topicName := fmt.Sprintf("fillfactorbench.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, topicName, nil)
+	registered, err := client.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// the tables are empty here, so ALTER alone is enough -- every page they
@@ -149,7 +147,7 @@ func main() {
 		}
 	}
 
-	prefillTopic(ctx, ds, topicName, *prefill, *failureRate, record)
+	prefillTopic(ctx, client, topicName, *prefill, *failureRate, record)
 	must(firstErr)
 
 	// designated failures dead-letter after their retries; only the rest can
@@ -179,7 +177,7 @@ func main() {
 
 	// a short retry curve so a designated failure's whole exception cycle
 	// (claim, outcome, eventual dead) lands inside the cell
-	benchConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	consumerConfig := &vulkan.ConsumerConfig{
 		BatchLimit:              *batchLimit,
 		QueueSize:               *batchLimit * 2,
 		MessageConcurrency:      *messageConcurrency,
@@ -194,15 +192,14 @@ func main() {
 				Exponent:   2,
 			},
 		},
-	})
-	must(err)
+	}
 
 	consumeCtx, cancelConsume := context.WithCancel(ctx)
 	defer cancelConsume()
 
 	var consumeWg sync.WaitGroup
 	for group := range *groups {
-		instance, err := benchConsumer.Register[benchMessage](ctx, fmt.Sprintf("bench-group-%02d", group), topicName, nil)
+		instance, err := client.RegisterConsumer[benchMessage](ctx, fmt.Sprintf("bench-group-%02d", group), topicName, nil, consumerConfig)
 		must(err)
 
 		consumeWg.Add(1)
@@ -271,12 +268,10 @@ func main() {
 // prefillTopic produces the backlog the cell drains: unkeyed messages, a
 // deterministic every-Nth slice of them marked to fail. Returns once every
 // message is committed, so consumption starts against a quiet log.
-func prefillTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string, prefill int, failureRate float64, record func(error)) {
-	instances := make([]*producer.ProducerInstance[benchMessage], prefillProducers)
+func prefillTopic(ctx context.Context, client *vulkan.Client, topicName string, prefill int, failureRate float64, record func(error)) {
+	instances := make([]*vulkan.ProducerInstance[benchMessage], prefillProducers)
 	for i := range instances {
-		wp, err := producer.NewProducer(ds, nil)
-		must(err)
-		instance, err := wp.Register[benchMessage](ctx, topicName)
+		instance, err := client.RegisterProducer[benchMessage](ctx, topicName, nil)
 		must(err)
 		instances[i] = instance
 	}
@@ -288,7 +283,7 @@ func prefillTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, topicNa
 	var wg sync.WaitGroup
 	for i := range prefillGoroutines {
 		wg.Add(1)
-		go func(instance *producer.ProducerInstance[benchMessage]) {
+		go func(instance *vulkan.ProducerInstance[benchMessage]) {
 			defer wg.Done()
 			for {
 				sequence := produced.Add(1)
@@ -297,7 +292,7 @@ func prefillTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, topicNa
 				}
 
 				fail := sequence%1000 < failThousandths
-				if _, err := instance.Produce(ctx, &benchMessage{Fail: fail}, producer.ProduceOptions{}); err != nil {
+				if _, err := instance.Produce(ctx, &benchMessage{Fail: fail}, vulkan.ProduceOptions{}); err != nil {
 					record(err)
 					return
 				}

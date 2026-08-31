@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -40,14 +40,14 @@ rows are discarded).`,
 				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", groupName)
 			}
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
 			// Check order matters: a doomed call must never waste a prompt.
-			found, err := mAdmin.GetTopic(ctx, topicName)
+			found, err := client.Topic(topicName).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -78,7 +78,7 @@ rows are discarded).`,
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying %q... ", groupName)
 			}
-			if err := mAdmin.DestroyGroup(ctx, topicName, groupName, admin.DestroyOptions{Force: force}); err != nil {
+			if err := client.Topic(topicName).Group(groupName).Destroy(ctx, vulkan.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}

@@ -13,9 +13,9 @@ the key permits, loosest to strictest: `parallel`, `exclusive`,
 
 ```go
 produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
-	producer.ProduceOptions{
+	vulkan.ProduceOptions{
 		MessageKey: "acct-42",
-		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyOrdered},
+		Message:    &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyOrdered},
 	})
 ```
 
@@ -35,7 +35,7 @@ message key.
 `ordered` needs a message key and refuses `Compaction.Enable` at
 produce time - compaction supersedes older versions, ordered delivers
 every one; a message cannot ask for both. `ConcurrencyOverride:
-common.ConcurrencyOrdered` on the consumer config applies it to every
+vulkan.ConcurrencyOrdered` on the consumer config applies it to every
 keyed message the group sees.
 
 ## Worked case

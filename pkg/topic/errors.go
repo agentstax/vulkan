@@ -15,7 +15,7 @@ var ErrTopicConfigMismatch = diagnostic.NewError("VK0004", diagnostic.Permanent,
 // Diagnose queries: vulkan explain VK0005
 var ErrTopicNotFound = diagnostic.NewError("VK0005", diagnostic.Permanent,
 	"topic not found",
-	"register it with MessageAdmin.RegisterTopic first").
+	"register it with Client.RegisterTopic first").
 	Diagnose(
 		diagnostic.NewQuery("the topic row under this name", `
 SELECT id, name, created_at FROM topic_config WHERE name = '{topic}';`),
@@ -79,7 +79,7 @@ var ErrTopicDeclarationInterrupted = diagnostic.NewError("VK0021", diagnostic.Tr
 // on the admin's config.
 var ErrDestroyDisabled = diagnostic.NewError("VK0008", diagnostic.Permanent,
 	"destroy is disabled",
-	"set MessageAdminConfig.AllowDestroy")
+	"set ClientConfig.AllowDestroy")
 
 // ErrReservedTopicName means Register/Rename touched a name under
 // SystemTopicPrefix -- reserved for the admin's own system topics.

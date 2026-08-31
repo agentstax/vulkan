@@ -15,7 +15,7 @@ message's routing key when the group's deliveries materialize.
 
 ```go
 produced, err := instance.Produce(ctx, &OrderCreated{OrderId: order.Id},
-	producer.ProduceOptions{RoutingKey: "orders.eu.created"})
+	vulkan.ProduceOptions{RoutingKey: "orders.eu.created"})
 ```
 
 The key is optional. A message produced without one is received only by

@@ -8,10 +8,8 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 func main() {
@@ -47,35 +45,31 @@ func run() error {
 	}
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	if err != nil {
 		return err
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topiccontroller.TopicConfig{})
+	t, err := client.RegisterTopic(ctx, *topicPtr, &vulkan.TopicConfig{})
 	if err != nil {
 		return err
 	}
 
-	wp, err := producer.NewProducer(ds, nil)
-	if err != nil {
-		return err
-	}
-	wpInstance, err := wp.Register[common.Work](ctx, t.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, t.Name, nil)
 	if err != nil {
 		return err
 	}
 
 	// WORK
 	for range *countPtr {
-		produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err
 			}
 
 			return work, nil
-		}, producer.ProduceOptions{RoutingKey: *routingKeyPtr})
+		}, vulkan.ProduceOptions{RoutingKey: *routingKeyPtr})
 		if err != nil {
 			return err
 		}

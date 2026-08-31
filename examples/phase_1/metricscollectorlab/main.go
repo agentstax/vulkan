@@ -22,15 +22,13 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -95,13 +93,11 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	step("seed 6 topics x 2 groups x 5 messages -- more topics than TopicConcurrency")
 	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
-	must(err)
-	workProducer, err := producer.NewProducer(ds, nil)
 	must(err)
 
 	topicNames := make([]string, 0, topicCount)
@@ -111,11 +107,11 @@ func run() (err error) {
 	}
 	for t := range topicCount {
 		name := fmt.Sprintf("metricscollectorlab.%d.%d", run, t)
-		registered, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{})
+		registered, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{})
 		must(err)
 		topicNames = append(topicNames, name)
 		defer func() {
-			must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
+			must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 		}()
 
 		for _, group := range groupNames {
@@ -123,18 +119,18 @@ func run() (err error) {
 			must(err)
 		}
 
-		instance, err := workProducer.Register[common.Work](ctx, name)
+		instance, err := client.RegisterProducer[common.Work](ctx, name, nil)
 		must(err)
 		for range messagesPerTopic {
 			work, err := common.NewWork(30, "admin@example.com")
 			must(err)
-			_, err = instance.Produce(ctx, work, producer.ProduceOptions{})
+			_, err = instance.Produce(ctx, work, vulkan.ProduceOptions{})
 			must(err)
 		}
 	}
 
 	step("claim the real metrics_collector worker at a fast poll rate")
-	system, err := mAdmin.GetSystem(ctx)
+	system, err := client.System().Get(ctx)
 	must(err)
 	systemOwner, err := iCommon.NewSystemOwner(system.Id)
 	must(err)
@@ -193,9 +189,9 @@ func run() (err error) {
 			}
 		}
 	}
-	var heads []*producer.MessageData[metrics.Measurement]
+	var heads []*vulkan.MessageData[metrics.Measurement]
 	must(waitFor(30*time.Second, func() (bool, error) {
-		heads, err = mAdmin.ListMeasurements(ctx)
+		heads, err = client.ListMeasurements(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -242,7 +238,7 @@ func run() (err error) {
 		"group": groupNames[0], "topic": topicNames[0],
 	})
 	must(waitFor(10*time.Second, func() (bool, error) {
-		history, err := mAdmin.ListMeasurementMessages(ctx, historyKey, 10)
+		history, err := client.ListMeasurementMessages(ctx, historyKey, 10)
 		if err != nil {
 			return false, err
 		}

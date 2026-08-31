@@ -32,10 +32,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/admin"
-	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type DeviceConfig struct {
@@ -64,49 +62,41 @@ func run() error {
 	}
 	defer ds.Close()
 
-	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-	registered, err := messageAdmin.RegisterTopic(ctx, "devices.config", nil)
-	if err != nil {
-		return err
-	}
-
-	configProducer, err := producer.NewProducer(ds, nil)
-	if err != nil {
-		return err
-	}
-	configs, err := configProducer.Register[DeviceConfig](ctx, registered.Name)
+	registered, err := client.RegisterTopic(ctx, "devices.config", nil)
 	if err != nil {
 		return err
 	}
 
-	compaction, err := producer.NewCompactionOptions(0)
+	configs, err := client.RegisterProducer[DeviceConfig](ctx, registered.Name, nil)
+	if err != nil {
+		return err
+	}
+
+	compaction, err := vulkan.NewCompactionOptions(0)
 	if err != nil {
 		return err
 	}
 
 	// Put
 	_, err = configs.Produce(ctx, &DeviceConfig{DeviceId: "dev-7", Interval: 30},
-		producer.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
+		vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
 	if err != nil {
 		return err
 	}
 
-	// Get (outside a transaction) -- a different object, keyed by topic id
-	heads, err := compactioncontroller.NewCompactionController(ds, nil)
-	if err != nil {
-		return err
-	}
-	current, err := heads.GetHead[DeviceConfig](ctx, registered.Id, "dev-7")
+	// Get (outside a transaction) -- the topic handle's read
+	current, err := client.Topic(registered.Name).CompactionHead[DeviceConfig](ctx, "dev-7")
 	if err != nil {
 		return err
 	}
 	fmt.Printf("current: id=%d interval=%d restarts=%d\n", current.Id, current.Message.Interval, current.Message.Restarts)
 
 	// Update (compare-and-set): lock the head, write the next version
-	if err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+	if err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
 		head, err := configs.GetCompactionHeadInTx(ctx, tx, "dev-7")
 		if err != nil {
 			return err
@@ -114,16 +104,16 @@ func run() error {
 		next := *head.Message
 		next.Restarts++
 		_, err = configs.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ string) (*DeviceConfig, error) {
+			func(ctx context.Context, tx vulkan.Tx, _ string) (*DeviceConfig, error) {
 				return &next, nil
-			}, producer.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
+			}, vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
 		return err
 	}); err != nil {
 		return err
 	}
 
 	// History
-	versions, err := heads.ListKeyMessages[DeviceConfig](ctx, registered.Id, "dev-7", 10)
+	versions, err := client.Topic(registered.Name).ListKeyMessages[DeviceConfig](ctx, "dev-7", 10)
 	if err != nil {
 		return err
 	}

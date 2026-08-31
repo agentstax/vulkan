@@ -20,10 +20,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
-	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type completion struct {
@@ -64,12 +62,12 @@ func run() error {
 	}
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	if err != nil {
 		return err
 	}
 
-	t, err := mAdmin.GetTopic(ctx, *topicPtr)
+	t, err := client.Topic(*topicPtr).Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -77,20 +75,15 @@ func run() error {
 		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
-	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, *groupPtr, t.Name, nil, &vulkan.ConsumerConfig{
 		BatchLimit:         100,
 		QueueSize:          100 + conc,
 		MessageConcurrency: conc,
-		Message:            &iCommon.MessageOptions{Timeout: 10 * time.Second, Retry: &iCommon.RetryPolicy{MaxRetries: 3}}, // Timeout must exceed the slowest payload sleep
+		Message:            &vulkan.MessageOptions{Timeout: 10 * time.Second, Retry: &vulkan.RetryPolicy{MaxRetries: 3}}, // Timeout must exceed the slowest payload sleep
 		ClaimPollRate:      500 * time.Millisecond,
 		QueueMargin:        3 * time.Second,
 		RecordMargin:       2 * time.Second,
 	})
-	if err != nil {
-		return err
-	}
-
-	wcInstance, err := wc.Register[common.Work](ctx, *groupPtr, t.Name, nil)
 	if err != nil {
 		return err
 	}

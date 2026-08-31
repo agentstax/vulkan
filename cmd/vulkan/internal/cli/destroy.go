@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -35,15 +35,15 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", name)
 			}
 
-			mAdmin, ds, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, ds, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
 			// Check order matters: a doomed call must never waste a prompt.
 			// 1. exists?
-			found, err := mAdmin.GetTopic(ctx, name)
+			found, err := client.Topic(name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -51,7 +51,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 				return errTopicNotFound(name)
 			}
 
-			// 2. emptiness -- MessageAdmin doesn't expose this, so build a
+			// 2. emptiness -- the client doesn't expose this, so build a
 			// topic controller over the same pool (public API, no pkg change).
 			topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 				Logger: logging.NewDefaultLogger(os.Stderr, slog.LevelError),
@@ -92,7 +92,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying %q... ", name)
 			}
-			if err := mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: force}); err != nil {
+			if err := client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}

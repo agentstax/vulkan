@@ -15,7 +15,7 @@ Each is a separate per-message opt-in, and they compose.
 
 ```go
 produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
-	producer.ProduceOptions{MessageKey: "acct-42"})
+	vulkan.ProduceOptions{MessageKey: "acct-42"})
 ```
 
 Name the entity the message is about — `acct-42`, `user:123`, a device
@@ -32,12 +32,12 @@ key to its newest version, and older versions still waiting are
 superseded — recorded, never delivered.
 
 ```go
-compaction, err := producer.NewCompactionOptions(0)
+compaction, err := vulkan.NewCompactionOptions(0)
 if err != nil {
 	return err
 }
 produced, err := instance.Produce(ctx, &UserUpdated{Id: "user:123", Plan: "pro"},
-	producer.ProduceOptions{
+	vulkan.ProduceOptions{
 		MessageKey: "user:123",
 		Compaction: compaction,
 	})
@@ -62,9 +62,9 @@ messages, stay fully parallel.
 
 ```go
 produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
-	producer.ProduceOptions{
+	vulkan.ProduceOptions{
 		MessageKey: "acct-42",
-		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyExclusive},
+		Message:    &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyExclusive},
 	})
 ```
 

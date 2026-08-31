@@ -5,8 +5,8 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/topic"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -26,13 +26,13 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 				return failUsage("--quiet and --output json cannot be combined")
 			}
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			found, err := mAdmin.GetTopic(ctx, name)
+			found, err := client.Topic(name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -56,7 +56,7 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 				return failPrinted()
 			}
 
-			health, err := mAdmin.TopicHealth(ctx, name)
+			health, err := client.Topic(name).Health(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -141,7 +141,7 @@ func toTopicDocuments(topics []*topic.TopicData) []topicDocument {
 	return documents
 }
 
-func toTopicGetDocument(name string, found *topic.TopicData, health []*admin.VersionHealth) topicGetDocument {
+func toTopicGetDocument(name string, found *topic.TopicData, health []*vulkan.VersionHealth) topicGetDocument {
 	document := topicGetDocument{Topic: name, Exists: found != nil, Versions: make([]versionHealthDocument, 0, len(health))}
 	if found != nil {
 		config := toTopicDocument(found)
@@ -153,7 +153,7 @@ func toTopicGetDocument(name string, found *topic.TopicData, health []*admin.Ver
 	return document
 }
 
-func toVersionHealthDocument(versionHealth *admin.VersionHealth) versionHealthDocument {
+func toVersionHealthDocument(versionHealth *vulkan.VersionHealth) versionHealthDocument {
 	groups := make([]groupVersionLagDocument, 0, len(versionHealth.Groups))
 	for _, group := range versionHealth.Groups {
 		groups = append(groups, groupVersionLagDocument{
@@ -185,7 +185,7 @@ func printTopicDetail(w io.Writer, t *topic.TopicData) {
 // printVersionHealth is one payload version's picture: how many rows sit at
 // it, how many compaction heads point at it, each group's lag against it,
 // and the resulting retire verdict.
-func printVersionHealth(w io.Writer, h *admin.VersionHealth) {
+func printVersionHealth(w io.Writer, h *vulkan.VersionHealth) {
 	fmt.Fprintf(w, "  v%d\n", h.Version)
 
 	ctw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)

@@ -31,15 +31,13 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const group = "keyleaselab.group"
@@ -90,11 +88,11 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("keyleaselab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	topicId = tp.Id
 
@@ -104,9 +102,7 @@ func run() (err error) {
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[Rec](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[Rec](ctx, tp.Name, nil)
 	must(err)
 	g, err := cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
 	must(err)
@@ -299,7 +295,7 @@ func run() (err error) {
 	fmt.Println("  ✓ expired swept, live kept")
 
 	step("destroying the topic drops its message_key_lease table")
-	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+	must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	var keyLeaseTable *string
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("message_key_lease_%d", topicId)).Scan(&keyLeaseTable))
 	if keyLeaseTable != nil {
@@ -317,12 +313,12 @@ func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key s
 	return c
 }
 
-func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
-	compaction, err := producer.NewCompactionOptions(0)
+func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key string, version int) {
+	compaction, err := vulkan.NewCompactionOptions(0)
 	must(err)
-	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*Rec, error) {
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
-	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
+	}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 

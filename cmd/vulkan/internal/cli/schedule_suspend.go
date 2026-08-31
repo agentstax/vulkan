@@ -20,13 +20,13 @@ func newScheduleSuspendCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			name := args[0]
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			if err := mAdmin.SuspendSchedule(ctx, name); err != nil {
+			if err := client.Schedule(name).Suspend(ctx); err != nil {
 				if errors.Is(err, schedule.ErrScheduleNotFound) {
 					return errScheduleNotFound(name)
 				}
@@ -54,20 +54,20 @@ func newScheduleUnsuspendCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			name := args[0]
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			if err := mAdmin.UnsuspendSchedule(ctx, name); err != nil {
+			if err := client.Schedule(name).Unsuspend(ctx); err != nil {
 				if errors.Is(err, schedule.ErrScheduleNotFound) {
 					return errScheduleNotFound(name)
 				}
 				return translateAdminError(err)
 			}
 
-			row, err := mAdmin.GetSchedule(ctx, name)
+			row, err := client.Schedule(name).Get(ctx)
 			if err != nil || row == nil {
 				// the unsuspend itself succeeded -- report that even if the
 				// follow-up read for the next-scheduled-time detail didn't cooperate

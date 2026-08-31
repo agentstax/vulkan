@@ -25,7 +25,7 @@
 <Story
 	name="Quoted identifier"
 	args={{
-		fix: 'register "{schedule}" with MessageAdmin.RegisterSchedule first',
+		fix: 'register "{schedule}" with Client.RegisterSchedule first',
 		placeholders: ['schedule'],
 	}}
 />

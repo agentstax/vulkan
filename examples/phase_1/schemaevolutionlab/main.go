@@ -45,13 +45,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
-	consumermessage "github.com/agentstax/vulkan/pkg/consumergroup"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const group = "phase14a.schemaevolutionlab.bridge"
@@ -109,35 +104,31 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("phase14a.schemaevolutionlab.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{})
+	registered, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp1, err := producer.NewProducer(ds, nil)
-	must(err)
-	wp1Instance, err := wp1.Register[V1Order](ctx, name)
+	wp1Instance, err := client.RegisterProducer[V1Order](ctx, name, nil)
 	must(err)
 
 	step("the topic holds live keyed V1Order traffic for 5 users")
 	for i, key := range keys {
 		cents := int64(i+1) * 100
-		compaction, err := producer.NewCompactionOptions(0)
+		compaction, err := vulkan.NewCompactionOptions(0)
 		must(err)
-		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
+		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 		must(err)
 		fmt.Printf("  wrote %s cents=%d as V1Order\n", key, cents)
 	}
 
 	step("a V2Order producer registers on the same topic -- its rows carry schema_version 2")
-	wp2, err := producer.NewProducer(ds, nil)
-	must(err)
-	wp2Instance, err := wp2.Register[V2Order](ctx, name)
+	wp2Instance, err := client.RegisterProducer[V2Order](ctx, name, nil)
 	must(err)
 
 	step("user:1 cuts over to v2 BEFORE the bridge ever sees it (live-then-backfill)")
@@ -159,15 +150,15 @@ func run() (err error) {
 			}
 		}
 
-		meta, ok := consumermessage.MetaFromContext(ctx)
+		meta, ok := vulkan.MetaFromContext(ctx)
 		if !ok {
 			return fmt.Errorf("no MessageMeta in context for key %q", work.Key)
 		}
-		compaction, err := producer.NewCompactionOptions(-1)
+		compaction, err := vulkan.NewCompactionOptions(-1)
 		if err != nil {
 			return err
 		}
-		_, err = wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, producer.ProduceOptions{
+		_, err = wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, vulkan.ProduceOptions{
 			MessageKey:     work.Key,
 			Compaction:     compaction,
 			IdempotencyKey: bridgeIdempotencyKey(meta.Id),
@@ -186,7 +177,7 @@ func run() (err error) {
 		}
 		cancelRun1()
 	}()
-	bridge1 := newBridgeConsumer(ctx, ds, name)
+	bridge1 := newBridgeConsumer(ctx, client, name)
 	must(bridge1.Consume(run1Ctx, bridgeFunc))
 	assertInt("exactly 2 messages landed before the crash", processed.Load(), 2)
 
@@ -196,7 +187,7 @@ func run() (err error) {
 
 	step("bridge run 2: a fresh instance, same group, resumes from the persisted cursor")
 	run2Ctx, cancelRun2 := context.WithCancel(ctx)
-	bridge2 := newBridgeConsumer(ctx, ds, name)
+	bridge2 := newBridgeConsumer(ctx, client, name)
 	go func() {
 		must(waitForCommitted(run2Ctx, ds, registered.Id, 10*time.Second, cancelRun2))
 	}()
@@ -214,7 +205,7 @@ func run() (err error) {
 	assertInt("every v1 row still physically present -- superseded, never rewritten", rowCountAtVersion(ctx, ds, registered.Id, 1), 5)
 
 	step("the retire verdict is a query: v1 safe, v2 not")
-	health, err := mAdmin.TopicHealth(ctx, name)
+	health, err := client.Topic(name).Health(ctx)
 	must(err)
 	v1Health := versionHealth(health, 1)
 	assertInt("no compaction head still points at a v1 row", v1Health.CompactionHeads, 0)
@@ -234,12 +225,12 @@ func run() (err error) {
 
 // ---- helpers ----
 
-func liveWrite(ctx context.Context, wp *producer.ProducerInstance[V2Order], key string, cents int64, currency string) error {
-	compaction, err := producer.NewCompactionOptions(0)
+func liveWrite(ctx context.Context, wp *vulkan.ProducerInstance[V2Order], key string, cents int64, currency string) error {
+	compaction, err := vulkan.NewCompactionOptions(0)
 	if err != nil {
 		return err
 	}
-	_, err = wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
+	_, err = wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	return err
 }
 
@@ -255,20 +246,18 @@ func bridgeIdempotencyKey(sourceID int64) string {
 // (ascending v1 id), so this lab's stop points are reproducible. Short
 // margins and a short ExceptionInitialBackoff keep the crash/retry path fast
 // instead of waiting out the library's production-sized defaults.
-func newBridgeConsumer(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) *consumer.ConsumerInstance[V1Order] {
-	c, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+func newBridgeConsumer(ctx context.Context, client *vulkan.Client, name string) *vulkan.ConsumerInstance[V1Order] {
+	cInstance, err := client.RegisterConsumer[V1Order](ctx, group, name, nil, &vulkan.ConsumerConfig{
 		BatchLimit:              1,
 		QueueSize:               4,
 		MessageConcurrency:      1,
 		ClaimPollRate:           50 * time.Millisecond,
-		Message:                 &common.MessageOptions{Timeout: 2 * time.Second},
+		Message:                 &vulkan.MessageOptions{Timeout: 2 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
 		RecordMargin:            500 * time.Millisecond,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 		DisableGracefulShutdown: true,
 	})
-	must(err)
-	cInstance, err := c.Register[V1Order](ctx, group, name, nil)
 	must(err)
 	return cInstance
 }
@@ -295,7 +284,7 @@ func waitForCommitted(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 	return nil
 }
 
-func versionHealth(all []*admin.VersionHealth, version int) *admin.VersionHealth {
+func versionHealth(all []*vulkan.VersionHealth, version int) *vulkan.VersionHealth {
 	for _, h := range all {
 		if h.Version == version {
 			return h

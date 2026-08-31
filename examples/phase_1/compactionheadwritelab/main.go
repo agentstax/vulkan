@@ -27,10 +27,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const largePartitionSize = int64(1000000) // never rolls -- partition churn isn't what's being measured
@@ -86,19 +84,17 @@ func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("fixed cost: sequential publishes, no contention -- unkeyed vs. fresh-key INSERT vs. same-key UPDATE")
 
 	const n = 500
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadwritelab.fixed.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: largePartitionSize})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
 	unkeyedMs := timeSequential(ctx, wpInstance, n, func(i int) string { return "" })
@@ -119,21 +115,21 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 	const goroutines = 50
 	const perGoroutine = 20
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	manyKeysMs, manyKeysTopic := timeConcurrent(ctx, ds, "manykeys", goroutines, perGoroutine, func(g, i int) string {
 		return fmt.Sprintf("key-%d", g) // each goroutine owns a distinct key -- no cross-goroutine contention
 	})
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, manyKeysTopic, admin.DestroyOptions{Force: true}))
+		must(client.Topic(manyKeysTopic).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
 	})
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, oneKeyTopic, admin.DestroyOptions{Force: true}))
+		must(client.Topic(oneKeyTopic).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	time.Sleep(1 * time.Second) // let PG's stats collector flush before reading it
@@ -156,17 +152,17 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 
 // timeSequential runs n single-threaded publishes, keyFn(i) chosen per call,
 // returning total elapsed time in milliseconds.
-func timeSequential(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int, keyFn func(i int) string) float64 {
+func timeSequential(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
-		opts := producer.ProduceOptions{}
+		opts := vulkan.ProduceOptions{}
 		if key := keyFn(i); key != "" {
-			compaction, err := producer.NewCompactionOptions(0)
+			compaction, err := vulkan.NewCompactionOptions(0)
 			must(err)
 			opts.MessageKey = key
 			opts.Compaction = compaction
 		}
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, opts)
 		must(err)
@@ -178,16 +174,14 @@ func timeSequential(ctx context.Context, wpInstance *producer.ProducerInstance[c
 // publishes across `goroutines` concurrent workers, and returns total
 // elapsed time plus the topic name (caller destroys it once done reading it).
 func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("phase8c.compactionheadwritelab.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: largePartitionSize})
+	tp, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
 	start := time.Now()
@@ -195,11 +189,11 @@ func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label
 	for g := range goroutines {
 		wg.Go(func() {
 			for i := range perGoroutine {
-				compaction, err := producer.NewCompactionOptions(0)
+				compaction, err := vulkan.NewCompactionOptions(0)
 				must(err)
-				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
-				}, producer.ProduceOptions{MessageKey: keyFn(g, i), Compaction: compaction})
+				}, vulkan.ProduceOptions{MessageKey: keyFn(g, i), Compaction: compaction})
 				must(err)
 			}
 		})

@@ -8,12 +8,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
-	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -45,25 +44,26 @@ messages).`,
 				return failUsage("refusing to destroy the system without confirmation -- pass --yes with --output json")
 			}
 
-			mAdmin, ds, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, ds, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
 			// Check order matters: a doomed call must never waste a prompt.
 			// 1. registered?
-			if _, err := mAdmin.GetSystem(ctx); err != nil {
-				if errors.Is(err, migrate.ErrNotRegistered) {
-					return failOp("system is not registered -- nothing to destroy")
-				}
+			registered, err := client.System().Get(ctx)
+			if err != nil {
 				return translateAdminError(err)
+			}
+			if registered == nil {
+				return failOp("system is not registered -- nothing to destroy")
 			}
 
 			// 2. the guards, pre-flighted so --force is asked for before the
-			// prompt. MessageAdmin doesn't expose worker snapshots, so build a
+			// prompt. The client doesn't expose worker snapshots, so build a
 			// metrics controller over the same pool (public API, no pkg change).
-			topics, err := mAdmin.ListTopics(ctx)
+			topics, err := client.ListTopics(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -132,7 +132,7 @@ messages).`,
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying the system in %q... ", databaseName)
 			}
-			if err := mAdmin.DestroySystem(ctx, admin.DestroyOptions{Force: force}); err != nil {
+			if err := client.System().Destroy(ctx, vulkan.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}

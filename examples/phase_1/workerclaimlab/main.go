@@ -23,11 +23,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const (
@@ -75,24 +72,22 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("workerclaimlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 	for range seedRows {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 		must(err)
 	}
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, tp.Id))
@@ -100,7 +95,7 @@ func run() (err error) {
 
 	running := make([]*runningConsumer, 0, consumers)
 	for i := range consumers {
-		running = append(running, start(ctx, ds, tp.Name, i))
+		running = append(running, start(ctx, client, tp.Name, i))
 	}
 	groupId := scalar(ctx, ds, `SELECT id FROM consumer_group_config WHERE topic_id=$1 AND name=$2`, tp.Id, group)
 
@@ -160,18 +155,15 @@ func (rc *runningConsumer) stop() {
 	must(<-rc.done)
 }
 
-func start(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string, i int) *runningConsumer {
-	c, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+func start(ctx context.Context, client *vulkan.Client, topicName string, i int) *runningConsumer {
+	lifecycleCtx, cancel := context.WithCancel(ctx)
+	cInstance, err := client.RegisterConsumer[common.Work](lifecycleCtx, group, topicName, nil, &vulkan.ConsumerConfig{
 		BatchLimit:         50,
 		QueueSize:          64,
 		MessageConcurrency: 4,
 		ClaimPollRate:      100 * time.Millisecond,
 		InstanceTTL:        instanceTTL,
 	})
-	must(err)
-
-	lifecycleCtx, cancel := context.WithCancel(ctx)
-	cInstance, err := c.Register[common.Work](lifecycleCtx, group, topicName, nil)
 	must(err)
 
 	done := make(chan error, 1)

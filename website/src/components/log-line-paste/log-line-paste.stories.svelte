@@ -21,7 +21,7 @@
 	args={{
 		placeholders: ['topic'],
 		exampleText:
-			'topic not found: topic "orders", version 3 -- register it with MessageAdmin.RegisterTopic first [VK0005]',
+			'topic not found: topic "orders", version 3 -- register it with Client.RegisterTopic first [VK0005]',
 	}}
 />
 

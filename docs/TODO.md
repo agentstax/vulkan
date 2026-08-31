@@ -105,17 +105,14 @@ close-out.
 
 ### Chunk 7 -- the cut-over
 
-- pkg/consumer, pkg/producer, pkg/scheduler, pkg/admin,
-  pkg/systemmanager move under internal/ (the CLI keeps access by the
-  import-path prefix rule). `producer.InTransaction`/`Tx` become
-  `vulkan.InTransaction`/`vulkan.Tx`. `MessageAdmin`'s flat methods are
-  deleted; the client and handles are the only path.
-- Every declared fix or help text naming a moved surface
+- The assembler packages stay where they are for now (USER-SETTLED
+  2026-08-31: no internal/ move, `MessageAdmin` keeps its methods -- the
+  client delegates to them). `producer.InTransaction`/`Tx` become
+  `vulkan.InTransaction`/`vulkan.Tx`.
+- Every declared fix or help text naming an assembler surface
   (`MessageAdmin.RegisterTopic` in VK0005, `MessageAdmin.RegisterSystem`
   in VK0017, ...) rewords to the client verb, its docs page updated
-  verbatim in the same change. The `-- vulkan: <package>.<method>` SQL
-  owner comments follow the moved packages; the website sandbox SQL
-  mirror and codes.json re-sync.
+  verbatim in the same change; codes.json re-syncs.
 - Every lab, every playground, the CLI, and every site sample compiles
   against `vulkan` only.
 - Done when: build, `go test -race ./...`, the full fresh-DB lab suite,

@@ -5,7 +5,7 @@ package main
 // whatever it claims, proving the abandoned/cleared event stream aggregates
 // correctly ACROSS processes -- neither instance's in-memory state is ever
 // consulted, everything the assertions below read comes back out of the
-// shared __system.metrics topic via admin.TopicMetrics, the same read path
+// shared __system.metrics topic via client.Topic(...).Metrics, the same read path
 // `vulkan topic get` renders.
 //
 // Retention-drop-out (events aging out of the window) is NOT exercised here:
@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumermessage "github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
@@ -34,8 +33,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
-	"github.com/agentstax/vulkan/pkg/producer"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
@@ -75,24 +73,22 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("metricslab.%d", run)
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
+	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 	for range 4 {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 		must(err)
 	}
 
@@ -156,13 +152,13 @@ func run() (err error) {
 
 	step("wait for all 4 messages to hard-timeout across both processes")
 	must(waitFor(10*time.Second, func() (bool, error) {
-		snap, err := topicMetrics(ctx, mAdmin, topicName)
+		snap, err := topicMetrics(ctx, client, topicName)
 		if err != nil || snap == nil || len(snap.Groups) == 0 {
 			return false, err
 		}
 		return snap.Groups[0].AbandonedRoutines.Total == 4, nil
 	}))
-	snap := mustTopicMetrics(ctx, mAdmin, topicName)
+	snap := mustTopicMetrics(ctx, client, topicName)
 	assertInt64("Total abandoned across both processes", snap.Groups[0].AbandonedRoutines.Total, 4)
 	assertInt64("Outstanding (nothing cleared yet)", snap.Groups[0].AbandonedRoutines.Outstanding, 4)
 
@@ -170,10 +166,10 @@ func run() (err error) {
 	gates.release(1)
 	gates.release(2)
 	must(waitFor(10*time.Second, func() (bool, error) {
-		snap := mustTopicMetrics(ctx, mAdmin, topicName)
+		snap := mustTopicMetrics(ctx, client, topicName)
 		return snap.Groups[0].AbandonedRoutines.Outstanding == 2, nil
 	}))
-	snap = mustTopicMetrics(ctx, mAdmin, topicName)
+	snap = mustTopicMetrics(ctx, client, topicName)
 	assertInt64("Total unchanged", snap.Groups[0].AbandonedRoutines.Total, 4)
 	assertInt64("Outstanding falls to 2", snap.Groups[0].AbandonedRoutines.Outstanding, 2)
 	if snap.Groups[0].AbandonedRoutines.SelfClearLatencyAvg <= 0 {
@@ -181,7 +177,7 @@ func run() (err error) {
 	}
 	fmt.Printf("  ✓ SelfClearLatencyAvg (%v)\n", snap.Groups[0].AbandonedRoutines.SelfClearLatencyAvg)
 
-	step("mAdmin.TopicMetrics is the same read `vulkan topic get` renders -- cursor/exception state came back too")
+	step("client.Topic(...).Metrics is the same read `vulkan topic get` renders -- cursor/exception state came back too")
 	fmt.Printf("  ✓ cursor backlog=%d, ready exceptions=%d\n",
 		snap.Groups[0].Cursor.Backlog, snap.Groups[0].Exceptions.Ready)
 
@@ -219,12 +215,12 @@ func (g *releaseGates) release(id int64)              { close(g.gate(id)) }
 
 // ---- helpers ----
 
-func topicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) (*iMetrics.TopicSnapshot, error) {
-	return mAdmin.TopicMetrics(ctx, name)
+func topicMetrics(ctx context.Context, client *vulkan.Client, name string) (*iMetrics.TopicSnapshot, error) {
+	return client.Topic(name).Metrics(ctx)
 }
 
-func mustTopicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) *iMetrics.TopicSnapshot {
-	snap, err := topicMetrics(ctx, mAdmin, name)
+func mustTopicMetrics(ctx context.Context, client *vulkan.Client, name string) *iMetrics.TopicSnapshot {
+	snap, err := topicMetrics(ctx, client, name)
 	must(err)
 	if len(snap.Groups) == 0 {
 		die("expected at least one bound group")

@@ -20,9 +20,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type WebhookEvent struct {
@@ -50,20 +49,16 @@ func run() error {
 	}
 	defer ds.Close()
 
-	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-	registered, err := messageAdmin.RegisterTopic(ctx, "webhooks.received", nil)
+	registered, err := client.RegisterTopic(ctx, "webhooks.received", nil)
 	if err != nil {
 		return err
 	}
 
-	webhookProducer, err := producer.NewProducer(ds, nil)
-	if err != nil {
-		return err
-	}
-	webhooks, err := webhookProducer.Register[WebhookEvent](ctx, registered.Name)
+	webhooks, err := client.RegisterProducer[WebhookEvent](ctx, registered.Name, nil)
 	if err != nil {
 		return err
 	}
@@ -71,7 +66,7 @@ func run() error {
 	// the upstream delivers evt_123 twice
 	for range 2 {
 		event := &WebhookEvent{EventId: "evt_123", Kind: "charge.succeeded"}
-		produced, err := webhooks.Produce(ctx, event, producer.ProduceOptions{
+		produced, err := webhooks.Produce(ctx, event, vulkan.ProduceOptions{
 			IdempotencyKey: event.EventId,
 		})
 		if err != nil {

@@ -8,7 +8,7 @@ import (
 // or topic was never registered, or migration_log is missing.
 var ErrNotRegistered = diagnostic.NewError("VK0017", diagnostic.Permanent,
 	"schema not registered",
-	"register the system with MessageAdmin.RegisterSystem first")
+	"register the system with Client.RegisterSystem first")
 
 // ErrSchemaOlderThanBuild means the stored schema version is below what this
 // build requires.

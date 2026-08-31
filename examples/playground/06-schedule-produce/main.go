@@ -6,7 +6,7 @@
 //
 // Concepts held before domain code (7): the consume set from scenario 03,
 // plus Scheduler, its Register and Schedule, ScheduleConfig,
-// consumergroup.MetaFromContext for the scheduled time, and the fact that
+// vulkan.MetaFromContext for the scheduled time, and the fact that
 // Schedule runs the system manager.
 //
 // Traps hit:
@@ -23,12 +23,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/scheduler"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -47,7 +43,7 @@ func main() {
 }
 
 func run() error {
-	ctx, stop := common.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
@@ -57,29 +53,21 @@ func run() error {
 	}
 	defer ds.Close()
 
-	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-	invoices, err := messageAdmin.RegisterTopic(ctx, "invoices", nil)
-	if err != nil {
-		return err
-	}
-
-	invoiceScheduler, err := scheduler.NewScheduler(ds, nil)
-	if err != nil {
-		return err
-	}
-	nightly, err := invoiceScheduler.Register[InvoiceRun](ctx, "invoices.nightly", "0 2 * * *", invoices.Name, &InvoiceRun{Region: "eu"}, nil)
+	invoices, err := client.RegisterTopic(ctx, "invoices", nil)
 	if err != nil {
 		return err
 	}
 
-	invoiceConsumer, err := consumer.NewConsumer(ds, nil)
+	nightly, err := client.RegisterSchedule[InvoiceRun](ctx, "invoices.nightly", "0 2 * * *", invoices.Name, &InvoiceRun{Region: "eu"}, nil)
 	if err != nil {
 		return err
 	}
-	runs, err := invoiceConsumer.Register[InvoiceRun](ctx, "invoice-runner", invoices.Name, nil)
+
+	runs, err := client.RegisterConsumer[InvoiceRun](ctx, "invoice-runner", invoices.Name, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -88,7 +76,7 @@ func run() error {
 	group.Go(func() error { return nightly.Schedule(groupCtx) })
 	group.Go(func() error {
 		return runs.Consume(groupCtx, func(ctx context.Context, run *InvoiceRun) error {
-			meta, _ := consumergroup.MetaFromContext(ctx)
+			meta, _ := vulkan.MetaFromContext(ctx)
 			fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
 			return nil
 		})

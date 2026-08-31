@@ -29,13 +29,13 @@ func newTopicRenameCmd(g *globalFlags) *cobra.Command {
 				return failUsage("new name matches the current name -- nothing to rename")
 			}
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			renamed, err := mAdmin.RenameTopic(ctx, oldName, newName)
+			renamed, err := client.Topic(oldName).Rename(ctx, newName)
 			if err != nil {
 				switch {
 				case errors.Is(err, topic.ErrTopicNotFound):

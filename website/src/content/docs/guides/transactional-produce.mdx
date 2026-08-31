@@ -52,15 +52,15 @@ transaction. Run your business writes on the `tx` it hands you and
 return the payload; both commit together, or neither does.
 
 ```go
-func CreateOrder(ctx context.Context, instance *producer.ProducerInstance[OrderCreated], order Order) error {
+func CreateOrder(ctx context.Context, instance *vulkan.ProducerInstance[OrderCreated], order Order) error {
 	_, err := instance.ProduceFunc(ctx,
-		func(ctx context.Context, tx producer.Tx, _ string) (*OrderCreated, error) {
+		func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderCreated, error) {
 			if _, err := tx.Exec(ctx,
 				`INSERT INTO orders (id, total) VALUES ($1, $2)`, order.Id, order.Total); err != nil {
 				return nil, err
 			}
 			return &OrderCreated{OrderId: order.Id}, nil
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 	return err
 }
 ```
@@ -72,7 +72,7 @@ your writes and the message together.
 
 Three details about the closure's arguments:
 
-- `tx producer.Tx` runs `Exec`, `Query`, `QueryRow`, `SendBatch`, and
+- `tx vulkan.Tx` runs `Exec`, `Query`, `QueryRow`, `SendBatch`, and
   `CopyFrom` — the statement surface of a pgx transaction. For anything
   beyond that, `tx.Raw()` returns the underlying `pgx.Tx` (an escape
   hatch, not the default path).
@@ -98,12 +98,12 @@ workaround (send-after-commit hooks, with their own failure window).
 
    ```go
    _, err := instance.ProduceFunc(ctx,
-   	func(ctx context.Context, tx producer.Tx, _ string) (*OrderCreated, error) {
+   	func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderCreated, error) {
    		if _, err := tx.Exec(ctx, `INSERT INTO orders (id) VALUES ($1)`, "order-9"); err != nil {
    			return nil, err
    		}
    		return nil, errors.New("rollback on purpose")
-   	}, producer.ProduceOptions{})
+   	}, vulkan.ProduceOptions{})
    ```
 
 2. Check both tables — **neither** row exists. Resolve the topic's id
@@ -125,27 +125,27 @@ workaround (send-after-commit hooks, with their own failure window).
 
 ## Several topics, one commit
 
-To produce to more than one topic atomically, `producer.InTransaction`
+To produce to more than one topic atomically, `vulkan.InTransaction`
 opens one transaction and hands your closure a `Tx` that every
 instance's `ProduceInTx` accepts:
 
 ```go
-err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, orderId); err != nil {
 		return err
 	}
 
 	// produce LAST -- see the lock note below
 	if _, err := invoices.ProduceInTx(ctx, tx,
-		func(context.Context, producer.Tx, string) (*InvoicePaid, error) {
+		func(context.Context, vulkan.Tx, string) (*InvoicePaid, error) {
 			return &InvoicePaid{OrderId: orderId}, nil
-		}, producer.ProduceOptions{}); err != nil {
+		}, vulkan.ProduceOptions{}); err != nil {
 		return err
 	}
 	_, err := receipts.ProduceInTx(ctx, tx,
-		func(context.Context, producer.Tx, string) (*ReceiptRequested, error) {
+		func(context.Context, vulkan.Tx, string) (*ReceiptRequested, error) {
 			return &ReceiptRequested{OrderId: orderId}, nil
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 	return err
 })
 ```

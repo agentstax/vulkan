@@ -11,8 +11,8 @@ classification instead of a second return value:
 | --- | --- | --- |
 | `nil` | success | none written; an existing retry row is deleted |
 | any error | retry | `ready`, `can_run_after` = now + backoff, dead after `MaxRetries` failures |
-| `consumergroup.Terminal(err)` | dead now | `dead` on this attempt, no retry |
-| `consumergroup.Delay(d)` | run later | `ready`, `can_run_after` = now + `d`, `delays` + 1, no failure counted |
+| `vulkan.Terminal(err)` | dead now | `dead` on this attempt, no retry |
+| `vulkan.Delay(d)` | run later | `ready`, `can_run_after` = now + `d`, `delays` + 1, no failure counted |
 
 The second row is the default for any error you don't classify. The
 third and fourth are the two things a retry-only handler cannot say:
@@ -29,11 +29,11 @@ err := payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequested
 	result, err := gateway.Charge(ctx, payment)
 	switch {
 	case errors.Is(err, gateway.ErrDeclined):
-		return consumergroup.Terminal(err)          // dead now, one attempt
+		return vulkan.Terminal(err)          // dead now, one attempt
 	case err != nil:
 		return err                                  // retry on the backoff curve, same as today
 	case result.SettlesAt.After(time.Now()):
-		return consumergroup.Delay(time.Until(result.SettlesAt)) // run again then
+		return vulkan.Delay(time.Until(result.SettlesAt)) // run again then
 	}
 	return nil
 })
@@ -57,12 +57,12 @@ Say messages 41, 42, 43 and 44 hit each branch in turn, with
 
 ## Terminal means dead now
 
-`consumergroup.Terminal(err)` wraps your cause in a declared Permanent
+`vulkan.Terminal(err)` wraps your cause in a declared Permanent
 error ([VK0055](/errors/VK0055/)); the cause stays reachable through
 `errors.Is` and is rendered after the code in `last_error`. The runner
 asks the returned error one question: does its chain carry a
 `diagnostic.Permanent` classification? It uses `errors.As`, so
-`fmt.Errorf("charge: %w", consumergroup.Terminal(err))` classifies the
+`fmt.Errorf("charge: %w", vulkan.Terminal(err))` classifies the
 same as the bare value. A plain `errors.New` stays a retry: an
 unclassified error is treated as transient, because the wrong default
 here loses a message and the other one only costs a backoff curve.
@@ -81,7 +81,7 @@ the [dead-letters guide](/guides/dead-letters/), unchanged.
 
 ## Delay means run later, nothing failed
 
-`consumergroup.Delay(d)` is an error value — it is how a handler with
+`vulkan.Delay(d)` is an error value — it is how a handler with
 one return type says something that is not success and not failure.
 The runner finds it with `errors.As` through any wrapping, writes the
 row `ready` with `can_run_after = now() + d` and `last_error` =
@@ -156,15 +156,15 @@ ready rows with a future `can_run_after`, nothing separate — and the
 
 ## Deciding inside the handler
 
-`consumergroup.MetaFromContext(ctx)` carries the two counts, so a
+`vulkan.MetaFromContext(ctx)` carries the two counts, so a
 handler can decide "wait once more or give up" without a query:
 
 ```go
-meta, _ := consumergroup.MetaFromContext(ctx)
+meta, _ := vulkan.MetaFromContext(ctx)
 if meta.Delays >= 3 {
-	return consumergroup.Terminal(errSettlementOverdue) // dead now, with the real cause
+	return vulkan.Terminal(errSettlementOverdue) // dead now, with the real cause
 }
-return consumergroup.Delay(time.Until(result.SettlesAt))
+return vulkan.Delay(time.Until(result.SettlesAt))
 ```
 
 `meta.Attempts` is the number of runs before this one (0 on the first

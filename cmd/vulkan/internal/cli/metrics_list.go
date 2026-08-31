@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/metrics"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -33,18 +33,18 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 				return failUsage("--quiet and --output json cannot be combined")
 			}
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			heads, err := mAdmin.ListMeasurements(ctx)
+			heads, err := client.ListMeasurements(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
 
-			filtered := make([]*producer.MessageData[metrics.Measurement], 0, len(heads))
+			filtered := make([]*vulkan.MessageData[metrics.Measurement], 0, len(heads))
 			for _, head := range heads {
 				fromCollector := strings.HasPrefix(head.Message.Name, metrics.MetricNameReservedPrefix)
 				if system && !fromCollector {
@@ -77,13 +77,13 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printMeasurementKeys(w io.Writer, heads []*producer.MessageData[metrics.Measurement]) {
+func printMeasurementKeys(w io.Writer, heads []*vulkan.MessageData[metrics.Measurement]) {
 	for _, head := range heads {
 		fmt.Fprintln(w, head.MessageKey)
 	}
 }
 
-func printMeasurementsTable(w io.Writer, heads []*producer.MessageData[metrics.Measurement]) {
+func printMeasurementsTable(w io.Writer, heads []*vulkan.MessageData[metrics.Measurement]) {
 	if len(heads) == 0 {
 		fmt.Fprintln(w, "no measurements published")
 		return

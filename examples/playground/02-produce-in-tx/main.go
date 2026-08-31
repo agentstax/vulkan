@@ -4,7 +4,7 @@
 // multi-topic form where the caller owns the transaction.
 //
 // Concepts held before domain code (9): the 6 from scenario 01, plus
-// ProducerFunc, producer.Tx, InTransaction / ProduceInTx.
+// ProducerFunc, vulkan.Tx, InTransaction / ProduceInTx.
 //
 // Traps hit:
 //   - ProduceFunc's closure takes three params (ctx, tx, idempotencyKey);
@@ -22,9 +22,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type OrderPlacedV1 struct {
@@ -56,64 +55,56 @@ func run() error {
 	}
 	defer ds.Close()
 
-	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-	_, err = messageAdmin.RegisterTopic(ctx, "orders.placed", nil)
+	_, err = client.RegisterTopic(ctx, "orders.placed", nil)
 	if err != nil {
 		return err
 	}
-	_, err = messageAdmin.RegisterTopic(ctx, "inventory.reserved", nil)
+	_, err = client.RegisterTopic(ctx, "inventory.reserved", nil)
 	if err != nil {
 		return err
 	}
 
-	orderProducer, err := producer.NewProducer(ds, nil)
+	orders, err := client.RegisterProducer[OrderPlacedV1](ctx, "orders.placed", nil)
 	if err != nil {
 		return err
 	}
-	orders, err := orderProducer.Register[OrderPlacedV1](ctx, "orders.placed")
-	if err != nil {
-		return err
-	}
-	inventoryProducer, err := producer.NewProducer(ds, nil)
-	if err != nil {
-		return err
-	}
-	inventory, err := inventoryProducer.Register[InventoryReservedV1](ctx, "inventory.reserved")
+	inventory, err := client.RegisterProducer[InventoryReservedV1](ctx, "inventory.reserved", nil)
 	if err != nil {
 		return err
 	}
 
 	// one topic: the message's own transaction carries the business write
 	produced, err := orders.ProduceFunc(ctx,
-		func(ctx context.Context, tx producer.Tx, _ string) (*OrderPlacedV1, error) {
+		func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderPlacedV1, error) {
 			if _, err := tx.Exec(ctx, `INSERT INTO playground_orders (id) VALUES ($1) ON CONFLICT DO NOTHING`, "ord-2"); err != nil {
 				return nil, err
 			}
 			return &OrderPlacedV1{OrderId: "ord-2"}, nil
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 	if err != nil {
 		return err
 	}
 	fmt.Printf("produced id=%d\n", produced.Id)
 
 	// two topics: the caller owns the transaction, each instance produces into it
-	if err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+	if err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
 		if _, err := tx.Exec(ctx, `INSERT INTO playground_orders (id) VALUES ($1) ON CONFLICT DO NOTHING`, "ord-3"); err != nil {
 			return err
 		}
 		if _, err := orders.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ string) (*OrderPlacedV1, error) {
+			func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderPlacedV1, error) {
 				return &OrderPlacedV1{OrderId: "ord-3"}, nil
-			}, producer.ProduceOptions{}); err != nil {
+			}, vulkan.ProduceOptions{}); err != nil {
 			return err
 		}
 		_, err := inventory.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx producer.Tx, _ string) (*InventoryReservedV1, error) {
+			func(ctx context.Context, tx vulkan.Tx, _ string) (*InventoryReservedV1, error) {
 				return &InventoryReservedV1{OrderId: "ord-3", Sku: "sku-9"}, nil
-			}, producer.ProduceOptions{})
+			}, vulkan.ProduceOptions{})
 		return err
 	}); err != nil {
 		return err

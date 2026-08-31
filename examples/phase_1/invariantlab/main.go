@@ -20,11 +20,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -68,9 +68,9 @@ func run() (err error) {
 	defer ds.Close()
 	pool := ds.Pool
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
+	must(client.RegisterSystem(ctx, nil))
 
 	controller, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{Logger: logging.NewDefaultLogger(os.Stderr, slog.LevelError)})
 	must(err)

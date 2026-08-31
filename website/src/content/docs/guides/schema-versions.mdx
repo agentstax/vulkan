@@ -18,14 +18,12 @@ type OrderPlacedV2 struct {
 
 func (OrderPlacedV2) SchemaVersion() int { return 2 }
 
-orders, err := producer.NewProducer(ds, nil)
-must(err)
-instance, err := orders.Register[OrderPlacedV2](ctx, "orders.placed")
+instance, err := client.RegisterProducer[OrderPlacedV2](ctx, "orders.placed", nil)
 must(err)
 ```
 
 `Register` is where a type meets a topic, on both the producer and the
-consumer, and it constrains `Message` to `topic.Versioned`, one method:
+consumer, and it constrains `Message` to `vulkan.Versioned`, one method:
 `SchemaVersion()`. Forget it and the program does not compile, which is
 the same guarantee the positional parameter gave (no way to bind a type
 to a topic without saying which version) moved from a runtime check to
@@ -34,9 +32,9 @@ so the `V2` suffix and the `2` are read together. The method is the
 only source. There is no config field that overrides it, because two
 places to say one fact is how they drift.
 
-`NewProducer` and `NewConsumer` take no type argument. One producer
-handle registers as many types as the process emits; the type argument
-sits on the call that names the topic it goes to.
+`NewClient` takes no type argument. One client registers as many types
+as the process emits; the type argument sits on the register call that
+names the topic it goes to.
 
 Every produce writes the method's value into the row:
 
@@ -50,9 +48,7 @@ One topic, one log, one id space, rows of any version interleaved.
 ## A group reads its own version and steps over the rest
 
 ```go
-scoring, err := consumer.NewConsumer(ds, nil)
-must(err)
-instance, err := scoring.Register[OrderPlacedV2](ctx, "fraud-scoring", "orders.placed", nil)
+instance, err := client.RegisterConsumer[OrderPlacedV2](ctx, "fraud-scoring", "orders.placed", nil, nil)
 must(err)
 ```
 
@@ -89,7 +85,7 @@ live rank-0 v2 write for the same key, in either arrival order.
 `examples/phase_1/schemaevolutionlab` runs that end to end, including
 a crash mid-drain.
 
-Retirement is a query, not a guess. `MessageAdmin.TopicHealth` lists
+Retirement is a query, not a guess. `client.Topic("orders.placed").Health` lists
 every version present in the log with the compaction heads still at it
 and each group's unread rows at it; zero of both is the verdict. A
 version with heads at it reads "compaction heads remain" no matter how

@@ -38,13 +38,13 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 				return failUsage("--quiet and --output json cannot be combined")
 			}
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			row, err := mAdmin.GetSchedule(ctx, name)
+			row, err := client.Schedule(name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -55,14 +55,14 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 					return failPrinted()
 				}
 
-				statuses, err := mAdmin.ScheduleStatus(ctx, name)
+				statuses, err := client.Schedule(name).Status(ctx)
 				if err != nil {
 					return translateAdminError(err)
 				}
 
 				var listed []*schedule.MessageStatus
 				if messages {
-					listed, err = mAdmin.ScheduleMessages(ctx, name, limit)
+					listed, err = client.Schedule(name).ListMessages(ctx, limit)
 					if err != nil {
 						return translateAdminError(err)
 					}
@@ -89,7 +89,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 				return failPrinted()
 			}
 
-			statuses, err := mAdmin.ScheduleStatus(ctx, name)
+			statuses, err := client.Schedule(name).Status(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -99,7 +99,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 			printScheduleStatuses(out, statuses)
 
 			if messages {
-				listed, err := mAdmin.ScheduleMessages(ctx, name, limit)
+				listed, err := client.Schedule(name).ListMessages(ctx, limit)
 				if err != nil {
 					return translateAdminError(err)
 				}

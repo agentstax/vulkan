@@ -7,7 +7,7 @@ import (
 // ErrScheduleNotFound means the named schedule has no row.
 var ErrScheduleNotFound = diagnostic.NewError("VK0013", diagnostic.Permanent,
 	"schedule not found",
-	`register "{schedule}" with Scheduler.Register first`)
+	`register "{schedule}" with Client.RegisterSchedule first`)
 
 // ErrDeclarationInterrupted means the schedule row was deleted between the
 // declaration's insert attempt and its update; an unchanged retry re-creates

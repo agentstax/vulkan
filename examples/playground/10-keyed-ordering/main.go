@@ -24,11 +24,8 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -48,7 +45,7 @@ func main() {
 }
 
 func run() error {
-	ctx, stop := common.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
@@ -58,41 +55,33 @@ func run() error {
 	}
 	defer ds.Close()
 
-	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-	registered, err := messageAdmin.RegisterTopic(ctx, "accounts.balance", nil)
+	registered, err := client.RegisterTopic(ctx, "accounts.balance", nil)
 	if err != nil {
 		return err
 	}
 
-	balanceProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
-		Message: &common.MessageOptions{Concurrency: common.ConcurrencyOrdered},
+	balances, err := client.RegisterProducer[BalanceChanged](ctx, registered.Name, &vulkan.ProducerConfig{
+		Message: &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyOrdered},
 	})
-	if err != nil {
-		return err
-	}
-	balances, err := balanceProducer.Register[BalanceChanged](ctx, registered.Name)
 	if err != nil {
 		return err
 	}
 
 	for _, delta := range []int64{100, -30, 55} {
 		_, err := balances.Produce(ctx, &BalanceChanged{AccountId: "acct-1", Delta: delta},
-			producer.ProduceOptions{MessageKey: "acct-1"})
+			vulkan.ProduceOptions{MessageKey: "acct-1"})
 		if err != nil {
 			return err
 		}
 	}
 
-	ledgerConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	ledger, err := client.RegisterConsumer[BalanceChanged](ctx, "ledger", registered.Name, nil, &vulkan.ConsumerConfig{
 		MessageConcurrency: 8,
 	})
-	if err != nil {
-		return err
-	}
-	ledger, err := ledgerConsumer.Register[BalanceChanged](ctx, "ledger", registered.Name, nil)
 	if err != nil {
 		return err
 	}

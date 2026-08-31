@@ -26,9 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type benchMessage struct {
@@ -86,16 +85,16 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
+	must(client.RegisterSystem(ctx, nil))
 
 	// fresh topic per cell -- clean tables, no cross-cell contamination
 	topicName := fmt.Sprintf("compactionbench.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, topicName, nil)
+	registered, err := client.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+		must(client.Topic(topicName).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// the table is empty here, so ALTER alone is enough -- every page it ever
@@ -106,11 +105,9 @@ func main() {
 		must(err)
 	}
 
-	instances := make([]*producer.ProducerInstance[benchMessage], *producers)
+	instances := make([]*vulkan.ProducerInstance[benchMessage], *producers)
 	for i := range instances {
-		wp, err := producer.NewProducer(ds, nil)
-		must(err)
-		instance, err := wp.Register[benchMessage](ctx, topicName)
+		instance, err := client.RegisterProducer[benchMessage](ctx, topicName, nil)
 		must(err)
 		instances[i] = instance
 	}
@@ -133,15 +130,15 @@ func main() {
 	var wg sync.WaitGroup
 	for i := range *goroutines {
 		wg.Add(1)
-		go func(instance *producer.ProducerInstance[benchMessage], offset int) {
+		go func(instance *vulkan.ProducerInstance[benchMessage], offset int) {
 			defer wg.Done()
 			mine := make([]time.Duration, 0, 4096)
 			for produced := 0; phase.Load() != phaseDone; produced++ {
-				options := producer.ProduceOptions{}
+				options := vulkan.ProduceOptions{}
 				if len(keys) > 0 {
 					// rotate the pool from a per-goroutine offset -- maximal
 					// reverse-order pressure at enqueue, the sort's job to absorb
-					compaction, err := producer.NewCompactionOptions(0)
+					compaction, err := vulkan.NewCompactionOptions(0)
 					if err != nil {
 						record(err)
 						return

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/agentstax/vulkan/pkg/admin"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -75,18 +75,18 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				name = cmdArgs[0]
 			}
 
-			mAdmin, ds, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, ds, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
 			controller, err := migratecontroller.NewController(ds, nil)
 			if err != nil {
 				return err
 			}
 
-			targets, err := gatherTargets(ctx, mAdmin, controller, s, name)
+			targets, err := gatherTargets(ctx, client, controller, s, name)
 			if err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				return failOp("another migration is already in progress (advisory lock held) -- wait for it to finish, or confirm no other migrate process is actually running before retrying")
 			}
 
-			if err := runScopeMigrate(ctx, mAdmin, s, name, to); err != nil {
+			if err := runScopeMigrate(ctx, client, s, name, to); err != nil {
 				return migrateError(err)
 			}
 
@@ -164,14 +164,14 @@ func errToRequired(s scope, dir direction) error {
 	return failUsage("--to is required (e.g. --to %d) -- run `vulkan migrate versions` to see what's available", s.ceiling())
 }
 
-func runScopeMigrate(ctx context.Context, mAdmin *admin.MessageAdmin, s scope, name string, to int64) error {
+func runScopeMigrate(ctx context.Context, client *vulkan.Client, s scope, name string, to int64) error {
 	switch s {
 	case scopeSystem:
-		return mAdmin.MigrateSystem(ctx, to)
+		return client.System().Migrate(ctx, to)
 	case scopeTopic:
-		return mAdmin.MigrateTopic(ctx, name, to)
+		return client.Topic(name).Migrate(ctx, to)
 	default:
-		return mAdmin.MigrateTopics(ctx, to)
+		return client.MigrateTopics(ctx, to)
 	}
 }
 

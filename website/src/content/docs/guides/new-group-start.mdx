@@ -1,23 +1,20 @@
 ---
 title: Where a New Group Starts
-description: A new consumer group reads retained history by default; a cursor position of consumergroup.Head() makes it read live traffic only.
+description: A new consumer group reads retained history by default; a cursor position of vulkan.Head() makes it read live traffic only.
 ---
 
 A new consumer group starts at the beginning of retained history unless
-its config's `Start` says otherwise, and `consumergroup.Head()` says
+its config's `Start` says otherwise, and `vulkan.Head()` says
 "the head of the log": the group sees only messages produced after it
 was registered. The position is used once, when `Register` creates the
 group's cursor row; an existing group keeps its position no matter
 what the config says on a later `Register`.
 
 ```go
-scoringConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-	Start: consumergroup.Head(),
-})
-must(err)
-
-scoring, err := scoringConsumer.Register[OrderPlaced](ctx, "fraud-scoring",
-	"orders.placed", nil)
+scoring, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring",
+	"orders.placed", nil, &vulkan.ConsumerConfig{
+		Start: vulkan.Head(),
+	})
 must(err)
 must(scoring.Consume(ctx, scoreOrder))
 ```
@@ -31,7 +28,7 @@ retention) that a brand-new group does not have.
 
 ## The position type
 
-`consumergroup.CursorPosition` is a place in a topic's message log,
+`vulkan.CursorPosition` is a place in a topic's message log,
 and it is the one type every cursor-placing surface takes: `Start` on
 the consumer config today, the rewind verb when it ships. Its zero
 value is the beginning, so a config that says nothing keeps today's
@@ -39,10 +36,10 @@ behavior.
 
 | constructor | the cursor is set to | status |
 | --- | --- | --- |
-| `consumergroup.Beginning()` | the oldest retained message; the zero value | shipped |
-| `consumergroup.Head()` | `MAX(id)` of the log at the moment the row is written | shipped |
-| `consumergroup.AtMessageId(id)` | a message id | [rewind](/guides/replay/), proposed |
-| `consumergroup.AtTime(t)` | the first message created at or after `t` | [rewind](/guides/replay/), proposed |
+| `vulkan.Beginning()` | the oldest retained message; the zero value | shipped |
+| `vulkan.Head()` | `MAX(id)` of the log at the moment the row is written | shipped |
+| `vulkan.AtMessageId(id)` | a message id | [rewind](/guides/replay/), proposed |
+| `vulkan.AtTime(t)` | the first message created at or after `t` | [rewind](/guides/replay/), proposed |
 
 Event Hubs' `EventPosition` and EventStoreDB's `StreamPosition` are the
 same shape: a value with a constructor per kind, handed to whichever
@@ -57,7 +54,7 @@ field.
 service is added today; scoring a year of settled orders is a day of
 CPU for nothing.
 
-`Register` with `Start: consumergroup.Head()` creates the cursor row at
+`Register` with `Start: vulkan.Head()` creates the cursor row at
 the head instead of at 0:
 
 ```sql
@@ -96,7 +93,7 @@ runs. On an empty topic the beginning and the head are the same place.
 ## What it does not do
 
 - No id or timestamp target yet. "Start from Tuesday" is
-  `consumergroup.AtTime(tuesday)` handed to the rewind verb pointed
+  `vulkan.AtTime(tuesday)` handed to the rewind verb pointed
   forward, and it inherits that verb's spec questions; the two shipped
   constructors are the ones a brand-new group can use.
 - No effect on an existing group. Changing `Start` for a group that

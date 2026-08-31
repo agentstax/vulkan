@@ -11,10 +11,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
-	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 func main() {
@@ -43,7 +41,7 @@ func run() error {
 	fmt.Printf("crash after: %f\n", *crashAfterPtr)
 
 	// SETUP
-	ctx, stop := iCommon.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	const concurrencyLimit = 5
@@ -54,12 +52,12 @@ func run() error {
 	}
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	if err != nil {
 		return err
 	}
 
-	t, err := mAdmin.GetTopic(ctx, *topicPtr)
+	t, err := client.Topic(*topicPtr).Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -67,20 +65,15 @@ func run() error {
 		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
-	workConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	workInstance, err := client.RegisterConsumer[common.Work](ctx, *groupPtr, t.Name, nil, &vulkan.ConsumerConfig{
 		BatchLimit:         10,
 		QueueSize:          concurrencyLimit * 10,
 		MessageConcurrency: concurrencyLimit,
-		Message:            &iCommon.MessageOptions{Timeout: 5 * time.Second, Retry: &iCommon.RetryPolicy{MaxRetries: 3}},
+		Message:            &vulkan.MessageOptions{Timeout: 5 * time.Second, Retry: &vulkan.RetryPolicy{MaxRetries: 3}},
 		ClaimPollRate:      1 * time.Second,
 		QueueMargin:        2 * time.Second,
 		RecordMargin:       1 * time.Second,
 	})
-	if err != nil {
-		return err
-	}
-
-	workInstance, err := workConsumer.Register[common.Work](ctx, *groupPtr, t.Name, nil)
 	if err != nil {
 		return err
 	}

@@ -34,13 +34,13 @@ field.`,
 			}
 			out := cmd.OutOrStdout()
 
-			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL)
 			if err != nil {
 				return err
 			}
-			defer closeAdmin()
+			defer closeClient()
 
-			workers, err := mAdmin.GetGroup(ctx, topicName, groupName)
+			workers, err := client.Topic(topicName).Group(groupName).ListWorkers(ctx)
 			if err != nil {
 				return groupError(topicName, groupName, err)
 			}

@@ -23,7 +23,7 @@ customer is `jamie@example.com`:
 
 ```go
 // ❌ the email fires whether or not the commit happens
-err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, orderId); err != nil {
 		return err
 	}
@@ -31,9 +31,9 @@ err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx)
 	sendEmailConfirmation("jamie@example.com") // fires NOW, mid-transaction
 
 	_, err := receipts.ProduceInTx(ctx, tx,
-		func(context.Context, producer.Tx, string) (*ReceiptRequested, error) {
+		func(context.Context, vulkan.Tx, string) (*ReceiptRequested, error) {
 			return &ReceiptRequested{OrderId: orderId}, nil
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 	return err
 })
 ```
@@ -50,7 +50,7 @@ rollback either — an ambiguous commit failure surfaces as-is (see
 move is still no email.
 
 ```go
-err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
 	// statements and produces only -- everything in here can roll back
 	_, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, orderId)
 	return err
@@ -70,9 +70,9 @@ Make the email a message:
 
 ```go
 _, err := emails.ProduceInTx(ctx, tx,
-	func(context.Context, producer.Tx, string) (*EmailRequested, error) {
+	func(context.Context, vulkan.Tx, string) (*EmailRequested, error) {
 		return &EmailRequested{To: "jamie@example.com", Template: "payment-received"}, nil
-	}, producer.ProduceOptions{})
+	}, vulkan.ProduceOptions{})
 ```
 
 An `email-sender` consumer group calls `sendEmailConfirmation()` in
@@ -93,7 +93,7 @@ mint fresh per call, so a naive rerun produces the message twice.
 ```go
 // any stable string works as the key -- here the order id already is one
 produced, err := instance.Produce(ctx, &OrderCreated{OrderId: order.Id},
-	producer.ProduceOptions{IdempotencyKey: "order-created-" + order.Id})
+	vulkan.ProduceOptions{IdempotencyKey: "order-created-" + order.Id})
 if err != nil {
 	return err
 }

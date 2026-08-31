@@ -36,17 +36,15 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/admin"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
 	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 const (
@@ -109,11 +107,11 @@ func run() (err error) {
 func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 1: a fresh failure logs one delivery_log row, a success logs none")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario1", topiccontroller.TopicConfig{})
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario1", vulkan.TopicConfig{})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
@@ -137,13 +135,13 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.Postgres
 func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 2: retrying the same message twice appends attempt=1 then attempt=2, never overwrites")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario2", topiccontroller.TopicConfig{})
+	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario2", vulkan.TopicConfig{})
 	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 1)
@@ -180,11 +178,11 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresD
 func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 3: DeliveryLogModeOff skips every write (the table itself always exists)")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario3", topiccontroller.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeOff})
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario3", vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeOff})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// registration creates delivery_log_<id> regardless of the flag -- the
@@ -211,13 +209,13 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastor
 func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 4: DeliveryLogModeAll logs a 'success' row per success, same txn as the success")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4all", topiccontroller.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
+	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4all", vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
 	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
@@ -261,13 +259,13 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *iDatastore.Postgres
 	step("SCENARIO 5a: dropPartition reaps a dormant message's delivery_log row")
 
 	const partitionSize = int64(4)
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4drop", topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4drop", vulkan.TopicConfig{PartitionSize: partitionSize})
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 4) // fills partition 0 (ids 1-4), fails id 1
@@ -288,13 +286,13 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDat
 	step("SCENARIO 5b: sweepBatch reaps a dormant message's delivery_log row individually")
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4sweep", topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4sweep", vulkan.TopicConfig{PartitionSize: partitionSize})
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 1)
@@ -316,13 +314,13 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDat
 func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 6: a claim handed back at the key gate and the next run log under the same attempt")
 
-	tp, _, _, groupId := newTopic(ctx, ds, "scenario6", topiccontroller.TopicConfig{})
+	tp, _, _, groupId := newTopic(ctx, ds, "scenario6", vulkan.TopicConfig{})
 	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
+		must(client.Topic(tp.Name).Destroy(ctx, vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// a keyed message with its first-delivery 'deferred' row, as the cursor path writes it
@@ -354,11 +352,11 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.TopicData, *messageconsumergroupcontroller.MessageConsumerGroupController, *producer.ProducerInstance[common.Work], int64) {
+func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix string, cfg vulkan.TopicConfig) (*topic.TopicData, *messageconsumergroupcontroller.MessageConsumerGroupController, *vulkan.ProducerInstance[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
-	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-	tp, err := mAdmin.RegisterTopic(ctx, name, &cfg)
+	tp, err := client.RegisterTopic(ctx, name, &cfg)
 	must(err)
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -366,18 +364,16 @@ func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix stri
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer(ds, nil)
-	must(err)
-	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
+	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 	return tp, messageConsumers, wpInstance, groupId
 }
 
-func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int) {
+func seed(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], n int) {
 	for range n {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, producer.ProduceOptions{})
+		}, vulkan.ProduceOptions{})
 		must(err)
 	}
 }
@@ -385,7 +381,7 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, wpInstance *producer.ProducerInstance[common.Work], tp *topic.TopicData, groupId int64, n int) int64 {
+func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, wpInstance *vulkan.ProducerInstance[common.Work], tp *topic.TopicData, groupId int64, n int) int64 {
 	seed(ctx, wpInstance, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, n, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)

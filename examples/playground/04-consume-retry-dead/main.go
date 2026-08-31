@@ -25,10 +25,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 type PaymentRequestedV1 struct {
@@ -52,7 +50,7 @@ func main() {
 }
 
 func run() error {
-	ctx, stop := common.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
@@ -62,35 +60,35 @@ func run() error {
 	}
 	defer ds.Close()
 
-	paymentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Message: &common.MessageOptions{
+	client, err := vulkan.NewClient(ds, nil)
+	if err != nil {
+		return err
+	}
+	payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested", nil, &vulkan.ConsumerConfig{
+		Message: &vulkan.MessageOptions{
 			Timeout: 10 * time.Second,
-			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
+			Retry:   &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
 		},
 	})
 	if err != nil {
 		return err
 	}
-	payments, err := paymentConsumer.Register[PaymentRequestedV1](ctx, "charge-cards", "payments.requested", nil)
-	if err != nil {
-		return err
-	}
 
 	return payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequestedV1) error {
-		meta, _ := consumergroup.MetaFromContext(ctx)
+		meta, _ := vulkan.MetaFromContext(ctx)
 		fmt.Printf("charging %s (message %d, attempt %d, delays %d)\n",
 			payment.OrderId, meta.Id, meta.Attempts+1, meta.Delays)
 
 		switch payment.Card {
 		case "declined":
 			// dead on this attempt; the cause lands in last_error
-			return consumergroup.Terminal(errCardDeclined)
+			return vulkan.Terminal(errCardDeclined)
 		case "gateway-down":
 			// retried MaxRetries times with backoff
 			return errGatewayDown
 		case "settles-later":
 			// runs again after the delay
-			return consumergroup.Delay(untilSettlement())
+			return vulkan.Delay(untilSettlement())
 		}
 		return nil
 	})
