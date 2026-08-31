@@ -145,9 +145,8 @@ func run() (err error) {
 		seededHead = produced.Id
 	}
 	headGroup := fmt.Sprintf("consumergrouplab.head.%d", suffix)
-	headInstance, err := client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, nil, &vulkan.ConsumerConfig{
-		Start:         vulkan.Head(),
-		ClaimPollRate: 200 * time.Millisecond,
+	headInstance, err := client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, &vulkan.ConsumerConfig{
+		Start: vulkan.Head(),
 	})
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, seededHead, "after Register at the head")
@@ -160,7 +159,7 @@ func run() (err error) {
 		seen = append(seen, message.N)
 		stop()
 		return nil
-	})
+	}, &vulkan.ConsumeOptions{ClaimPollRate: 200 * time.Millisecond})
 	if consumeErr != nil && !errors.Is(consumeErr, context.Canceled) {
 		must(consumeErr)
 	}
@@ -168,7 +167,7 @@ func run() (err error) {
 		die(fmt.Sprintf("group at the head saw %v, want only the post-register message 4 (id %d)", seen, fresh.Id))
 	}
 	before := readCursor(ctx, ds, topicA.Id, headGroup)
-	_, err = client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, nil, nil)
+	_, err = client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, nil)
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, before, "after a second Register at the beginning")
 	fmt.Printf("  ✓ cursor created at %d, only message 4 delivered, a later Register left the row alone\n", seededHead)

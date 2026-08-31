@@ -60,7 +60,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	shipping, err := client.RegisterConsumer[OrderPlaced](ctx, "shipping", "orders.placed", nil, nil)
+	shipping, err := client.RegisterConsumer[OrderPlaced](ctx, "shipping", "orders.placed", nil)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func run() error {
 		return shipping.Consume(ctx, func(ctx context.Context, order *OrderPlaced) error {
 			fmt.Printf("shipping %s\n", order.OrderId)
 			return nil
-		})
+		}, nil)
 	})
 	return group.Wait()
 }

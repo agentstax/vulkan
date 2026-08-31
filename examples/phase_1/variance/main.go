@@ -75,14 +75,8 @@ func run() error {
 		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
-	wcInstance, err := client.RegisterConsumer[common.Work](ctx, *groupPtr, t.Name, nil, &vulkan.ConsumerConfig{
-		BatchLimit:         100,
-		QueueSize:          100 + conc,
-		MessageConcurrency: conc,
-		Message:            &vulkan.MessageOptions{Timeout: 10 * time.Second, Retry: &vulkan.RetryPolicy{MaxRetries: 3}}, // Timeout must exceed the slowest payload sleep
-		ClaimPollRate:      500 * time.Millisecond,
-		QueueMargin:        3 * time.Second,
-		RecordMargin:       2 * time.Second,
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, *groupPtr, t.Name, &vulkan.ConsumerConfig{
+		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second, Retry: &vulkan.RetryPolicy{MaxRetries: 3}}, // Timeout must exceed the slowest payload sleep
 	})
 	if err != nil {
 		return err
@@ -105,6 +99,13 @@ func run() error {
 			stop()
 		}
 		return nil
+	}, &vulkan.ConsumeOptions{
+		BatchLimit:         100,
+		QueueSize:          100 + conc,
+		MessageConcurrency: conc,
+		ClaimPollRate:      500 * time.Millisecond,
+		QueueMargin:        3 * time.Second,
+		RecordMargin:       2 * time.Second,
 	})
 	if err != nil {
 		return fmt.Errorf("consume error: %w", err)

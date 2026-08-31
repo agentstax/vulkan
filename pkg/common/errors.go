@@ -13,7 +13,7 @@ var ErrAlreadyConsuming = diagnostic.NewError("VK0001", diagnostic.Permanent,
 // requested.
 var ErrLifecycleContextNotCancellable = diagnostic.NewError("VK0002", diagnostic.Permanent,
 	"lifecycle context can never be cancelled",
-	"pass the application's shutdown context, or set the config's DisableGracefulShutdown")
+	"pass the application's shutdown context, or set ConsumeOptions.DisableGracefulShutdown")
 
 // ErrLeaseLost means the row was reclaimed by another consumer between the
 // claim and the write; the delivery machinery handles the redelivery.

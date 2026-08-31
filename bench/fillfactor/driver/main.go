@@ -178,10 +178,6 @@ func main() {
 	// a short retry curve so a designated failure's whole exception cycle
 	// (claim, outcome, eventual dead) lands inside the cell
 	consumerConfig := &vulkan.ConsumerConfig{
-		BatchLimit:              *batchLimit,
-		QueueSize:               *batchLimit * 2,
-		MessageConcurrency:      *messageConcurrency,
-		ClaimPollRate:           250 * time.Millisecond,
 		ExceptionInitialBackoff: 500 * time.Millisecond,
 		Message: &common.MessageOptions{
 			Timeout: 5 * time.Second,
@@ -194,18 +190,25 @@ func main() {
 		},
 	}
 
+	consumeOptions := &vulkan.ConsumeOptions{
+		BatchLimit:         *batchLimit,
+		QueueSize:          *batchLimit * 2,
+		MessageConcurrency: *messageConcurrency,
+		ClaimPollRate:      250 * time.Millisecond,
+	}
+
 	consumeCtx, cancelConsume := context.WithCancel(ctx)
 	defer cancelConsume()
 
 	var consumeWg sync.WaitGroup
 	for group := range *groups {
-		instance, err := client.RegisterConsumer[benchMessage](ctx, fmt.Sprintf("bench-group-%02d", group), topicName, nil, consumerConfig)
+		instance, err := client.RegisterConsumer[benchMessage](ctx, fmt.Sprintf("bench-group-%02d", group), topicName, consumerConfig)
 		must(err)
 
 		consumeWg.Add(1)
 		go func() {
 			defer consumeWg.Done()
-			record(instance.Consume(consumeCtx, consumeFunc))
+			record(instance.Consume(consumeCtx, consumeFunc, consumeOptions))
 		}()
 	}
 

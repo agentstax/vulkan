@@ -113,10 +113,7 @@ func run() (err error) {
 		produce("acct-4", seq)
 	}
 
-	instance, err := client.RegisterConsumer[Adjustment](ctx, group, tp.Name, nil, &vulkan.ConsumerConfig{
-		BatchLimit:              50,
-		MessageConcurrency:      4,
-		ClaimPollRate:           100 * time.Millisecond,
+	instance, err := client.RegisterConsumer[Adjustment](ctx, group, tp.Name, &vulkan.ConsumerConfig{
 		ExceptionInitialBackoff: 500 * time.Millisecond,
 		Message: &vulkan.MessageOptions{
 			Timeout: 5 * time.Second,
@@ -147,6 +144,10 @@ func run() (err error) {
 				return vulkan.Terminal(errors.New("account closed"))
 			}
 			return nil
+		}, &vulkan.ConsumeOptions{
+			BatchLimit:         50,
+			MessageConcurrency: 4,
+			ClaimPollRate:      100 * time.Millisecond,
 		})
 	}()
 

@@ -125,16 +125,19 @@ func runOrdering(ctx context.Context, client *vulkan.Client, wpInstance *vulkan.
 // claim -- batchLimit must cover it) at the given pool size, returning the
 // slow message's completion offset from start and each fast message's.
 func drain(ctx context.Context, client *vulkan.Client, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
-	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, nil, &vulkan.ConsumerConfig{
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, &vulkan.ConsumerConfig{
+		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
+	})
+	must(err)
+
+	options := &vulkan.ConsumeOptions{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
 		QueueSize:               batchLimit + poolSize,
 		MessageConcurrency:      poolSize,
-		Message:                 &vulkan.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		RecordMargin:            2 * time.Second,
-	})
-	must(err)
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -163,7 +166,7 @@ func drain(ctx context.Context, client *vulkan.Client, topicName, group string, 
 			go func() { time.Sleep(50 * time.Millisecond); cancel() }()
 		}
 		return nil
-	}))
+	}, options))
 	return slowAt, fastAt
 }
 
@@ -200,16 +203,19 @@ func runThroughput(ctx context.Context, client *vulkan.Client, wpInstance *vulka
 }
 
 func drainTimed(ctx context.Context, client *vulkan.Client, topicName, group string, poolSize, target int) time.Duration {
-	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, nil, &vulkan.ConsumerConfig{
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, &vulkan.ConsumerConfig{
+		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
+	})
+	must(err)
+
+	options := &vulkan.ConsumeOptions{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
 		QueueSize:               target + poolSize,
 		MessageConcurrency:      poolSize,
-		Message:                 &vulkan.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		RecordMargin:            2 * time.Second,
-	})
-	must(err)
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -229,7 +235,7 @@ func drainTimed(ctx context.Context, client *vulkan.Client, topicName, group str
 			go func() { time.Sleep(50 * time.Millisecond); cancel() }()
 		}
 		return nil
-	}))
+	}, options))
 	return elapsed
 }
 

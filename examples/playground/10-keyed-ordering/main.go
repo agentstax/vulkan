@@ -5,7 +5,8 @@
 //
 // Concepts held before domain code (10): the produce set from scenario 01,
 // plus MessageKey, MessageOptions.Concurrency (ConcurrencyOrdered), the
-// consumer's MessageConcurrency, ConcurrencyOverride, and the
+// session's ConsumeOptions.MessageConcurrency, the group's
+// ConcurrencyOverride, and the
 // "ordered = every same-key message in id order, one at a time, through
 // failures" semantics.
 //
@@ -79,9 +80,7 @@ func run() error {
 		}
 	}
 
-	ledger, err := client.RegisterConsumer[BalanceChanged](ctx, "ledger", registered.Name, nil, &vulkan.ConsumerConfig{
-		MessageConcurrency: 8,
-	})
+	ledger, err := client.RegisterConsumer[BalanceChanged](ctx, "ledger", registered.Name, nil)
 	if err != nil {
 		return err
 	}
@@ -97,7 +96,7 @@ func run() error {
 			}
 			fmt.Printf("%s %+d\n", change.AccountId, change.Delta)
 			return nil
-		})
+		}, &vulkan.ConsumeOptions{MessageConcurrency: 8})
 	})
 	return group.Wait()
 }

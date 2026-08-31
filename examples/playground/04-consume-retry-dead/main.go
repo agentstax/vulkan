@@ -5,13 +5,13 @@
 // wait without counting as a failure (delay).
 //
 // Concepts held before domain code (10): the 7 from scenario 03, plus
-// MessageOptions, RetryPolicy, and the ConsumerConfig.Retry vs
+// MessageOptions, RetryPolicy, and the ClientConfig.Retry vs
 // ConsumerConfig.Message.Retry distinction.
 //
 // Traps hit:
-//   - ConsumerConfig.Retry is the consumer's own Postgres retry;
+//   - ClientConfig.Retry is the client's own Postgres retry;
 //     ConsumerConfig.Message.Retry is message redelivery. Both are
-//     *common.RetryPolicy, both sit on the same config.
+//     *vulkan.RetryPolicy, one config apart.
 //   - Reading which attempt this is needs MetaFromContext -- the comma-ok
 //     is always true inside a handler, yet every handler writes it.
 //   - There is no dead-letter read verb on the consumer or admin; "what is
@@ -64,7 +64,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested", nil, &vulkan.ConsumerConfig{
+	payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested", &vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
 			Timeout: 10 * time.Second,
 			Retry:   &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
@@ -91,7 +91,7 @@ func run() error {
 			return vulkan.Delay(untilSettlement())
 		}
 		return nil
-	})
+	}, nil)
 }
 
 // untilSettlement is the wait until the bank's next 02:00 settlement.

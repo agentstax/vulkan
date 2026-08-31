@@ -53,7 +53,7 @@ func run() error {
 		return err
 	}
 
-	scoring, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring", "orders.placed", nil, &vulkan.ConsumerConfig{
+	scoring, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring", "orders.placed", &vulkan.ConsumerConfig{
 		Start: vulkan.Head(),
 	})
 	if err != nil {
@@ -63,5 +63,5 @@ func run() error {
 	return scoring.Consume(ctx, func(ctx context.Context, order *OrderPlaced) error {
 		fmt.Printf("scoring %s\n", order.OrderId)
 		return nil
-	})
+	}, nil)
 }

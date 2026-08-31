@@ -82,7 +82,7 @@ func (i *CompactionReadCostInstance) consume(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return instance.Consume(ctx, i.evaluateTopics)
+	return instance.Consume(ctx, i.evaluateTopics, nil)
 }
 
 func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, jobPayload *alert.JobPayload) error {

@@ -48,7 +48,7 @@ err := instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) erro
 		return err
 	}
 	return response.Body.Close()
-})
+}, nil)
 ```
 
 `http.Post` has no deadline and no cancellation: when the mail API
@@ -67,7 +67,7 @@ err := instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) erro
 		return err
 	}
 	return response.Body.Close()
-})
+}, nil)
 ```
 
 Now the request dies when the ctx does: the func returns inside the
@@ -86,7 +86,7 @@ Two knobs sit around the window, for two different problems:
   inside `MessageMax`). A healthy-but-slow handler shouldn't ride
   the cutoff.
 - The *cancellation response* is slower than 100ms — raise
-  `TimeoutGrace`. Some drivers answer a cancel with a network round
+  `ConsumeOptions.TimeoutGrace`. Some drivers answer a cancel with a network round
   trip of their own, and the default assumes a same-region trip.
   Grace is slack for a func that did respect its ctx to finish
   unwinding — it is never extra time to keep working.

@@ -102,13 +102,18 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 
 // RegisterConsumer resolves the named topic and registers the consumer
 // group on it, returning an instance that consumes Message from it.
-// bindings is the group's full set; nil = the whole topic.
-// cfg may be nil or a sparse struct.
+// cfg is the group's declaration -- nil or sparse for the defaults, with
+// cfg.Bindings the group's full pattern set (nil = the whole topic).
 // ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consumerGroup string, topicName string, bindings []string, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consumerGroup string, topicName string, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
 	messageConsumer, err := consumer.NewConsumer(c.ds, toConsumerConfig(cfg, c.Config.Retry, c.Logger))
 	if err != nil {
 		return nil, err
+	}
+
+	var bindings []string
+	if cfg != nil {
+		bindings = cfg.Bindings
 	}
 	return messageConsumer.Register[Message](ctx, consumerGroup, topicName, bindings)
 }

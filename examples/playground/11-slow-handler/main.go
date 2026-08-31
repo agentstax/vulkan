@@ -62,7 +62,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	transcodes, err := client.RegisterConsumer[TranscodeRequested](ctx, "transcoder", "videos.transcode", nil, &vulkan.ConsumerConfig{
+	transcodes, err := client.RegisterConsumer[TranscodeRequested](ctx, "transcoder", "videos.transcode", &vulkan.ConsumerConfig{
 		Message:    &vulkan.MessageOptions{Timeout: 2 * time.Minute},
 		MessageMax: &vulkan.MessageOptions{Timeout: time.Hour},
 	})
@@ -81,5 +81,5 @@ func run() error {
 			}
 		}
 		return nil
-	})
+	}, nil)
 }

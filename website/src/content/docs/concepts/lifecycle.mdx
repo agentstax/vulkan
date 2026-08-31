@@ -57,7 +57,7 @@ consumers *clamp*):
 
 ```go
 fraud, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring", "orders.placed",
-	nil, &vulkan.ConsumerConfig{
+	&vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
 			Timeout: 30 * time.Second,
 			Retry:   &vulkan.RetryPolicy{MaxRetries: 5, BaseDelay: 2 * time.Second},

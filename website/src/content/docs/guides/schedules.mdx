@@ -31,7 +31,7 @@ And in whichever service does the invoicing, nothing about cron:
 
 ```go
 invoices, err := client.RegisterConsumer[InvoiceRun](ctx, "invoice-runner",
-	"invoices", nil, nil)
+	"invoices", nil)
 if err != nil {
 	return err
 }
@@ -40,7 +40,7 @@ return invoices.Consume(ctx, func(ctx context.Context, run *InvoiceRun) error {
 	meta, _ := vulkan.MetaFromContext(ctx)
 	fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
 	return nil
-})
+}, nil)
 ```
 
 This is the same shape as the other two register verbs: declare a named

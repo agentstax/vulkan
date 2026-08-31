@@ -5,13 +5,13 @@
 //
 // Concepts held before domain code (7): datastore, LifecycleContext,
 // the Message type's SchemaVersion, Client, RegisterConsumer[T], consumer
-// group name, bindings (nil).
+// group name, the nil group config (whole topic, defaults).
 //
 // Traps hit:
 //   - context.Background() into Consume fails with VK0002; the fix is a
 //     Vulkan-specific ctx constructor the user must discover.
-//   - RegisterConsumer's nil last argument is the binding set; a reader
-//     cannot tell what nil means from the call.
+//   - RegisterConsumer's nil config consumes the whole topic -- bindings
+//     live on ConsumerConfig.Bindings, and nothing at the call says so.
 //   - Two `ctx` shapes in one file: the lifecycle ctx for Consume, and the
 //     per-message ctx handed to the handler.
 package main
@@ -56,7 +56,7 @@ func run() error {
 		return err
 	}
 
-	receipts, err := client.RegisterConsumer[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil, nil)
+	receipts, err := client.RegisterConsumer[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil)
 	if err != nil {
 		return err
 	}
@@ -64,5 +64,5 @@ func run() error {
 	return receipts.Consume(ctx, func(ctx context.Context, order *OrderPlacedV1) error {
 		fmt.Printf("receipt for %s: %d cents\n", order.OrderId, order.Total)
 		return nil
-	})
+	}, nil)
 }

@@ -7,9 +7,9 @@ shutdown, and context.Background/TODO can never be cancelled.
 
 Pass your application's shutdown context:
 
-    ctx, stop := common.LifecycleContext(nil) // github.com/agentstax/vulkan/pkg/common
+    ctx, stop := vulkan.LifecycleContext(nil) // github.com/agentstax/vulkan/pkg/vulkan
     defer stop()
 
-Or declare a consumer that only stops with the process:
+Or run a session that only stops with the process:
 
-    &consumer.ConsumerConfig{DisableGracefulShutdown: true}`
+    instance.Consume(ctx, handler, &vulkan.ConsumeOptions{DisableGracefulShutdown: true})`

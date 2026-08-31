@@ -84,15 +84,30 @@ func newConsumerInstance[Message topic.Versioned](owner *common.Owner, ds *datas
 // Consume blocks until stopped: ctx is the instance's lifetime, cancel it to
 // shut down in-flight work and return nil. A runner's fatal error tears the
 // instance down and returns here. ctx must be cancellable, unless
-// ConsumerConfig.DisableGracefulShutdown declares otherwise.
-func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
+// ConsumeOptions.DisableGracefulShutdown declares otherwise.
+// options may be nil for the defaults.
+func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message], options *ConsumeOptions) error {
 	if consumerFunc == nil {
 		return errors.New("consumerFunc must not be nil")
 	}
 
+	resolved := ConsumeOptions{}
+	if options != nil {
+		resolved = *options
+	}
+	resolved.WithDefaults()
+	// the default shutdown budget needs the group's ceiling, which lives on
+	// the config, so the derivation runs here rather than in WithDefaults
+	if resolved.ShutdownTimeout == 0 {
+		resolved.ShutdownTimeout = i.Config.MessageMax.Timeout + resolved.TimeoutGrace + resolved.RecordMargin
+	}
+	if err := resolved.Validate(); err != nil {
+		return err
+	}
+
 	// Done() == nil -> Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase would silently not exist
-	if ctx.Done() == nil && !i.Config.DisableGracefulShutdown {
+	if ctx.Done() == nil && !resolved.DisableGracefulShutdown {
 		return fmt.Errorf("%w\n%s", common.ErrLifecycleContextNotCancellable.With("group", i.Owner.Name), lifecycleContextHelp)
 	}
 
@@ -103,7 +118,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	defer release()
 
 	// blocking until bindings install or join
-	if err := i.declareBindings(ctx); err != nil {
+	if err := i.declareBindings(ctx, resolved.BindingRetryInterval); err != nil {
 		// a cancel during the wait is a requested stop, not a failure
 		if ctx.Err() != nil {
 			return nil
@@ -111,7 +126,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 		return err
 	}
 
-	runner, err := i.newManagerRunner(ctx, consumerFunc)
+	runner, err := i.newManagerRunner(ctx, consumerFunc, &resolved)
 	if err != nil {
 		return err
 	}
@@ -121,7 +136,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	session := uuid.NewV7()
 	i.metrics.ResetCounters()
 
-	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", i.Config.ShutdownTimeout, "batch_limit", i.Config.BatchLimit)
+	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", resolved.ShutdownTimeout, "batch_limit", resolved.BatchLimit)
 	started := time.Now()
 
 	group, runCtx := errgroup.WithContext(ctx)
@@ -164,7 +179,7 @@ func (i *ConsumerInstance[Message]) logStopped(ctx context.Context, started time
 }
 
 // declareBindings retries the declaration until it is installed or joined.
-func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context) error {
+func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context, bindingRetryInterval time.Duration) error {
 	for attempt := 1; ; attempt++ {
 		// Register's outcome is not trusted -- another declarer may have
 		// replaced the set while this instance had no live heartbeat
@@ -185,7 +200,7 @@ func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(i.Config.BindingRetryInterval):
+		case <-time.After(bindingRetryInterval):
 		}
 	}
 }

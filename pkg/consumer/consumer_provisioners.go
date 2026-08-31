@@ -17,8 +17,8 @@ import (
 // every group-owned row is declared here rather than at Register, so the
 // provisioner that runs a row is the one that declares it and a second
 // Consume re-creates whatever a crash lost
-func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consumerFunc ConsumerFunc[Message]) (*manager.Runner, error) {
-	groupProvisioners, err := i.newGroupProvisioners(ctx, consumerFunc)
+func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consumerFunc ConsumerFunc[Message], options *ConsumeOptions) (*manager.Runner, error) {
+	groupProvisioners, err := i.newGroupProvisioners(ctx, consumerFunc, options)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +50,8 @@ func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consum
 
 // one frontier per group, with committed advancing behind it. Each
 // provisioner declares its own row before it joins the manager's list.
-func (i *ConsumerInstance[Message]) newGroupProvisioners(ctx context.Context, consumerFunc ConsumerFunc[Message]) ([]worker.Provisioner, error) {
-	message, err := messageconsumer.NewMessageConsumerProvisioner(i.ds, consumerFunc, i.topicVersion, i.metrics, toMessageConsumerConfig(i.Config))
+func (i *ConsumerInstance[Message]) newGroupProvisioners(ctx context.Context, consumerFunc ConsumerFunc[Message], options *ConsumeOptions) ([]worker.Provisioner, error) {
+	message, err := messageconsumer.NewMessageConsumerProvisioner(i.ds, consumerFunc, i.topicVersion, i.metrics, toMessageConsumerConfig(i.Config, options))
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (i *ConsumerInstance[Message]) newGroupProvisioners(ctx context.Context, co
 		return nil, err
 	}
 
-	exception, err := exceptionconsumer.NewExceptionConsumerProvisioner(i.ds, consumerFunc, i.topicVersion, i.metrics, toExceptionConsumerConfig(i.Config))
+	exception, err := exceptionconsumer.NewExceptionConsumerProvisioner(i.ds, consumerFunc, i.topicVersion, i.metrics, toExceptionConsumerConfig(i.Config, options))
 	if err != nil {
 		return nil, err
 	}

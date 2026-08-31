@@ -98,8 +98,7 @@ func run() (err error) {
 		ids[branch] = produced.Id
 	}
 
-	instance, err := client.RegisterConsumer[Payment](ctx, group, tp.Name, nil, &vulkan.ConsumerConfig{
-		ClaimPollRate:           100 * time.Millisecond,
+	instance, err := client.RegisterConsumer[Payment](ctx, group, tp.Name, &vulkan.ConsumerConfig{
 		ExceptionInitialBackoff: 500 * time.Millisecond,
 		Message: &vulkan.MessageOptions{
 			Timeout: 5 * time.Second,
@@ -142,7 +141,7 @@ func run() (err error) {
 				return vulkan.Delay(delay)
 			}
 			return nil
-		})
+		}, &vulkan.ConsumeOptions{ClaimPollRate: 100 * time.Millisecond})
 	}()
 
 	step("first delivery of all four branches")

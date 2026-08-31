@@ -155,7 +155,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    		os.Exit(1)
    	}
 
-   	instance, err := client.RegisterConsumer[WelcomeEmail](ctx, "email-sender", registered.Name, nil,
+   	instance, err := client.RegisterConsumer[WelcomeEmail](ctx, "email-sender", registered.Name,
    		&vulkan.ConsumerConfig{
    			Message: &vulkan.MessageOptions{
    				Timeout: 5 * time.Second,
@@ -167,7 +167,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	must(instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
    		fmt.Printf("sending welcome email to %s\n", email.UserId)
    		return nil
-   	}))
+   	}, nil))
    }
 
    func must(err error) {
@@ -184,8 +184,8 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
      `Consume` requires a cancellable context — it refuses
      `context.Background()` — because graceful shutdown is part of the
      contract, not an option. Ctrl-C drains cleanly.
-   - The `nil` bindings argument to `RegisterConsumer` is the group's
-     binding set: `nil` means the whole topic. Handlers should be idempotent —
+   - `ConsumerConfig.Bindings` is the group's binding set; leaving it
+     unset means the whole topic. Handlers should be idempotent —
      redelivery after a crash or timeout is normal at-least-once behavior.
 
 5. **Look inside with psql**

@@ -5,24 +5,25 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
 )
 
-// Each worker row runs on its own slice of this config. WithDefaults and
-// Validate have already run by the time these are built, so the row configs
-// carry resolved values and their own WithDefaults is a no-op.
+// Each worker row runs on its own slice of the group config and the session
+// options. Both arrive resolved -- cfg by NewConsumer, options by Consume --
+// so the row configs carry resolved values and their own WithDefaults is a
+// no-op.
 
-func toMessageConsumerConfig(cfg *ConsumerConfig) *messageconsumer.MessageConsumerConfig {
+func toMessageConsumerConfig(cfg *ConsumerConfig, options *ConsumeOptions) *messageconsumer.MessageConsumerConfig {
 	return &messageconsumer.MessageConsumerConfig{
-		BatchLimit:              cfg.BatchLimit,
-		QueueSize:               cfg.QueueSize,
-		MessageConcurrency:      cfg.MessageConcurrency,
+		BatchLimit:              options.BatchLimit,
+		QueueSize:               options.QueueSize,
+		MessageConcurrency:      options.MessageConcurrency,
 		MaxRangeReclaims:        cfg.MaxRangeReclaims,
-		ClaimPollRate:           cfg.ClaimPollRate,
-		QueueMargin:             cfg.QueueMargin,
-		RecordMargin:            cfg.RecordMargin,
-		TimeoutGrace:            cfg.TimeoutGrace,
-		SlowDispatchThreshold:   cfg.SlowDispatchThreshold,
+		ClaimPollRate:           options.ClaimPollRate,
+		QueueMargin:             options.QueueMargin,
+		RecordMargin:            options.RecordMargin,
+		TimeoutGrace:            options.TimeoutGrace,
+		SlowDispatchThreshold:   options.SlowDispatchThreshold,
 		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
-		ShutdownTimeout:         cfg.ShutdownTimeout,
-		InstanceTTL:             cfg.InstanceTTL,
+		ShutdownTimeout:         options.ShutdownTimeout,
+		InstanceTTL:             options.InstanceTTL,
 		Message:                 cfg.Message,
 		MessageMin:              cfg.MessageMin,
 		MessageMax:              cfg.MessageMax,
@@ -32,15 +33,15 @@ func toMessageConsumerConfig(cfg *ConsumerConfig) *messageconsumer.MessageConsum
 	}
 }
 
-func toExceptionConsumerConfig(cfg *ConsumerConfig) *exceptionconsumer.ExceptionConsumerConfig {
+func toExceptionConsumerConfig(cfg *ConsumerConfig, options *ConsumeOptions) *exceptionconsumer.ExceptionConsumerConfig {
 	return &exceptionconsumer.ExceptionConsumerConfig{
-		BatchLimit:            cfg.BatchLimit,
-		ClaimPollRate:         cfg.ClaimPollRate,
-		QueueMargin:           cfg.QueueMargin,
-		RecordMargin:          cfg.RecordMargin,
-		TimeoutGrace:          cfg.TimeoutGrace,
-		SlowDispatchThreshold: cfg.SlowDispatchThreshold,
-		InstanceTTL:           cfg.InstanceTTL,
+		BatchLimit:            options.BatchLimit,
+		ClaimPollRate:         options.ClaimPollRate,
+		QueueMargin:           options.QueueMargin,
+		RecordMargin:          options.RecordMargin,
+		TimeoutGrace:          options.TimeoutGrace,
+		SlowDispatchThreshold: options.SlowDispatchThreshold,
+		InstanceTTL:           options.InstanceTTL,
 		Message:               cfg.Message,
 		MessageMin:            cfg.MessageMin,
 		MessageMax:            cfg.MessageMax,

@@ -36,7 +36,7 @@ err := payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequested
 		return vulkan.Delay(time.Until(result.SettlesAt)) // run again then
 	}
 	return nil
-})
+}, nil)
 ```
 
 Say messages 41, 42, 43 and 44 hit each branch in turn, with

@@ -97,16 +97,16 @@ func run() (err error) {
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("a running consumer refuses it first -- the worker guard outranks the topic guard")
-	wcInstance, err := client.RegisterConsumer[common.Work](ctx, "destroysystemlab-group", tp.Name, nil, &vulkan.ConsumerConfig{
-		ClaimPollRate: 500 * time.Millisecond,
-		InstanceTTL:   2 * time.Second,
-	})
+	wcInstance, err := client.RegisterConsumer[common.Work](ctx, "destroysystemlab-group", tp.Name, nil)
 	must(err)
 	consumeCtx, stopConsumer := context.WithCancel(ctx)
 	consumeDone := make(chan error, 1)
 	go func() {
 		consumeDone <- wcInstance.Consume(consumeCtx, func(ctx context.Context, work *common.Work) error {
 			return nil
+		}, &vulkan.ConsumeOptions{
+			ClaimPollRate: 500 * time.Millisecond,
+			InstanceTTL:   2 * time.Second,
 		})
 	}()
 	waitLiveInstances(ctx, true)

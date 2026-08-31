@@ -157,18 +157,20 @@ func (rc *runningConsumer) stop() {
 
 func start(ctx context.Context, client *vulkan.Client, topicName string, i int) *runningConsumer {
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	cInstance, err := client.RegisterConsumer[common.Work](lifecycleCtx, group, topicName, nil, &vulkan.ConsumerConfig{
+	cInstance, err := client.RegisterConsumer[common.Work](lifecycleCtx, group, topicName, nil)
+	must(err)
+
+	options := &vulkan.ConsumeOptions{
 		BatchLimit:         50,
 		QueueSize:          64,
 		MessageConcurrency: 4,
 		ClaimPollRate:      100 * time.Millisecond,
 		InstanceTTL:        instanceTTL,
-	})
-	must(err)
+	}
 
 	done := make(chan error, 1)
 	go func() {
-		err := cInstance.Consume(lifecycleCtx, func(ctx context.Context, work *common.Work) error { return nil })
+		err := cInstance.Consume(lifecycleCtx, func(ctx context.Context, work *common.Work) error { return nil }, options)
 		if err != nil && lifecycleCtx.Err() == nil {
 			fmt.Printf("  consumer %d died early: %v\n", i, err)
 		}

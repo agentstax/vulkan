@@ -36,25 +36,13 @@ func toConsumerConfig(cfg *ConsumerConfig, retry *common.RetryPolicy, log loggin
 		cfg = &ConsumerConfig{}
 	}
 	return &consumer.ConsumerConfig{
-		BatchLimit:              cfg.BatchLimit,
-		QueueSize:               cfg.QueueSize,
-		MessageConcurrency:      cfg.MessageConcurrency,
-		MaxRangeReclaims:        cfg.MaxRangeReclaims,
-		ClaimPollRate:           cfg.ClaimPollRate,
-		QueueMargin:             cfg.QueueMargin,
-		RecordMargin:            cfg.RecordMargin,
-		TimeoutGrace:            cfg.TimeoutGrace,
-		SlowDispatchThreshold:   cfg.SlowDispatchThreshold,
-		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
-		InstanceTTL:             cfg.InstanceTTL,
-		BindingRetryInterval:    cfg.BindingRetryInterval,
-		ShutdownTimeout:         cfg.ShutdownTimeout,
-		DisableGracefulShutdown: cfg.DisableGracefulShutdown,
 		Message:                 cfg.Message,
 		MessageMin:              cfg.MessageMin,
 		MessageMax:              cfg.MessageMax,
 		ConcurrencyOverride:     cfg.ConcurrencyOverride,
 		Start:                   cfg.Start,
+		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
+		MaxRangeReclaims:        cfg.MaxRangeReclaims,
 		Logger:                  log,
 		Retry:                   retry,
 	}

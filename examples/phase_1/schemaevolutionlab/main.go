@@ -178,7 +178,7 @@ func run() (err error) {
 		cancelRun1()
 	}()
 	bridge1 := newBridgeConsumer(ctx, client, name)
-	must(bridge1.Consume(run1Ctx, bridgeFunc))
+	must(bridge1.Consume(run1Ctx, bridgeFunc, bridgeConsumeOptions))
 	assertInt("exactly 2 messages landed before the crash", processed.Load(), 2)
 
 	step("user:2 cuts over to v2 AFTER the bridge already copied it (backfill-then-live)")
@@ -191,7 +191,7 @@ func run() (err error) {
 	go func() {
 		must(waitForCommitted(run2Ctx, ds, registered.Id, 10*time.Second, cancelRun2))
 	}()
-	must(bridge2.Consume(run2Ctx, bridgeFunc))
+	must(bridge2.Consume(run2Ctx, bridgeFunc, bridgeConsumeOptions))
 
 	step("verify the winners: live always beats the bridge, regardless of which arrived first")
 	assertWinner(ctx, ds, registered.Id, "user:1", 999, "EUR") // live arrived first, still wins
@@ -241,25 +241,30 @@ func bridgeIdempotencyKey(sourceID int64) string {
 }
 
 // newBridgeConsumer builds a fresh Consumer instance on the bridge's group --
-// a new one each call, exactly as if the process had restarted. BatchLimit 1
-// and a single-permit pool keep the bridge's own delivery order deterministic
-// (ascending v1 id), so this lab's stop points are reproducible. Short
-// margins and a short ExceptionInitialBackoff keep the crash/retry path fast
-// instead of waiting out the library's production-sized defaults.
+// a new one each call, exactly as if the process had restarted. A short
+// ExceptionInitialBackoff keeps the crash/retry path fast instead of waiting
+// out the library's production-sized defaults; the session knobs are
+// bridgeConsumeOptions.
 func newBridgeConsumer(ctx context.Context, client *vulkan.Client, name string) *vulkan.ConsumerInstance[V1Order] {
-	cInstance, err := client.RegisterConsumer[V1Order](ctx, group, name, nil, &vulkan.ConsumerConfig{
-		BatchLimit:              1,
-		QueueSize:               4,
-		MessageConcurrency:      1,
-		ClaimPollRate:           50 * time.Millisecond,
+	cInstance, err := client.RegisterConsumer[V1Order](ctx, group, name, &vulkan.ConsumerConfig{
 		Message:                 &vulkan.MessageOptions{Timeout: 2 * time.Second},
-		QueueMargin:             500 * time.Millisecond,
-		RecordMargin:            500 * time.Millisecond,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
-		DisableGracefulShutdown: true,
 	})
 	must(err)
 	return cInstance
+}
+
+// bridgeConsumeOptions - BatchLimit 1 and a single-permit pool keep the
+// bridge's own delivery order deterministic (ascending v1 id), so this lab's
+// stop points are reproducible; short margins keep the crash/retry path fast.
+var bridgeConsumeOptions = &vulkan.ConsumeOptions{
+	BatchLimit:              1,
+	QueueSize:               4,
+	MessageConcurrency:      1,
+	ClaimPollRate:           50 * time.Millisecond,
+	QueueMargin:             500 * time.Millisecond,
+	RecordMargin:            500 * time.Millisecond,
+	DisableGracefulShutdown: true,
 }
 
 // waitForCommitted polls the bridge group's cursor until committed has

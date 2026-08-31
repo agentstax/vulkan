@@ -67,7 +67,7 @@ func run() error {
 		return err
 	}
 
-	runs, err := client.RegisterConsumer[InvoiceRun](ctx, "invoice-runner", invoices.Name, nil, nil)
+	runs, err := client.RegisterConsumer[InvoiceRun](ctx, "invoice-runner", invoices.Name, nil)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func run() error {
 			meta, _ := vulkan.MetaFromContext(ctx)
 			fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
 			return nil
-		})
+		}, nil)
 	})
 	return group.Wait()
 }

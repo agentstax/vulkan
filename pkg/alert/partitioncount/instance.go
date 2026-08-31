@@ -82,7 +82,7 @@ func (i *PartitionCountInstance) consume(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return instance.Consume(ctx, i.evaluateTopics)
+	return instance.Consume(ctx, i.evaluateTopics, nil)
 }
 
 func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, jobPayload *alert.JobPayload) error {

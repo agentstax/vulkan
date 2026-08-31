@@ -28,10 +28,10 @@ starts at zero by default — it reads everything retention still holds
 [`Start: vulkan.Head()`](/guides/new-group-start/)):
 
 ```go
-indexer, err := searchConsumer.Register(ctx, "search-indexer",
+indexer, err := client.RegisterConsumer[OrderPlaced](ctx, "search-indexer",
 	registered.Name, nil)
 must(err)
-must(indexer.Consume(ctx, indexOrder))
+must(indexer.Consume(ctx, indexOrder, nil))
 ```
 
 The group chews through history at its own pace (its lag shrinking is

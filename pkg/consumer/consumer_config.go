@@ -10,41 +10,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 )
 
-// TODO - better comments for each field. Should follow structure of producer.Options and the topic register Config
+// ConsumerConfig is the group's declaration: what the group means, identical
+// for every instance of the group. Session settings -- how one process runs
+// -- live on ConsumeOptions at Consume.
 type ConsumerConfig struct {
-	BatchLimit         int
-	QueueSize          int // claimed messages buffered ahead of processing -- must be >= BatchLimit or the prefetcher can never claim a full batch. Default: BatchLimit.
-	MessageConcurrency int // messages processed concurrently. Default: 1.
-	MaxRangeReclaims   int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-
-	ClaimPollRate time.Duration
-	QueueMargin   time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
-	RecordMargin  time.Duration // lease padding for recording success/failure after consumerFunc returns
-	// TimeoutGrace is scheduling slack for a consumerFunc that DID respect
-	// ctx.Done() to actually unwind and send on the result channel before the
-	// hard cutoff abandons it -- not extra time to keep working. Go's own
-	// scheduler wakeup after a context deadline fires is sub-millisecond at p99
-	// even under load (measured); this budget is really covering the caller's
-	// own cancellation-response time (e.g. a DB driver's cancel-request round
-	// trip), which pkg/consumer can't know in general. Default assumes one
-	// same-region network round trip's worth of slack.
-	TimeoutGrace time.Duration
-	// SlowDispatchThreshold - a delivery dispatch running longer than this
-	// logs a warn line with its duration; consumerFunc time is the dominant
-	// term. Default: 0 (disabled).
-	SlowDispatchThreshold   time.Duration
-	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
-
-	InstanceTTL          time.Duration // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
-	BindingRetryInterval time.Duration // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
-
-	ShutdownTimeout time.Duration // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + RecordMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
-	// DisableGracefulShutdown - lets Consume accept a context that can never
-	// be cancelled (e.g. context.Background()), leaving process exit as the
-	// only stop. Prefer passing the application's shutdown context to Consume.
-	// Default: false.
-	DisableGracefulShutdown bool
-
 	// Message - default MessageOptions: fills any option the produced message left unset.
 	// Default: Timeout 30s; Retry MaxRetries 3 with the default curve.
 	Message *common.MessageOptions
@@ -70,55 +39,14 @@ type ConsumerConfig struct {
 	// Default: consumergroup.Beginning() -- the oldest retained message.
 	Start consumergroup.CursorPosition
 
+	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
+	MaxRangeReclaims        int           // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
+
 	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
-	if c.BatchLimit == 0 {
-		c.BatchLimit = 1 // no batching by default
-	}
-
-	if c.QueueSize == 0 {
-		c.QueueSize = c.BatchLimit
-	}
-
-	if c.MessageConcurrency == 0 {
-		c.MessageConcurrency = 1
-	}
-
-	if c.MaxRangeReclaims == 0 {
-		c.MaxRangeReclaims = 3
-	}
-
-	if c.ClaimPollRate == 0 {
-		c.ClaimPollRate = 5 * time.Second
-	}
-
-	if c.QueueMargin == 0 {
-		c.QueueMargin = 5 * time.Second
-	}
-
-	if c.RecordMargin == 0 {
-		c.RecordMargin = 2 * time.Second
-	}
-
-	if c.TimeoutGrace == 0 {
-		c.TimeoutGrace = 100 * time.Millisecond
-	}
-
-	if c.ExceptionInitialBackoff == 0 {
-		c.ExceptionInitialBackoff = 5 * time.Second
-	}
-
-	if c.InstanceTTL == 0 {
-		c.InstanceTTL = 30 * time.Second
-	}
-
-	if c.BindingRetryInterval == 0 {
-		c.BindingRetryInterval = 10 * time.Second
-	}
-
 	c.Message = c.Message.WithDefaults()
 
 	// ceilings must always exist -- lease sizing and the kill backstop need them
@@ -126,8 +54,12 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	bounds.Concurrency = "" // should never be set for a 'bound'
 	c.MessageMax = c.MessageMax.Fill(&bounds)
 
-	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = c.MessageMax.Timeout + c.TimeoutGrace + c.RecordMargin
+	if c.ExceptionInitialBackoff == 0 {
+		c.ExceptionInitialBackoff = 5 * time.Second
+	}
+
+	if c.MaxRangeReclaims == 0 {
+		c.MaxRangeReclaims = 3
 	}
 
 	if c.Retry == nil {
@@ -146,53 +78,10 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
 func (c *ConsumerConfig) Validate() error {
-	if c.BatchLimit < 1 {
-		return fmt.Errorf("BatchLimit must be >= 1, got %d", c.BatchLimit)
-	}
-	if c.QueueSize < c.BatchLimit {
-		return fmt.Errorf("QueueSize (%d) must be >= BatchLimit (%d), otherwise the prefetcher can never claim a full batch", c.QueueSize, c.BatchLimit)
-	}
-	if c.MessageConcurrency < 1 {
-		return fmt.Errorf("MessageConcurrency must be >= 1, got %d", c.MessageConcurrency)
-	}
-	if c.MaxRangeReclaims < 1 {
-		return fmt.Errorf("MaxRangeReclaims must be >= 1, got %d", c.MaxRangeReclaims)
-	}
-
-	// non-positive durations break their respective loops/timers:
-	// ClaimPollRate<=0 -> the prefetch back-off and WaitForRoom timers fire immediately (busy loop),
-	// Message.Timeout/QueueMargin/RecordMargin<=0 -> the lease window math degenerates.
-	if c.ClaimPollRate <= 0 {
-		return fmt.Errorf("ClaimPollRate must be > 0, got %v", c.ClaimPollRate)
-	}
+	// Message.Timeout <= 0 degenerates the lease window math
 	if c.Message.Timeout <= 0 {
 		return fmt.Errorf("Message.Timeout must be > 0, got %v", c.Message.Timeout)
 	}
-	if c.QueueMargin <= 0 {
-		return fmt.Errorf("QueueMargin must be > 0, got %v", c.QueueMargin)
-	}
-	if c.RecordMargin <= 0 {
-		return fmt.Errorf("RecordMargin must be > 0, got %v", c.RecordMargin)
-	}
-	if c.TimeoutGrace <= 0 {
-		return fmt.Errorf("TimeoutGrace must be > 0, got %v", c.TimeoutGrace)
-	}
-	if c.SlowDispatchThreshold < 0 {
-		return fmt.Errorf("SlowDispatchThreshold must be >= 0, got %v", c.SlowDispatchThreshold)
-	}
-	if c.ExceptionInitialBackoff <= 0 {
-		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", c.ExceptionInitialBackoff)
-	}
-	if c.InstanceTTL <= 0 {
-		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
-	}
-	if c.BindingRetryInterval <= 0 {
-		return fmt.Errorf("BindingRetryInterval must be > 0, got %v", c.BindingRetryInterval)
-	}
-	if c.ShutdownTimeout <= 0 {
-		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", c.ShutdownTimeout)
-	}
-
 	if err := c.Message.Retry.Validate(); err != nil {
 		return fmt.Errorf("Message.Retry: %w", err)
 	}
@@ -215,6 +104,14 @@ func (c *ConsumerConfig) Validate() error {
 	if err := c.Start.Kind.Validate(); err != nil {
 		return fmt.Errorf("Start.Kind: %w", err)
 	}
+
+	if c.ExceptionInitialBackoff <= 0 {
+		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", c.ExceptionInitialBackoff)
+	}
+	if c.MaxRangeReclaims < 1 {
+		return fmt.Errorf("MaxRangeReclaims must be >= 1, got %d", c.MaxRangeReclaims)
+	}
+
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}

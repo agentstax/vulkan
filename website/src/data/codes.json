@@ -12,7 +12,7 @@
       "kind": "error",
       "problem": "lifecycle context can never be cancelled",
       "recovery": "permanent",
-      "fix": "pass the application's shutdown context, or set the config's DisableGracefulShutdown"
+      "fix": "pass the application's shutdown context, or set ConsumeOptions.DisableGracefulShutdown"
     },
     "VK0003": {
       "code": "VK0003",

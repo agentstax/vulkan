@@ -110,7 +110,7 @@ func run() (err error) {
 	go func() {
 		incumbentDone <- incumbent.Consume(incumbentCtx, func(ctx context.Context, message *labMessage) error {
 			return nil
-		})
+		}, consumeOptions)
 	}()
 	waitLiveInstance(ctx)
 
@@ -126,7 +126,7 @@ func run() (err error) {
 			default:
 			}
 			return nil
-		})
+		}, consumeOptions)
 	}()
 
 	// several retry intervals pass; the wait appends rows and changes nothing
@@ -218,14 +218,19 @@ func run() (err error) {
 	return nil
 }
 
-// registerConsumer declares the lab group's set with the lab's tight
-// heartbeat and retry knobs.
+// registerConsumer declares the lab group's set.
 func registerConsumer(ctx context.Context, bindings []string) (*vulkan.ConsumerInstance[labMessage], error) {
-	return client.RegisterConsumer[labMessage](ctx, groupName, topicName, bindings, &vulkan.ConsumerConfig{
-		ClaimPollRate:        500 * time.Millisecond,
-		InstanceTTL:          2 * time.Second,
-		BindingRetryInterval: 300 * time.Millisecond,
+	return client.RegisterConsumer[labMessage](ctx, groupName, topicName, &vulkan.ConsumerConfig{
+		Bindings: bindings,
 	})
+}
+
+// consumeOptions holds the lab's tight heartbeat and retry knobs, passed to
+// every Consume session.
+var consumeOptions = &vulkan.ConsumeOptions{
+	ClaimPollRate:        500 * time.Millisecond,
+	InstanceTTL:          2 * time.Second,
+	BindingRetryInterval: 300 * time.Millisecond,
 }
 
 // waitLiveInstance blocks until the consuming incumbent's heartbeat rows

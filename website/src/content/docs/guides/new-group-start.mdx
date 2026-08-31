@@ -12,11 +12,11 @@ what the config says on a later `Register`.
 
 ```go
 scoring, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring",
-	"orders.placed", nil, &vulkan.ConsumerConfig{
+	"orders.placed", &vulkan.ConsumerConfig{
 		Start: vulkan.Head(),
 	})
 must(err)
-must(scoring.Consume(ctx, scoreOrder))
+must(scoring.Consume(ctx, scoreOrder, nil))
 ```
 
 This is Kafka's `auto.offset.reset=latest` and JetStream's

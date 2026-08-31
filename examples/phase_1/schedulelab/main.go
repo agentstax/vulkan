@@ -742,16 +742,18 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 // stop is called.
 func startConsumer(ctx context.Context, group string, bindings []string, concurrency int, handler func(context.Context, *labMessage) error) func() {
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := client.RegisterConsumer[labMessage](lifecycleCtx, group, target.Name, bindings, &vulkan.ConsumerConfig{
-		ClaimPollRate:           schedulerPollRate,
-		MessageConcurrency:      concurrency,
+	instance, err := client.RegisterConsumer[labMessage](lifecycleCtx, group, target.Name, &vulkan.ConsumerConfig{
+		Bindings:                bindings,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 	})
 	must(err)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = instance.Consume(lifecycleCtx, handler)
+		_ = instance.Consume(lifecycleCtx, handler, &vulkan.ConsumeOptions{
+			ClaimPollRate:      schedulerPollRate,
+			MessageConcurrency: concurrency,
+		})
 	}()
 	return func() {
 		cancel()
