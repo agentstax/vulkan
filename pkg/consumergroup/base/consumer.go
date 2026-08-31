@@ -13,7 +13,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
@@ -26,10 +25,9 @@ type BaseConsumer[Message topic.Versioned] struct {
 	Config        *BaseConsumerConfig
 	Logger        logging.Logger
 	Metrics       *metricsproducer.MetricsProducer
+	Workers       *workercontroller.WorkerController
+	KeyLeases     *controller.KeyLeaseController
 
-	workers      *workercontroller.WorkerController
-	workerName   string
-	keyLeases    *controller.KeyLeaseController
 	consumerFunc func(ctx context.Context, message *Message) error
 }
 
@@ -61,34 +59,10 @@ func NewBaseConsumer[Message topic.Versioned](baseProvisioner *BaseProvisioner[M
 		Config:        cfg,
 		Logger:        baseProvisioner.Logger,
 		Metrics:       baseProvisioner.metrics,
-		workers:       baseProvisioner.workers,
-		workerName:    baseProvisioner.definition.Name,
-		keyLeases:     baseProvisioner.keyLeases,
+		Workers:       baseProvisioner.workers,
+		KeyLeases:     baseProvisioner.keyLeases,
 		consumerFunc:  baseProvisioner.consumerFunc,
 	}, nil
-}
-
-func (b *BaseConsumer[Message]) GetWorker(ctx context.Context) (*worker.WorkerData, error) {
-	return b.workers.GetWorker(ctx, b.workerName, b.Owner)
-}
-
-// ClaimKeyedRun attempts the exclusive right to run a keyed message; callers
-// switch on the returned claim's Verdict. The key must stay held for
-// everything the delivery's own lease also covers: the run itself, ctx-cancel
-// unwinding, and recording the outcome.
-// ownRange is the claimer's claimed range (low, high]; an ordered claim
-// orders same-key messages inside it in memory, so the claim skips them.
-// A claim with no range passes the zero RangeBounds.
-func (b *BaseConsumer[Message]) ClaimKeyedRun(ctx context.Context, key string, messageId int64, compacted bool, resolved *common.MessageOptions, ownRange controller.RangeBounds) (*controller.KeyLeaseClaim, error) {
-	duration := resolved.Timeout + b.Config.TimeoutGrace + b.Config.RecordMargin
-	return b.keyLeases.Claim(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, compacted, resolved.Concurrency, ownRange, duration)
-}
-
-// ReleaseKeyedRun frees a claim ClaimKeyedRun acquired.
-// false -> no row matched the claim's Token: the lease expired and another
-// claim took the key over.
-func (b *BaseConsumer[Message]) ReleaseKeyedRun(ctx context.Context, claim *controller.KeyLeaseClaim) (bool, error) {
-	return b.keyLeases.Release(ctx, claim)
 }
 
 // Handles: nil map write, index out of range, bad type assertion

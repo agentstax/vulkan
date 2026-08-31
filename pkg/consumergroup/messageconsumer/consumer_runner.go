@@ -233,7 +233,7 @@ func (r *messageRunner[Message]) refresh(ctx context.Context) error {
 }
 
 func (r *messageRunner[Message]) refreshConfig(ctx context.Context) error {
-	declared, err := r.GetWorker(ctx)
+	declared, err := r.Workers.GetWorker(ctx, WorkerMessageConsumer, r.Owner)
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,10 @@ func (r *messageRunner[Message]) commitIfResolved(ctx context.Context, item *buf
 // without ever running consumerFunc
 func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered) {
 	if item.row.MessageKey != "" && item.options.Concurrency.HoldsKey() {
-		claim, err := r.ClaimKeyedRun(ctx, item.row.MessageKey, item.row.Id, item.row.Compacted, item.options, keyleasecontroller.RangeBounds{Low: item.lease.Low, High: item.lease.High})
+		// the key stays held for everything the delivery's own lease covers: the
+		// run, ctx-cancel unwinding, and recording the outcome
+		leaseDuration := item.options.Timeout + r.Config.TimeoutGrace + r.Config.RecordMargin
+		claim, err := r.KeyLeases.Claim(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, item.row.MessageKey, item.row.Id, item.row.Compacted, item.options.Concurrency, keyleasecontroller.RangeBounds{Low: item.lease.Low, High: item.lease.High}, leaseDuration)
 		switch {
 		case err != nil:
 			// record as an exception so it still runs later
@@ -375,7 +378,7 @@ func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keylease
 		fmt.Errorf("key lease release exceeded RecordMargin (%s) for group %q topic %d", r.Config.RecordMargin, r.Owner.Name, r.Topic.Id))
 	defer cancel()
 
-	released, err := r.ReleaseKeyedRun(releaseCtx, claim)
+	released, err := r.KeyLeases.Release(releaseCtx, claim)
 	if err != nil {
 		r.Logger.WarnContext(ctx, "could not release key lease -- key frees on expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_key", claim.MessageKey, "error", err)
 		return

@@ -93,7 +93,7 @@ func (r *exceptionRunner[Message]) refresh(ctx context.Context) error {
 }
 
 func (r *exceptionRunner[Message]) refreshConfig(ctx context.Context) error {
-	declared, err := r.GetWorker(ctx)
+	declared, err := r.Workers.GetWorker(ctx, WorkerExceptionConsumer, r.Owner)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, cfg *Ex
 
 	var keyClaim *keyleasecontroller.KeyLeaseClaim
 	if exception.MessageKey != "" && resolvedOptions.Concurrency.HoldsKey() {
-		claim, err := r.ClaimKeyedRun(ctx, exception.MessageKey, exception.MessageId, exception.Compacted, resolvedOptions, keyleasecontroller.RangeBounds{})
+		claim, err := r.KeyLeases.Claim(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, exception.MessageKey, exception.MessageId, exception.Compacted, resolvedOptions.Concurrency, keyleasecontroller.RangeBounds{}, leaseDuration)
 		switch {
 		case err != nil:
 			// a failed key-lease claim counts as this attempt's own failure
