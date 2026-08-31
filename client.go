@@ -11,7 +11,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -29,6 +31,8 @@ type Client struct {
 	consumer  *consumer.Consumer
 	scheduler *scheduler.Scheduler
 	manager   *systemmanager.SystemManager
+	groups    *consumergroupcontroller.ConsumerGroupController
+	heads     *compactioncontroller.CompactionController
 }
 
 // NewClient wraps ds -- it does not connect, and the caller keeps closing
@@ -86,6 +90,22 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 		return nil, err
 	}
 
+	groupController, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	compactionController, err := compactioncontroller.NewCompactionController(ds, &compactioncontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		Config:    cfg,
 		Logger:    cfg.Logger,
@@ -95,6 +115,8 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 		consumer:  messageConsumer,
 		scheduler: messageScheduler,
 		manager:   systemManager,
+		groups:    groupController,
+		heads:     compactionController,
 	}, nil
 }
 

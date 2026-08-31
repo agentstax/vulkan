@@ -25,6 +25,24 @@ func (c *ConsumerGroupController) GetGroup(ctx context.Context, topicId int64, n
 	return toGroupData(data), nil
 }
 
+// ListGroups lists the topic's consumer groups, ordered by name.
+func (c *ConsumerGroupController) ListGroups(ctx context.Context, topicId int64) ([]*consumergroup.GroupData, error) {
+	if topicId <= 0 {
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
+	}
+
+	data, err := c.datastore.ListGroups(ctx, topicId)
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]*consumergroup.GroupData, 0, len(data))
+	for _, row := range data {
+		groups = append(groups, toGroupData(&row))
+	}
+	return groups, nil
+}
+
 // RegisterGroup creates the group and its cursor at start; an existing group
 // is returned untouched, its position kept.
 func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*consumergroup.GroupData, error) {

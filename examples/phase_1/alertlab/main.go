@@ -63,8 +63,8 @@ var (
 	mAdmin *admin.MessageAdmin
 
 	schedulesTopic *topic.TopicData
-	alertsTopic *topic.TopicData
-	prefix      string
+	alertsTopic    *topic.TopicData
+	prefix         string
 
 	partitionCountGroup int64
 	groupOwner          *common.Owner

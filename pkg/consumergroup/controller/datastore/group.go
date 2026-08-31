@@ -43,6 +43,32 @@ func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Queri
 	return &group, nil
 }
 
+// ListGroups lists the topic's consumer groups, ordered by name.
+func (d *ConsumerGroupDatastore) ListGroups(ctx context.Context, topicId int64) ([]ConsumerGroupConfigRow, error) {
+	var groups []ConsumerGroupConfigRow
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		groups, err = d.listGroups(ctx, topicId)
+		return err
+	})
+	return groups, err
+}
+
+func (d *ConsumerGroupDatastore) listGroups(ctx context.Context, topicId int64) ([]ConsumerGroupConfigRow, error) {
+	sql := `
+		-- vulkan: consumergroup.listGroups
+		SELECT id, topic_id, name, created_at
+		FROM consumer_group_config
+		WHERE topic_id = $1
+		ORDER BY name;
+	`
+	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ConsumerGroupConfigRow])
+}
+
 // RegisterGroup registers the group and its cursor if it doesn't exist; start
 // places the cursor only when this call creates the row.
 func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*ConsumerGroupConfigRow, error) {

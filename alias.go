@@ -12,12 +12,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 // Versioned is the constraint every payload type satisfies by declaring
@@ -46,9 +48,13 @@ type (
 
 	TopicData                      = topic.TopicData
 	ScheduleData                   = schedule.ScheduleData
+	GroupData                      = consumergroup.GroupData
+	WorkerData                     = worker.WorkerData
 	Declaration                    = consumergroup.Declaration
 	MessageMeta                    = consumergroup.MessageMeta
 	MessageData[Message Versioned] = producer.MessageData[Message]
+	VersionHealth                  = admin.VersionHealth
+	TopicSnapshot                  = metrics.TopicSnapshot
 )
 
 // ConcurrencyPolicy is a message's concurrency policy.

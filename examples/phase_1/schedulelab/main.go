@@ -6,7 +6,7 @@
 //     timeout vs min rate, re-register wins, Feb-29 single-scheduled-time pass
 //  2. target -- a schedule dies with its target topic; one targeting another
 //     topic survives
-//  2b. handle -- scheduler.Register declares the same row admin does, refuses
+//     2b. handle -- scheduler.Register declares the same row admin does, refuses
 //     an unregistered topic and a bad expression, and Schedule runs the
 //     system manager until its ctx cancels
 //  3. produce-once -- a backdated row produces ONE message stamped with the
@@ -56,8 +56,8 @@ var (
 	ds           *iDatastore.PostgresDatastore
 	mAdmin       *admin.MessageAdmin
 	labScheduler *scheduler.Scheduler
-	target *topic.TopicData // the lab's own target topic
-	prefix string
+	target       *topic.TopicData // the lab's own target topic
+	prefix       string
 )
 
 // labMessage is what every lab schedule produces.
@@ -852,7 +852,6 @@ func registerSchedule(ctx context.Context, name string, expression string, topic
 	}
 	return instance.Registered, nil
 }
-
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }
 
