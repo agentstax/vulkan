@@ -32,6 +32,14 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   (DefaultProducer/DefaultConsumer's friction list); the internal/ moves
   of the public-surface trim; the compaction key read's home
   (`Topic.CompactionHead`, the KV handle's Get).
+  - After (or at) the chunk-7 cut-over: consider making the `vulkan`
+    package the real home of every user-spelled type instead of
+    alias.go's aliases -- the declarations, their doc comments, and
+    their constructors move into the one package and internal code
+    imports them from there. An alias is an indirection every
+    find-references and every doc-comment edit has to hop through;
+    chunk 3 used aliases only so the old packages could keep compiling
+    beside the client.
 - **Step 3 -- the public-API review**, resumed where the playground
   gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
   HISTORY). The catalog (`examples/playground/`) is the measuring

@@ -3,9 +3,8 @@
 // A web service that emits an event when an order is placed. It never
 // consumes anything.
 //
-// Concepts held before domain code (6): datastore, MessageAdmin,
-// topic name, the Message type's SchemaVersion, Producer, Register[T],
-// ProducerInstance.
+// Concepts held before domain code (5): datastore, Client, topic name,
+// the Message type's SchemaVersion, RegisterProducer[T].
 //
 // Traps hit:
 //   - Nothing here runs topic upkeep (partition create-ahead, retention).
@@ -20,9 +19,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/admin"
+	vulkan "github.com/agentstax/vulkan"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer"
 )
 
 type OrderPlacedV1 struct {
@@ -50,28 +48,24 @@ func run() error {
 	}
 	defer ds.Close()
 
-	// START - not needed every time
-	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
 
-	registered, err := messageAdmin.RegisterTopic(ctx, "orders.placed", nil)
+	// START - not needed every time
+	registered, err := client.RegisterTopic(ctx, "orders.placed", nil)
 	if err != nil {
 		return err
 	}
 	// END - not needed every time
 
-	orderProducer, err := producer.NewProducer(ds, nil)
-	if err != nil {
-		return err
-	}
-	orders, err := orderProducer.Register[OrderPlacedV1](ctx, registered.Name)
+	orders, err := client.RegisterProducer[OrderPlacedV1](ctx, registered.Name)
 	if err != nil {
 		return err
 	}
 
-	produced, err := orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, producer.ProduceOptions{})
+	produced, err := orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, vulkan.ProduceOptions{})
 	if err != nil {
 		return err
 	}

@@ -1,17 +1,17 @@
 // Scenario 03 -- consume, plain.
 //
 // A service that only handles OrderPlaced. It owns no topic and needs no
-// admin verbs -- Register resolves the topic by name itself.
+// admin verbs -- RegisterConsumer resolves the topic by name itself.
 //
 // Concepts held before domain code (7): datastore, LifecycleContext,
-// the Message type's SchemaVersion, Consumer, Register[T], consumer group
-// name, bindings (nil).
+// the Message type's SchemaVersion, Client, RegisterConsumer[T], consumer
+// group name, bindings (nil).
 //
 // Traps hit:
 //   - context.Background() into Consume fails with VK0002; the fix is a
 //     Vulkan-specific ctx constructor the user must discover.
-//   - Register's nil last argument is the binding set; a reader cannot
-//     tell what nil means from the call.
+//   - RegisterConsumer's nil last argument is the binding set; a reader
+//     cannot tell what nil means from the call.
 //   - Two `ctx` shapes in one file: the lifecycle ctx for Consume, and the
 //     per-message ctx handed to the handler.
 package main
@@ -21,8 +21,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	vulkan "github.com/agentstax/vulkan"
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
@@ -42,7 +41,7 @@ func main() {
 }
 
 func run() error {
-	ctx, stop := common.LifecycleContext(nil)
+	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
@@ -52,11 +51,12 @@ func run() error {
 	}
 	defer ds.Close()
 
-	orderConsumer, err := consumer.NewConsumer(ds, nil)
+	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
 		return err
 	}
-	receipts, err := orderConsumer.Register[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil)
+
+	receipts, err := client.RegisterConsumer[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil)
 	if err != nil {
 		return err
 	}
