@@ -42,3 +42,17 @@ func (m *MessageConsumerMetadata) Validate() error {
 	}
 	return nil
 }
+
+// Equal must compare every field the struct declares -- one left out here
+// silently stops refreshing, keeping its old value on every running instance.
+func (m *MessageConsumerMetadata) Equal(other *MessageConsumerMetadata) bool {
+	if m == nil || other == nil {
+		return m == other
+	}
+	return m.Message.Equal(other.Message) &&
+		m.MessageMin.Equal(other.MessageMin) &&
+		m.MessageMax.Equal(other.MessageMax) &&
+		m.ConcurrencyOverride == other.ConcurrencyOverride &&
+		m.ExceptionInitialBackoff == other.ExceptionInitialBackoff &&
+		m.MaxRangeReclaims == other.MaxRangeReclaims
+}

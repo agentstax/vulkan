@@ -144,7 +144,8 @@ that a background loop refreshes from the group's worker rows on a
 poll cadence.
 Redeclare -> every instance's next refresh picks it up -> the group
 converges without a deploy. The staleness window is the refresh
-interval; that's the price of keeping config reads off the hot path.
+interval (`ConsumeOptions.ConfigRefreshInterval`, 30 seconds unless
+set); that's the price of keeping config reads off the hot path.
 
 Where each field takes effect:
 

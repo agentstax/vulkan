@@ -37,7 +37,7 @@ func (d *MessageConsumerProvisioner[Message]) Provision(ctx context.Context, dec
 		return nil, err
 	}
 
-	runner, err := newMessageRunner(base, d.consumers, cfg)
+	runner, err := newMessageRunner(base, d.consumers, cfg, parsed)
 	if err != nil {
 		return nil, err
 	}

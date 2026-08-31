@@ -34,7 +34,6 @@ func newBuffered(row controller.Message, lease controller.RangeLease, index int,
 // end up half-updated relative to each other.
 type claimBuffer struct {
 	queue            concurrency.Queue[buffered]
-	cfg              *MessageConsumerConfig
 	includeSuccesses bool // set on every rangeState this buffer tracks
 
 	// guards `ranges` ONLY. RWMutex because lookup (read) fires once per
@@ -44,16 +43,12 @@ type claimBuffer struct {
 	ranges   map[uuid.UUID]*rangeState
 }
 
-func newClaimBuffer(queue concurrency.Queue[buffered], cfg *MessageConsumerConfig, includeSuccesses bool) (*claimBuffer, error) {
+func newClaimBuffer(queue concurrency.Queue[buffered], includeSuccesses bool) (*claimBuffer, error) {
 	if queue == nil {
 		return nil, errors.New("queue must not be nil")
 	}
-	if cfg == nil {
-		return nil, errors.New("cfg must not be nil")
-	}
 	return &claimBuffer{
 		queue:            queue,
-		cfg:              cfg,
 		includeSuccesses: includeSuccesses,
 		ranges:           make(map[uuid.UUID]*rangeState),
 	}, nil
@@ -63,8 +58,10 @@ func (b *claimBuffer) waitForRoom(ctx context.Context, timeout time.Duration, th
 	return b.queue.WaitForRoom(ctx, timeout, threshold)
 }
 
-// add tracks claimed and enqueues its messages for dispatch.
-func (b *claimBuffer) add(ctx context.Context, claimed *controller.ClaimedRange) error {
+// add tracks claimed and enqueues its messages for dispatch. cfg is the
+// claim-time copy of the group config: the options it resolves ride each
+// message to the end, so a refresh never re-resolves a claimed message.
+func (b *claimBuffer) add(ctx context.Context, claimed *controller.ClaimedRange, cfg *MessageConsumerConfig) error {
 	if claimed == nil {
 		return errors.New("claimed must not be nil")
 	}
@@ -81,7 +78,7 @@ func (b *claimBuffer) add(ctx context.Context, claimed *controller.ClaimedRange)
 	// each ordered key's messages, in id order; everything else is queued as is
 	chains := map[string][]*buffered{}
 	for i, row := range claimed.Messages {
-		item := newBuffered(row, claimed.Lease, i, b.cfg.resolveMessageOptions(row.Options))
+		item := newBuffered(row, claimed.Lease, i, cfg.resolveMessageOptions(row.Options))
 		if row.MessageKey != "" && item.options.Concurrency == common.ConcurrencyOrdered {
 			// build the ordered chain's data
 			chains[row.MessageKey] = append(chains[row.MessageKey], item)

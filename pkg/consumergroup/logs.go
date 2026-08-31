@@ -193,3 +193,19 @@ var EventStoredOptionsClamped = diagnostic.NewEvent("VK0032",
 // SlowDispatchThreshold, whatever the delivery's outcome.
 var EventSlowDispatch = diagnostic.NewEvent("VK0039",
 	"delivery dispatch exceeded the duration threshold", "")
+
+// EventGroupConfigNotRefreshed means an instance could not read its worker
+// row's stored config back, so it keeps running on the copy it already has.
+//
+// Diagnose queries: vulkan explain VK0060
+var EventGroupConfigNotRefreshed = diagnostic.NewEvent("VK0060",
+	"could not refresh group config",
+	"the last copy stays in use").
+	Diagnose(
+		diagnostic.NewQuery("the config document stored on this group's worker rows", `
+SELECT worker_config.name, worker_config.metadata
+FROM worker_config
+JOIN consumer_group_config ON consumer_group_config.id = worker_config.consumer_group_id
+WHERE consumer_group_config.name = '{group}'
+ORDER BY worker_config.name;`),
+	)

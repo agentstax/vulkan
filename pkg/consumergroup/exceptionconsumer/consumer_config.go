@@ -21,7 +21,8 @@ type ExceptionConsumerConfig struct {
 
 	SlowDispatchThreshold time.Duration // a delivery dispatch running longer than this logs a warn line with its duration -- 0 disables
 
-	InstanceTTL time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
+	InstanceTTL           time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
+	ConfigRefreshInterval time.Duration // how often the running instance re-reads the group's stored config document
 
 	// Message / MessageMin / MessageMax / ConcurrencyOverride resolve each
 	// message's own requested options against this group's defaults and bounds.
@@ -52,6 +53,9 @@ func (c *ExceptionConsumerConfig) WithDefaults() *ExceptionConsumerConfig {
 	}
 	if c.InstanceTTL == 0 {
 		c.InstanceTTL = 30 * time.Second
+	}
+	if c.ConfigRefreshInterval == 0 {
+		c.ConfigRefreshInterval = 30 * time.Second
 	}
 
 	c.Message = c.Message.WithDefaults()
@@ -92,6 +96,9 @@ func (c *ExceptionConsumerConfig) Validate() error {
 	}
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
+	}
+	if c.ConfigRefreshInterval <= 0 {
+		return fmt.Errorf("ConfigRefreshInterval must be > 0, got %v", c.ConfigRefreshInterval)
 	}
 	if err := c.Message.Validate(); err != nil {
 		return fmt.Errorf("Message: %w", err)

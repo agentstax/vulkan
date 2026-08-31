@@ -685,6 +685,20 @@
           ]
         }
       ]
+    },
+    "VK0060": {
+      "code": "VK0060",
+      "kind": "event",
+      "message": "could not refresh group config -- the last copy stays in use",
+      "queries": [
+        {
+          "label": "the config document stored on this group's worker rows",
+          "sql": "SELECT worker_config.name, worker_config.metadata\nFROM worker_config\nJOIN consumer_group_config ON consumer_group_config.id = worker_config.consumer_group_id\nWHERE consumer_group_config.name = '{group}'\nORDER BY worker_config.name;",
+          "placeholders": [
+            "group"
+          ]
+        }
+      ]
     }
   }
 }

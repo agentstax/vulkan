@@ -96,13 +96,16 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 		resolved = *options
 	}
 	resolved.WithDefaults()
-	// the default shutdown budget needs the group's ceiling, which lives on
-	// the config, so the derivation runs here rather than in WithDefaults
-	if resolved.ShutdownTimeout == 0 {
-		resolved.ShutdownTimeout = i.Config.MessageMax.Timeout + resolved.TimeoutGrace + resolved.RecordMargin
-	}
 	if err := resolved.Validate(); err != nil {
 		return err
+	}
+
+	// ShutdownTimeout stays sparse so the drain can re-derive it when a
+	// config refresh moves the group's ceiling; this session-start value
+	// exists only for the start line below
+	shutdownTimeout := resolved.ShutdownTimeout
+	if shutdownTimeout == 0 {
+		shutdownTimeout = i.Config.MessageMax.Timeout + resolved.TimeoutGrace + resolved.RecordMargin
 	}
 
 	// Done() == nil -> Background/TODO -> no cancel can ever arrive, so the
@@ -136,7 +139,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	session := uuid.NewV7()
 	i.metrics.ResetCounters()
 
-	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", resolved.ShutdownTimeout, "batch_limit", resolved.BatchLimit)
+	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", shutdownTimeout, "batch_limit", resolved.BatchLimit)
 	started := time.Now()
 
 	group, runCtx := errgroup.WithContext(ctx)

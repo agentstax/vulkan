@@ -16,6 +16,7 @@ import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -23,12 +24,12 @@ type messageRunner[Message topic.Versioned] struct {
 	*consumerbase.BaseConsumer[Message]
 
 	consumers   *controller.MessageConsumerGroupController
-	cfg         *MessageConsumerConfig
 	poolLimiter concurrency.PoolLimiter
 	buffer      *claimBuffer
+	groupConfig *configState
 }
 
-func newMessageRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.MessageConsumerGroupController, cfg *MessageConsumerConfig) (*messageRunner[Message], error) {
+func newMessageRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.MessageConsumerGroupController, cfg *MessageConsumerConfig, declared *MessageConsumerMetadata) (*messageRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}
@@ -49,7 +50,12 @@ func newMessageRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[M
 	}
 
 	// only DeliveryLogModeAll wants success outcomes collected at commit
-	buffer, err := newClaimBuffer(queue, cfg, base.Topic.DeliveryLogMode == topic.DeliveryLogModeAll)
+	buffer, err := newClaimBuffer(queue, base.Topic.DeliveryLogMode == topic.DeliveryLogModeAll)
+	if err != nil {
+		return nil, err
+	}
+
+	groupConfig, err := newConfigState(cfg, declared)
 	if err != nil {
 		return nil, err
 	}
@@ -57,9 +63,9 @@ func newMessageRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[M
 	return &messageRunner[Message]{
 		BaseConsumer: base,
 		consumers:    consumers,
-		cfg:          cfg,
 		poolLimiter:  poolLimiter,
 		buffer:       buffer,
+		groupConfig:  groupConfig,
 	}, nil
 }
 
@@ -77,6 +83,9 @@ func (r *messageRunner[Message]) run(ctx context.Context) error {
 	group.Go(func() error {
 		return r.dispatch(groupCtx, &wg)
 	})
+	group.Go(func() error {
+		return r.refresh(groupCtx)
+	})
 	err := group.Wait()
 
 	r.drain(ctx, &wg)
@@ -85,9 +94,9 @@ func (r *messageRunner[Message]) run(ctx context.Context) error {
 	return err
 }
 
-// drain waits out in-flight work, bounded by ShutdownTimeout so a consumerFunc
-// that ignores ctx.Done() can't hang shutdown forever. Whatever is still
-// running past it is left for closeOpenRanges to settle.
+// drain waits out in-flight work, bounded by the shutdown budget so a
+// consumerFunc that ignores ctx.Done() can't hang shutdown forever. Whatever
+// is still running past it is left for closeOpenRanges to settle.
 func (r *messageRunner[Message]) drain(ctx context.Context, wg *sync.WaitGroup) {
 	done := make(chan struct{})
 	go func() {
@@ -95,13 +104,14 @@ func (r *messageRunner[Message]) drain(ctx context.Context, wg *sync.WaitGroup) 
 		close(done)
 	}()
 
-	timer := time.NewTimer(r.cfg.ShutdownTimeout)
+	budget := r.groupConfig.current().shutdownBudget()
+	timer := time.NewTimer(budget)
 	defer timer.Stop()
 
 	select {
 	case <-done:
 	case <-timer.C:
-		r.Logger.WarnContext(ctx, "in-flight work did not finish before the shutdown timeout -- stragglers settle via lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "version", r.SchemaVersion, "shutdown_timeout", r.cfg.ShutdownTimeout)
+		r.Logger.WarnContext(ctx, "in-flight work did not finish before the shutdown timeout -- stragglers settle via lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "version", r.SchemaVersion, "shutdown_timeout", budget)
 	}
 }
 
@@ -118,8 +128,8 @@ func (r *messageRunner[Message]) closeRange(ctx context.Context, state *rangeSta
 		// surrendering beats making another worker wait out the whole lease for a
 		// range nobody started. ctx is already Done by now, so this needs an
 		// uncancelled one of its own to reach the database at all
-		reclaimCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
-			fmt.Errorf("force reclaim exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
+		reclaimCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.Config.RecordMargin,
+			fmt.Errorf("force reclaim exceeded RecordMargin (%s) for group %q topic %d", r.Config.RecordMargin, r.Owner.Name, r.Topic.Id))
 		defer cancel()
 
 		if err := r.consumers.ForceReclaimRange(reclaimCtx, r.Topic.Id, r.Owner.ConsumerGroupId, state.lease.Token); err != nil && !errors.Is(err, common.ErrLeaseLost) {
@@ -136,9 +146,13 @@ func (r *messageRunner[Message]) closeRange(ctx context.Context, state *rangeSta
 
 func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 	for {
+		// one copy per claim, otherwise refresh mid claim
+		// could lead to unstable behavior
+		cfg := r.groupConfig.current()
+
 		// blocks until there's room for a full batch, or the debounce timeout
 		// elapses -- either way returns whatever room currently exists.
-		room, err := r.buffer.waitForRoom(ctx, r.cfg.ClaimPollRate, r.cfg.BatchLimit)
+		room, err := r.buffer.waitForRoom(ctx, cfg.ClaimPollRate, cfg.BatchLimit)
 		if err != nil {
 			return err
 		}
@@ -148,10 +162,10 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 
 		// worst-case -- a freshly claimed range always passes processClaim's
 		// staleness check with the full QueueMargin left for queue wait.
-		leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.RecordMargin
-		limit := min(room, r.cfg.BatchLimit)
+		leaseDuration := cfg.MessageMax.Timeout + cfg.TimeoutGrace + cfg.QueueMargin + cfg.RecordMargin
+		limit := min(room, cfg.BatchLimit)
 
-		claimed, err := r.consumers.ClaimMessagesWithCursor(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, int64(r.SchemaVersion), limit, r.cfg.MaxRangeReclaims, leaseDuration, r.Topic.DeliveryLogMode)
+		claimed, err := r.consumers.ClaimMessagesWithCursor(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, int64(r.SchemaVersion), limit, cfg.MaxRangeReclaims, leaseDuration, r.Topic.DeliveryLogMode)
 		if err != nil {
 			// ctx cancellation is a real shutdown -> propagate and stop
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -159,14 +173,14 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 			}
 
 			// potential db blip -- back off instead of hot-looping the claim
-			if err := sleepWithContext(ctx, r.cfg.ClaimPollRate); err != nil {
+			if err := sleepWithContext(ctx, cfg.ClaimPollRate); err != nil {
 				return err
 			}
 			continue
 		}
 		if claimed == nil {
 			// caught up -- nothing to reclaim or claim
-			if err := sleepWithContext(ctx, r.cfg.ClaimPollRate); err != nil {
+			if err := sleepWithContext(ctx, cfg.ClaimPollRate); err != nil {
 				return err
 			}
 			continue
@@ -189,10 +203,54 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 			r.commitRange(ctx, newRangeSnapshot(claimed.Lease, nil))
 			continue
 		}
-		if err := r.buffer.add(ctx, claimed); err != nil {
+		if err := r.buffer.add(ctx, claimed, cfg); err != nil {
 			return err
 		}
 	}
+}
+
+// refresh is what lets a redeclaration reach this instance without a deploy.
+func (r *messageRunner[Message]) refresh(ctx context.Context) error {
+	ticker := time.NewTicker(r.groupConfig.current().ConfigRefreshInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+
+		if err := r.refreshConfig(ctx); err != nil {
+			// ctx cancellation is a real shutdown -> propagate and stop
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+
+			r.Logger.WarnContext(ctx, consumergroup.EventGroupConfigNotRefreshed.Message, "code", consumergroup.EventGroupConfigNotRefreshed.Code, "group", r.Owner.Name, "topic_id", r.Topic.Id, "worker", WorkerMessageConsumer, "error", err)
+		}
+	}
+}
+
+func (r *messageRunner[Message]) refreshConfig(ctx context.Context) error {
+	declared, err := r.GetWorker(ctx)
+	if err != nil {
+		return err
+	}
+
+	parsed, err := workercontroller.ParseMetadata[MessageConsumerMetadata](declared.Metadata)
+	if err != nil {
+		return err
+	}
+	if err := parsed.Validate(); err != nil {
+		return err
+	}
+	if !r.groupConfig.replace(parsed) {
+		return nil
+	}
+
+	r.Logger.InfoContext(ctx, "group config refreshed", "group", r.Owner.Name, "topic_id", r.Topic.Id, "worker", WorkerMessageConsumer, "metadata", declared.Metadata)
+	return nil
 }
 
 func (r *messageRunner[Message]) dispatch(ctx context.Context, wg *sync.WaitGroup) error {
@@ -238,7 +296,7 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 	// sat in the queue too long to safely start -- surrendering the whole
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
-	if item.lease.ExpiresAt.Before(time.Now().Add(item.options.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin)) {
+	if item.lease.ExpiresAt.Before(time.Now().Add(item.options.Timeout + r.Config.TimeoutGrace + r.Config.RecordMargin)) {
 		r.buffer.markStale(item.lease.Token)
 		return
 	}
@@ -313,8 +371,8 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered) {
 
 func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keyleasecontroller.KeyLeaseClaim) {
 	// runs after consumerFunc, when a shutdown may already have cancelled ctx
-	releaseCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
-		fmt.Errorf("key lease release exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
+	releaseCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.Config.RecordMargin,
+		fmt.Errorf("key lease release exceeded RecordMargin (%s) for group %q topic %d", r.Config.RecordMargin, r.Owner.Name, r.Topic.Id))
 	defer cancel()
 
 	released, err := r.ReleaseKeyedRun(releaseCtx, claim)
@@ -332,7 +390,7 @@ func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keylease
 func (r *messageRunner[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
 	// range always frees -- the cursor advancer advances committed
 	// past it; failures become unresolved exceptions, not a blocked range.
-	err := r.consumers.Commit(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, commit.Lease.Token, commit.Outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode)
+	err := r.consumers.Commit(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, commit.Lease.Token, commit.Outcomes, r.groupConfig.current().ExceptionInitialBackoff, r.Topic.DeliveryLogMode)
 	switch {
 	case err == nil:
 		r.countDeliveryRows(commit.Outcomes)
@@ -354,13 +412,13 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 
 	// the ctx that got us here is already Done -- the commit needs its own
 	// bounded, uncancelled window to actually reach the DB, same as Shutdown
-	commitCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
-		fmt.Errorf("partial commit exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
+	commitCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.Config.RecordMargin,
+		fmt.Errorf("partial commit exceeded RecordMargin (%s) for group %q topic %d", r.Config.RecordMargin, r.Owner.Name, r.Topic.Id))
 	defer cancel()
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := r.consumers.PartialCommit(commitCtx, r.Topic.Id, r.Owner.ConsumerGroupId, lease.Token, lastProcessed, outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode); err != nil {
+	if err := r.consumers.PartialCommit(commitCtx, r.Topic.Id, r.Owner.ConsumerGroupId, lease.Token, lastProcessed, outcomes, r.groupConfig.current().ExceptionInitialBackoff, r.Topic.DeliveryLogMode); err != nil {
 		if errors.Is(err, common.ErrLeaseLost) {
 			r.Metrics.RecordLeaseLost(1)
 			r.Logger.DebugContext(ctx, "lease lost at partial commit -- range re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", lease.Low, "high", lease.High)

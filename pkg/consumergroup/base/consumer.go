@@ -13,6 +13,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
 // BaseConsumer is built fresh per claimed life, so a respawned runner never
@@ -25,6 +27,8 @@ type BaseConsumer[Message topic.Versioned] struct {
 	Logger        logging.Logger
 	Metrics       *metricsproducer.MetricsProducer
 
+	workers      *workercontroller.WorkerController
+	workerName   string
 	keyLeases    *controller.KeyLeaseController
 	consumerFunc func(ctx context.Context, message *Message) error
 }
@@ -57,9 +61,15 @@ func NewBaseConsumer[Message topic.Versioned](baseProvisioner *BaseProvisioner[M
 		Config:        cfg,
 		Logger:        baseProvisioner.Logger,
 		Metrics:       baseProvisioner.metrics,
+		workers:       baseProvisioner.workers,
+		workerName:    baseProvisioner.definition.Name,
 		keyLeases:     baseProvisioner.keyLeases,
 		consumerFunc:  baseProvisioner.consumerFunc,
 	}, nil
+}
+
+func (b *BaseConsumer[Message]) GetWorker(ctx context.Context) (*worker.WorkerData, error) {
+	return b.workers.GetWorker(ctx, b.workerName, b.Owner)
 }
 
 // ClaimKeyedRun attempts the exclusive right to run a keyed message; callers

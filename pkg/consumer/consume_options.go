@@ -30,10 +30,11 @@ type ConsumeOptions struct {
 	// term. Default: 0 (disabled).
 	SlowDispatchThreshold time.Duration
 
-	InstanceTTL          time.Duration // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
-	BindingRetryInterval time.Duration // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
+	InstanceTTL           time.Duration // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
+	BindingRetryInterval  time.Duration // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
+	ConfigRefreshInterval time.Duration // how often this instance re-reads the group's stored config -- the staleness window for a redeclaration to reach it. Default: 30s.
 
-	ShutdownTimeout time.Duration // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + RecordMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
+	ShutdownTimeout time.Duration // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + RecordMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome. Left unset it re-derives when a config refresh moves the ceiling.
 	// DisableGracefulShutdown - lets Consume accept a context that can never
 	// be cancelled (e.g. context.Background()), leaving process exit as the
 	// only stop. Prefer passing the application's shutdown context to Consume.
@@ -41,8 +42,8 @@ type ConsumeOptions struct {
 	DisableGracefulShutdown bool
 }
 
-// WithDefaults leaves ShutdownTimeout at zero: its default needs the group's
-// MessageMax, so Consume derives it after this fills.
+// WithDefaults leaves ShutdownTimeout at zero -- the message consumer derives
+// it at drain, so the budget follows the group's current ceiling.
 func (o *ConsumeOptions) WithDefaults() *ConsumeOptions {
 	if o.BatchLimit == 0 {
 		o.BatchLimit = 1 // no batching by default
@@ -80,11 +81,15 @@ func (o *ConsumeOptions) WithDefaults() *ConsumeOptions {
 		o.BindingRetryInterval = 10 * time.Second
 	}
 
+	if o.ConfigRefreshInterval == 0 {
+		o.ConfigRefreshInterval = 30 * time.Second
+	}
+
 	return o
 }
 
-// Validate runs after WithDefaults and the ShutdownTimeout derivation --
-// anything still out of range here was set by the caller, not left unset.
+// Validate runs after WithDefaults -- anything still out of range here was
+// set by the caller, not left unset.
 func (o *ConsumeOptions) Validate() error {
 	if o.BatchLimit < 1 {
 		return fmt.Errorf("BatchLimit must be >= 1, got %d", o.BatchLimit)
@@ -120,8 +125,11 @@ func (o *ConsumeOptions) Validate() error {
 	if o.BindingRetryInterval <= 0 {
 		return fmt.Errorf("BindingRetryInterval must be > 0, got %v", o.BindingRetryInterval)
 	}
-	if o.ShutdownTimeout <= 0 {
-		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", o.ShutdownTimeout)
+	if o.ConfigRefreshInterval <= 0 {
+		return fmt.Errorf("ConfigRefreshInterval must be > 0, got %v", o.ConfigRefreshInterval)
+	}
+	if o.ShutdownTimeout < 0 {
+		return fmt.Errorf("ShutdownTimeout must be >= 0, got %v", o.ShutdownTimeout)
 	}
 	return nil
 }

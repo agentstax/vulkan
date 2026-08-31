@@ -13,31 +13,46 @@ import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
+	"golang.org/x/sync/errgroup"
 )
 
 type exceptionRunner[Message topic.Versioned] struct {
 	*consumerbase.BaseConsumer[Message]
 
-	consumers *controller.ExceptionConsumerGroupController
-	cfg       *ExceptionConsumerConfig
+	consumers   *controller.ExceptionConsumerGroupController
+	groupConfig *configState
 }
 
-func newExceptionRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.ExceptionConsumerGroupController, cfg *ExceptionConsumerConfig) (*exceptionRunner[Message], error) {
+func newExceptionRunner[Message topic.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.ExceptionConsumerGroupController, cfg *ExceptionConsumerConfig, declared *ExceptionConsumerMetadata) (*exceptionRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}
 	if consumers == nil {
 		return nil, errors.New("consumers controller must not be nil")
 	}
-	if cfg == nil {
-		return nil, errors.New("config must not be nil")
+
+	groupConfig, err := newConfigState(cfg, declared)
+	if err != nil {
+		return nil, err
 	}
 
-	return &exceptionRunner[Message]{BaseConsumer: base, consumers: consumers, cfg: cfg}, nil
+	return &exceptionRunner[Message]{BaseConsumer: base, consumers: consumers, groupConfig: groupConfig}, nil
 }
 
 func (r *exceptionRunner[Message]) run(ctx context.Context) error {
-	ticker := time.NewTicker(r.cfg.ClaimPollRate)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		return r.claimLoop(groupCtx)
+	})
+	group.Go(func() error {
+		return r.refresh(groupCtx)
+	})
+	return group.Wait()
+}
+
+func (r *exceptionRunner[Message]) claimLoop(ctx context.Context) error {
+	ticker := time.NewTicker(r.groupConfig.current().ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -45,31 +60,77 @@ func (r *exceptionRunner[Message]) run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := r.exceptionClaim(ctx); err != nil {
+			// one copy per tick, otherwise refresh mid claim
+			// could lead to unstable behavior
+			if err := r.exceptionClaim(ctx, r.groupConfig.current()); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context) error {
-	leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.RecordMargin
+// refresh is what lets a redeclaration reach this instance without a deploy.
+func (r *exceptionRunner[Message]) refresh(ctx context.Context) error {
+	ticker := time.NewTicker(r.groupConfig.current().ConfigRefreshInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+
+		if err := r.refreshConfig(ctx); err != nil {
+			// ctx cancellation is a real shutdown -> propagate and stop
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+
+			r.Logger.WarnContext(ctx, consumergroup.EventGroupConfigNotRefreshed.Message, "code", consumergroup.EventGroupConfigNotRefreshed.Code, "group", r.Owner.Name, "topic_id", r.Topic.Id, "worker", WorkerExceptionConsumer, "error", err)
+		}
+	}
+}
+
+func (r *exceptionRunner[Message]) refreshConfig(ctx context.Context) error {
+	declared, err := r.GetWorker(ctx)
+	if err != nil {
+		return err
+	}
+
+	parsed, err := workercontroller.ParseMetadata[ExceptionConsumerMetadata](declared.Metadata)
+	if err != nil {
+		return err
+	}
+	if err := parsed.Validate(); err != nil {
+		return err
+	}
+	if !r.groupConfig.replace(parsed) {
+		return nil
+	}
+
+	r.Logger.InfoContext(ctx, "group config refreshed", "group", r.Owner.Name, "topic_id", r.Topic.Id, "worker", WorkerExceptionConsumer, "metadata", declared.Metadata)
+	return nil
+}
+
+func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context, cfg *ExceptionConsumerConfig) error {
+	leaseDuration := cfg.MessageMax.Timeout + cfg.TimeoutGrace + cfg.QueueMargin + cfg.RecordMargin
 
 	// kill first, so an exhausted expired row is dead-lettered
-	killed, err := r.consumers.Kill(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.MessageMax.Retry.MaxRetries, r.Topic.DeliveryLogMode)
+	killed, err := r.consumers.Kill(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, cfg.MessageMax.Retry.MaxRetries, r.Topic.DeliveryLogMode)
 	if err != nil {
 		return err
 	}
 	r.Metrics.RecordDead(int(killed))
 
-	claimed, err := r.consumers.Claim(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, int64(r.SchemaVersion), r.cfg.BatchLimit, r.cfg.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DeliveryLogMode)
+	claimed, err := r.consumers.Claim(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, int64(r.SchemaVersion), cfg.BatchLimit, cfg.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DeliveryLogMode)
 	if err != nil {
 		return err
 	}
 	r.Metrics.RecordClaimed(len(claimed))
 
 	for i := range claimed {
-		if err := r.processException(ctx, &claimed[i]); err != nil {
+		if err := r.processException(ctx, cfg, &claimed[i]); err != nil {
 			return err
 		}
 	}
@@ -77,12 +138,12 @@ func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context) error {
 	return nil
 }
 
-func (r *exceptionRunner[Message]) processException(ctx context.Context, exception *controller.ClaimedException) error {
-	resolvedOptions := r.cfg.resolveMessageOptions(exception.Options)
+func (r *exceptionRunner[Message]) processException(ctx context.Context, cfg *ExceptionConsumerConfig, exception *controller.ClaimedException) error {
+	resolvedOptions := cfg.resolveMessageOptions(exception.Options)
 
 	// sat behind the batch too long for the lease to cover a full run
 	// try to renew it rather than start a run the lease can't protect
-	leaseDuration := resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin
+	leaseDuration := resolvedOptions.Timeout + cfg.TimeoutGrace + cfg.RecordMargin
 	if exception.LeaseExpiresAt.Before(time.Now().Add(leaseDuration)) {
 		renewed, err := r.consumers.RenewLease(ctx, exception, leaseDuration)
 		if err != nil {
@@ -216,8 +277,8 @@ func (r *exceptionRunner[Message]) recordContext(ctx context.Context, keyClaim *
 	if keyClaim == nil {
 		return ctx, func() {}
 	}
-	return context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
-		fmt.Errorf("outcome recording exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
+	return context.WithTimeoutCause(context.WithoutCancel(ctx), r.Config.RecordMargin,
+		fmt.Errorf("outcome recording exceeded RecordMargin (%s) for group %q topic %d", r.Config.RecordMargin, r.Owner.Name, r.Topic.Id))
 }
 
 // a lost lease means another worker re-claimed the row -- it owns the outcome

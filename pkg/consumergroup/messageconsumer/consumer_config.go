@@ -25,9 +25,10 @@ type MessageConsumerConfig struct {
 	SlowDispatchThreshold   time.Duration // a delivery dispatch running longer than this logs a warn line with its duration -- 0 disables
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception row is first written
 
-	InstanceTTL time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
+	InstanceTTL           time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
+	ConfigRefreshInterval time.Duration // how often the running instance re-reads the group's stored config document
 
-	ShutdownTimeout time.Duration // bounds how long drain waits for in-flight work before open ranges are settled
+	ShutdownTimeout time.Duration // bounds how long drain waits for in-flight work before open ranges are settled. 0 -> derived at drain from the current MessageMax.Timeout + TimeoutGrace + RecordMargin, so a refreshed ceiling moves the budget with it
 
 	// Message / MessageMin / MessageMax / ConcurrencyOverride resolve each
 	// message's own requested options against this group's defaults and bounds.
@@ -71,6 +72,9 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 	if c.InstanceTTL == 0 {
 		c.InstanceTTL = 30 * time.Second
 	}
+	if c.ConfigRefreshInterval == 0 {
+		c.ConfigRefreshInterval = 30 * time.Second
+	}
 
 	c.Message = c.Message.WithDefaults()
 
@@ -79,9 +83,6 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 	bounds.Concurrency = ""
 	c.MessageMax = c.MessageMax.Fill(&bounds)
 
-	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = c.MessageMax.Timeout + c.TimeoutGrace + c.RecordMargin
-	}
 	c.Retry = c.Retry.WithDefaults()
 	if c.Logger == nil {
 		c.Logger = logging.NewDefaultLogger(os.Stderr)
@@ -126,8 +127,11 @@ func (c *MessageConsumerConfig) Validate() error {
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
 	}
-	if c.ShutdownTimeout <= 0 {
-		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", c.ShutdownTimeout)
+	if c.ConfigRefreshInterval <= 0 {
+		return fmt.Errorf("ConfigRefreshInterval must be > 0, got %v", c.ConfigRefreshInterval)
+	}
+	if c.ShutdownTimeout < 0 {
+		return fmt.Errorf("ShutdownTimeout must be >= 0, got %v", c.ShutdownTimeout)
 	}
 	if err := c.Message.Validate(); err != nil {
 		return fmt.Errorf("Message: %w", err)
@@ -158,4 +162,13 @@ func (c *MessageConsumerConfig) withMetadata(metadata *MessageConsumerMetadata) 
 	applied.ExceptionInitialBackoff = metadata.ExceptionInitialBackoff
 	applied.MaxRangeReclaims = metadata.MaxRangeReclaims
 	return applied.WithDefaults()
+}
+
+// shutdownBudget is one worst-case run at the group's current ceiling plus
+// recording its outcome, unless the caller declared a budget of its own.
+func (c *MessageConsumerConfig) shutdownBudget() time.Duration {
+	if c.ShutdownTimeout != 0 {
+		return c.ShutdownTimeout
+	}
+	return c.MessageMax.Timeout + c.TimeoutGrace + c.RecordMargin
 }

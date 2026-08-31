@@ -14,6 +14,9 @@ package main
 //     under the stored (second) document -- Consume reads at start, so the
 //     failing message dead-letters on the second declarer's retry budget,
 //     not the first's.
+//  4. a RUNNING instance picks up a redeclared document on its refresh
+//     interval: a message sitting at attempt 2 of a 3-attempt budget gets
+//     attempts 3, 4, and 5 once the budget moves to 5 -- no restart.
 
 import (
 	"context"
@@ -186,9 +189,90 @@ func run() (err error) {
 	}
 	fmt.Printf("  ✓ dead after %d attempts, the stored budget (declared 5, stored 2)\n", attempts)
 
+	step("a running instance picks up a redeclared retry budget on refresh")
+	liveGroup := fmt.Sprintf("groupconfiglab.live.%d", suffix)
+	instanceLive, err := clientA.RegisterConsumer[labMessage](ctx, liveGroup, topicName, &vulkan.ConsumerConfig{
+		// BaseDelay == MaxDelay flattens the backoff curve: every retry waits
+		// 3s, so the redeclare below has a full 3s window to land and refresh
+		Message:                 &vulkan.MessageOptions{Retry: &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: 3 * time.Second, MaxDelay: 3 * time.Second}},
+		ExceptionInitialBackoff: 300 * time.Millisecond,
+	})
+	must(err)
+	var liveGroupId int64
+	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, registered.Id, liveGroup).Scan(&liveGroupId))
+	_, err = produced.Produce(ctx, &labMessage{N: 2}, nil)
+	must(err)
+
+	liveCtx, stopLive := context.WithCancel(ctx)
+	var liveWg sync.WaitGroup
+	liveWg.Add(1)
+	go func() {
+		defer liveWg.Done()
+		_ = instanceLive.Consume(liveCtx, func(ctx context.Context, message *labMessage) error {
+			return errors.New("groupconfiglab: always fails")
+		}, &vulkan.ConsumeOptions{ClaimPollRate: 100 * time.Millisecond, ConfigRefreshInterval: 200 * time.Millisecond})
+	}()
+	stopLiveConsumer := func() {
+		stopLive()
+		liveWg.Wait()
+	}
+
+	// wait for the message to sit at attempt 2 -- ready, inside its 3s backoff
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		var status string
+		var liveAttempts int
+		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM exception_queue_%d WHERE consumer_group_id = $1;`, registered.Id), liveGroupId).Scan(&status, &liveAttempts)
+		if err == nil && liveAttempts >= 2 && status == "ready" {
+			if liveAttempts > 2 {
+				stopLiveConsumer()
+				die(fmt.Sprintf("message already at attempt %d before the redeclare -- the backoff window was missed", liveAttempts))
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			stopLiveConsumer()
+			die("message never reached attempt 2 within 15s")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// redeclare under the running instance: budget 3 -> 5, same backoff curve
+	_, err = clientB.RegisterConsumer[labMessage](ctx, liveGroup, topicName, &vulkan.ConsumerConfig{
+		Message:                 &vulkan.MessageOptions{Retry: &vulkan.RetryPolicy{MaxRetries: 5, BaseDelay: 3 * time.Second, MaxDelay: 3 * time.Second}},
+		ExceptionInitialBackoff: 300 * time.Millisecond,
+	})
+	if err != nil {
+		stopLiveConsumer()
+		must(err)
+	}
+
+	deadline = time.Now().Add(30 * time.Second)
+	for {
+		var status string
+		var liveAttempts int
+		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM exception_queue_%d WHERE consumer_group_id = $1;`, registered.Id), liveGroupId).Scan(&status, &liveAttempts)
+		if err == nil && status == "dead" {
+			stopLiveConsumer()
+			// dead at 3 means the refresh never reached the running instance;
+			// dead at 5 means attempts 4 and 5 ran under the redeclared budget
+			if liveAttempts != 5 {
+				die(fmt.Sprintf("dead after %d attempts, want 5 -- the running instance did not pick up the redeclared budget", liveAttempts))
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			stopLiveConsumer()
+			die("message never dead-lettered within 30s of the redeclare")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	fmt.Println("  ✓ attempts 4 and 5 ran under the budget redeclared mid-run (dead at 5, not 3)")
+
 	fmt.Println("\n✅ GROUP CONFIG LAB PASSED")
 	fmt.Println("   the declaration is stored sparse, the newest declaration wins with a")
-	fmt.Println("   VK0059 warn, and Consume reads the stored document back at start.")
+	fmt.Println("   VK0059 warn, Consume reads the stored document back at start, and a")
+	fmt.Println("   running instance follows a redeclaration on its refresh interval.")
 	return nil
 }
 

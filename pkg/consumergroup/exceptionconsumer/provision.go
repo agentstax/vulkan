@@ -37,7 +37,7 @@ func (d *ExceptionConsumerProvisioner[Message]) Provision(ctx context.Context, d
 		return nil, err
 	}
 
-	runner, err := newExceptionRunner(base, d.consumers, cfg)
+	runner, err := newExceptionRunner(base, d.consumers, cfg, parsed)
 	if err != nil {
 		return nil, err
 	}
