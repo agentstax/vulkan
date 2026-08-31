@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"os"
 
-	vulkan "github.com/agentstax/vulkan"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
@@ -60,7 +60,7 @@ func run() error {
 	}
 	// END - not needed every time
 
-	orders, err := client.RegisterProducer[OrderPlacedV1](ctx, registered.Name)
+	orders, err := client.RegisterProducer[OrderPlacedV1](ctx, registered.Name, nil)
 	if err != nil {
 		return err
 	}

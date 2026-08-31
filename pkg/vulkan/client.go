@@ -27,8 +27,6 @@ type Client struct {
 
 	ds        *datastore.PostgresDatastore
 	admin     *admin.MessageAdmin
-	producer  *producer.Producer
-	consumer  *consumer.Consumer
 	scheduler *scheduler.Scheduler
 	manager   *systemmanager.SystemManager
 	groups    *consumergroupcontroller.ConsumerGroupController
@@ -53,22 +51,6 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 		AllowDestroy: cfg.AllowDestroy,
 		Logger:       cfg.Logger,
 		Retry:        cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	messageProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	messageConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
@@ -111,8 +93,6 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 		Logger:    cfg.Logger,
 		ds:        ds,
 		admin:     messageAdmin,
-		producer:  messageProducer,
-		consumer:  messageConsumer,
 		scheduler: messageScheduler,
 		manager:   systemManager,
 		groups:    groupController,
@@ -123,15 +103,24 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 // RegisterConsumer resolves the named topic and registers the consumer
 // group on it, returning an instance that consumes Message from it.
 // bindings is the group's full set; nil = the whole topic.
+// cfg may be nil or a sparse struct.
 // ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consumerGroup string, topicName string, bindings []string) (*ConsumerInstance[Message], error) {
-	return c.consumer.Register[Message](ctx, consumerGroup, topicName, bindings)
+func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consumerGroup string, topicName string, bindings []string, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+	messageConsumer, err := consumer.NewConsumer(c.ds, toConsumerConfig(cfg, c.Config.Retry, c.Logger))
+	if err != nil {
+		return nil, err
+	}
+	return messageConsumer.Register[Message](ctx, consumerGroup, topicName, bindings)
 }
 
 // RegisterProducer resolves the named topic and returns an instance that
-// produces Message to it.
-func (c *Client) RegisterProducer[Message Versioned](ctx context.Context, topicName string) (*ProducerInstance[Message], error) {
-	return c.producer.Register[Message](ctx, topicName)
+// produces Message to it. cfg may be nil or a sparse struct.
+func (c *Client) RegisterProducer[Message Versioned](ctx context.Context, topicName string, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
+	messageProducer, err := producer.NewProducer(c.ds, toProducerConfig(cfg, c.Config.Retry, c.Logger))
+	if err != nil {
+		return nil, err
+	}
+	return messageProducer.Register[Message](ctx, topicName)
 }
 
 // RegisterSchedule declares the schedule named name on the target topic and

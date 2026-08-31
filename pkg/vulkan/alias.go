@@ -28,10 +28,8 @@ import (
 type Versioned = topic.Versioned
 
 type (
-	ConsumerConfig                      = consumer.ConsumerConfig
 	ConsumerInstance[Message Versioned] = consumer.ConsumerInstance[Message]
 
-	ProducerConfig                      = producer.ProducerConfig
 	ProducerInstance[Message Versioned] = producer.ProducerInstance[Message]
 	ProduceOptions                      = producer.ProduceOptions
 	ProduceResult[Message Versioned]    = producer.ProduceResult[Message]

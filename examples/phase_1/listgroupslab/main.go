@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	vulkan "github.com/agentstax/vulkan"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"

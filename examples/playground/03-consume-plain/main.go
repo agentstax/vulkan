@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"os"
 
-	vulkan "github.com/agentstax/vulkan"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
@@ -56,7 +56,7 @@ func run() error {
 		return err
 	}
 
-	receipts, err := client.RegisterConsumer[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil)
+	receipts, err := client.RegisterConsumer[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil, nil)
 	if err != nil {
 		return err
 	}
