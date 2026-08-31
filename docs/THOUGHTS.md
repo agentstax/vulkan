@@ -1,5 +1,7 @@
 # Public API
 
+okay I want to have a seperate session with none of the context this session has do an independent review of the different api-shapes layed out. I want it to be able to get relevant context and history but also make the review without worrying about the precedent of current code. It should purley be what is the best for the users. Give me a prompt to do this which is as unbiased as possible
+
 ---
 - where to put consumer.ConsumerConfig ie NewConsumer or Register, same pattern for producer etc
 - need metric / alert example playground scenarios
@@ -49,6 +51,8 @@ doc decision indexing
 - can we make our index more like a search engine ie a list of keywords or tags -> loaded in to context on startup
 
 # Other
+
+put tables in unique vulkan namespace it database not public
 
 should probably look to see if we could speed up claim query its gotten unruly with ctes and conditionals
 

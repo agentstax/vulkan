@@ -36,7 +36,7 @@ export const boards: Board[] = [
 		title: 'Guides',
 		slug: 'guides',
 		description:
-			'transactional produce, side effects & retries, dead letters, consumer timeouts, replay, migrations, schedules',
+			'transactional produce, side effects & retries, dead letters, consumer timeouts, group config, the client, replay, migrations, schedules',
 		threads: () => [
 			'guides/transactional-produce',
 			'guides/side-effects-and-retries',
@@ -44,6 +44,8 @@ export const boards: Board[] = [
 			'guides/dead-letters',
 			'guides/handler-outcomes',
 			'guides/new-group-start',
+			'guides/consumer-group-config',
+			'guides/client',
 			'guides/ordered-delivery',
 			'guides/consumer-timeouts',
 			'guides/schema-versions',

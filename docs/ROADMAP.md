@@ -21,6 +21,17 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
+- **One-client API shape [0625]** — `vulkan.NewClient` over the
+  datastore, handles with bare verbs, `<Noun>Data` rows, group config
+  stored at `RegisterConsumer` with a `Declaration` outcome and
+  `RequireMatch`. Spec: website guides/client.mdx +
+  guides/consumer-group-config.mdx. Expanded in docs/TODO.md as 15
+  chunks, each reviewed before the next starts. Absorbs from the items
+  below: the Retry / Message.Retry confusion, the
+  `topiccontroller.TopicConfig` import, and produce-only upkeep silence
+  (DefaultProducer/DefaultConsumer's friction list); the internal/ moves
+  of the public-surface trim; the compaction key read's home
+  (`Topic.CompactionHead`, the KV handle's Get).
 - **Step 3 -- the public-API review**, resumed where the playground
   gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
   HISTORY). The catalog (`examples/playground/`) is the measuring
@@ -187,6 +198,13 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
+
+- **`schedule_config` declaration trail** — surfaced by the 2026-08-30
+  init-model rethink (guides/consumer-group-config.mdx): topic, worker,
+  and binding declarations all keep a `_config_log` trail;
+  schedule_config has none, so a redeclared cron expression leaves no
+  history. Decide whether it earns a `schedule_config_log` on the same
+  full-snapshot pattern.
 
 - **Voice workflow rungs 2–3** ([0609] shipped rung 1, the
   website/VOICE.md file; these are deferred until the author has

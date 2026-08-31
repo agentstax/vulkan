@@ -1,0 +1,315 @@
+---
+title: Consumer Group Config
+description: The proposed split — the group's declared config at RegisterConsumer, stored on the group's worker rows; session options at Consume.
+---
+
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
+
+A consumer group's config splits in two. Group config is what the group
+means — the message timeout, the retry budget, the concurrency
+override, the bindings — and it must be the same for every instance of
+the group. Instance config is how one process runs — batch size, poll
+rate, shutdown budget — and it may differ per box. Today both live in
+one struct on `NewConsumer`, and nothing makes the group half actually
+shared: deploy two replicas of `charge-cards` with different
+`Message.Retry` and the same message gets a different retry budget
+depending on which replica claimed it.
+
+<ThreadAside label="PROPOSED" title="This page is the spec">
+Nothing on this page is shipped API. Today every field below lives on
+`ConsumerConfig` at `NewConsumer` and applies per process. This page
+is the proposal for splitting them and storing the group's half. The
+client the calls hang off is [its own page](/guides/client/).
+
+</ThreadAside>
+
+## One question sorts every field
+
+If two instances of the same group set a field differently, is that a
+bug or a deployment choice? A bug -> group config. A choice ->
+instance config.
+
+Group config — `ConsumerConfig`, handed to `Register` and written to
+the group's rows by it:
+
+| field | what it decides |
+| --- | --- |
+| `Message` | default `MessageOptions` — timeout and retry curve — filling whatever the produced message left unset |
+| `MessageMin` / `MessageMax` | floors and ceilings on what a message may request |
+| `ConcurrencyOverride` | run every message under this policy, over the message's own |
+| `Start` | where a brand-new group's cursor is placed — read once, at creation ([where a new group starts](/guides/new-group-start/)) |
+| `Bindings` | the group's whole pattern set ([routing](/concepts/routing/)) — today `Register`'s last argument, folded into `ConsumerConfig` |
+| `ExceptionInitialBackoff` | the first `can_run_after` delay written on a fresh exception row |
+| `MaxRangeReclaims` | how many reclaims before a range is quarantined |
+
+The last two read like tuning, which is why they're worth listing:
+both decide durable outcomes on shared rows, so instances disagreeing
+on them is exactly the divergence this split closes.
+
+Instance config becomes `ConsumeOptions`, handed to `Consume`. A
+Consume call is already one session — fresh session id, counters at
+zero — and these are session facts: the throughput knobs
+(`BatchLimit`, `QueueSize`, `MessageConcurrency`), this process's own
+latencies (`ClaimPollRate`, `QueueMargin`, `RecordMargin`,
+`TimeoutGrace`), and its lifecycle (`InstanceTTL`, `ShutdownTimeout`,
+`DisableGracefulShutdown`). A bigger box runs a bigger batch, and
+that's a choice, so none of it is declared anywhere; every session
+gets its own. The ambient `Logger` and `Retry` are the client's
+(`ClientConfig`), so neither struct carries them.
+
+One near-collision to keep straight: `MessageConcurrency` is how many
+messages this instance processes at once (`ConsumeOptions`);
+`ConcurrencyOverride` is what a message key means (group config). They
+sound alike and sit on opposite sides of the split.
+
+One rule places everything: the declaration at the `Register*` verb
+on the client, session options at the verb that runs.
+`client.RegisterConsumer[T](ctx, group, topic, cfg)` carries the
+declaration it writes, the way `RegisterTopic` already does.
+`ConsumeOptions` mirrors `ProduceOptions`: act verbs take options,
+`nil` for the defaults.
+
+## Declared at Register, stored on the row
+
+```go
+// PROPOSED — not shipped API.
+payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested",
+	&vulkan.ConsumerConfig{
+		Message: &vulkan.MessageOptions{
+			Timeout: 10 * time.Second,
+			Retry:   &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
+		},
+	})
+if err != nil {
+	return err
+}
+
+return payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequestedV1) error {
+	fmt.Printf("charging %s\n", payment.OrderId)
+	return nil
+}, &vulkan.ConsumeOptions{BatchLimit: 20})
+```
+
+`RegisterConsumer` resolves the topic, writes the declaration it was
+handed, and returns the typed instance; its `Declaration` field says
+whether the row was created, joined, or updated
+([what a declaration reports](/guides/client/#what-a-declaration-reports)).
+
+`RegisterConsumer` writes the config into the group's `worker_config` rows —
+the fleet table where every group-owned worker (`message_consumer`,
+`exception_consumer`, `delivery_consumer`) already declares its
+config as a `metadata` document. Those documents already carry
+`Message`, `ConcurrencyOverride`, `ExceptionInitialBackoff`, and
+`MaxRangeReclaims` today; what changes is the direction — instances
+read the declared document back instead of each process writing in
+its own copy. The newest declaration wins, which is the
+metadata-replace path the fleet already has, and every replace
+appends a full snapshot to `worker_config_log` with `declared_by`
+and `declared_at`. No new table, no new column; an overwrite that
+changes values logs a warn naming the difference.
+
+Two carve-outs from newest-wins:
+
+- `Bindings` moves into `ConsumerConfig`, and only there — a
+  binding set switch resequences deliveries, so it keeps its own
+  install/wait outcomes ([how a set change lands](/concepts/routing/)).
+- `Start` is read once, when `Register` creates the cursor row. A
+  later declaration's `Start` changes nothing, same as today.
+
+A declaration is the whole document. Fields left unset mean the
+library default; there is no field-level patch, and `nil` declares the
+empty document — the same total-set rule bindings already have. The
+cost: two services both declaring `charge-cards` with different
+configs will overwrite each other on every restart, visibly
+in the log but endlessly. A group's config wants exactly one
+declarer — the service that owns the group; every other declarer sets
+`RequireMatch` and fails at startup instead of overwriting.
+
+## Sparse stored, resolved at read
+
+The metadata document holds only the fields the declaration set — a
+worker's fields land on that worker's row. Everything unset
+resolves to the library default at read time, so a library upgrade
+moves the defaults of every group that never pinned them, and a pinned
+value stays pinned until redeclared. Storing resolved values instead
+would freeze whatever defaults the declaring library version had —
+rejected. The inspect verb shows both layers: the declared document
+and the effective values.
+
+## How a change reaches running instances
+
+Never by a read on the claim path — claiming uses an in-memory copy
+only. Each instance keeps the group config in a mutex-guarded copy
+that a background loop refreshes from the group's worker rows on a
+poll cadence.
+Redeclare -> every instance's next refresh picks it up -> the group
+converges without a deploy. The staleness window is the refresh
+interval; that's the price of keeping config reads off the hot path.
+
+Where each field takes effect:
+
+- `Message`, `MessageMin`/`MessageMax`, `ExceptionInitialBackoff`,
+  `MaxRangeReclaims` -> the next claim or exception write uses the
+  current copy. A message mid-retry follows the new curve from its
+  next attempt.
+- `ConcurrencyOverride` -> pinned when a message is claimed; claims
+  already handed out finish under the value they were claimed with.
+  Without the pin, two instances straddling a refresh could resolve
+  the same key `exclusive` and `parallel` at once and run it twice.
+- `ShutdownTimeout` defaults from `MessageMax.Timeout`, so a refresh
+  that moves the ceiling re-derives the shutdown budget with it.
+
+Worked case: `charge-cards` runs `MaxRetries: 3` and a flaky card
+processor needs more room. Redeclare with `MaxRetries: 5` from the
+owning service (or the future CLI verb) and check the row:
+
+```sql
+SELECT w.name, w.metadata
+FROM worker_config w
+JOIN consumer_group_config g ON g.id = w.consumer_group_id
+WHERE g.name = 'charge-cards';
+--  name             | metadata
+--  message_consumer | {"message": {"timeout": "10s", "retry": {"max_retries": 5}}, ...}
+```
+
+`worker_config_log` holds every earlier document, with who declared
+it and when.
+
+Every replica follows within one refresh interval. A message sitting
+at attempt 3, about to dead-letter, gets attempts 4 and 5 under the
+new budget instead.
+
+## A stale build cannot declare
+
+The [migration gate](/guides/migrations/) already refuses a build
+whose schema version falls outside what the database allows. Config
+declarations get the same treatment: a build old enough that its
+document would silently drop fields a newer build declared is refused
+with a declared error code. The gate refuses the write; consuming is
+untouched. The exact floor rides the same `min_compatible_version`
+mechanics as every schema step, and the error's code and page land
+with the build.
+
+## The producer's version
+
+The same ladder, minus the stored half. A producer's `Message`
+defaults have no stored home on purpose: they're merged under each
+produce and written into the message's own options document, so
+they're already durable — per message, where the consumer reads them.
+There is no durable producer-side resource to hang a config on, and
+inventing one would add a second place a message's options come from.
+`Batch`, `SlowProduceThreshold`, `Logger`, and `Retry` are process
+facts. One config struct, nothing declared, no split.
+
+The rungs mirror: `client.RegisterProducer[T](ctx, topic, cfg)` takes
+the config, and `Produce` already had its options.
+
+```go
+// PROPOSED — not shipped API.
+requests, err := client.RegisterProducer[PaymentRequestedV1](ctx, "payments.requested",
+	&vulkan.ProducerConfig{
+		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
+	})
+if err != nil {
+	return err
+}
+
+produced, err := requests.Produce(ctx, &PaymentRequestedV1{OrderId: "order-812"}, nil)
+if err != nil {
+	return err
+}
+```
+
+One registered producer is one topic, so its `Message` defaults have an
+unambiguous scope. Batching loses nothing: the batcher already runs
+per topic — per registered instance, even — so there was never a
+cross-topic batch to give up.
+
+## Admin already fits
+
+Nothing moves in what admin declares: each declaring verb already
+takes the resource's config and stores it on the resource's row with
+a `_config_log` trail. `RegisterTopic` is the template this whole page
+copies; where the rest of admin's verbs live is
+[the client page](/guides/client/#admin-resource-by-resource).
+
+```go
+// PROPOSED — not shipped API.
+registered, err := client.RegisterTopic(ctx, "payments.requested", nil)
+if err != nil {
+	return err
+}
+```
+
+`AllowDestroy` is the client's, on `ClientConfig`, beside `Logger` and
+`Retry`; nothing resource-shaped hides in it. After the restructure
+each durable resource is declared by the
+surface that owns its lifecycle: admin declares the system and
+topics, the consumer declares its group, the
+[scheduler](/guides/schedules/) declares schedules, and the producer
+declares nothing because it has nothing durable of its own.
+
+## The scheduler's version
+
+A schedule is already a declared resource done right: `Register`
+takes the config, stores it on the `schedule_config` row, and the
+newest declaration wins. The name, the target topic, and the cron
+expression travel together as one `ScheduleSpec` — three adjacent
+strings is where a swap stops being caught — and the config sits
+beside it.
+
+```go
+// PROPOSED — not shipped API.
+nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx,
+	vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
+	&ReportRequestedV1{Kind: "nightly"}, &vulkan.ScheduleConfig{
+		Timeout:     time.Minute,
+		Concurrency: vulkan.ConcurrencyExclusive,
+	})
+if err != nil {
+	return err
+}
+
+return nightly.Schedule(ctx)
+```
+
+`ScheduleConfig` keeps its name and is handed to `RegisterSchedule`:
+`Timeout`, `Concurrency`, and `Metadata` are the schedule's declared
+semantics and land on the row with the expression and payload; the
+old `SchedulerConfig` was ambient only and dissolves into
+`ClientConfig`. `Schedule` is unchanged — it runs the system manager,
+which produces every registered schedule — and takes no options: a
+schedule session has no tuning of its own.
+
+One inconsistency this surfaces: topic, worker, and binding
+declarations keep a `_config_log` trail; `schedule_config` has none —
+a redeclared expression leaves no history. Open whether it earns one.
+
+## The manager's version
+
+Nothing moves here either. The manager spans the whole deployment, so
+`client.RunManager` takes no identity, and its config is the client's
+`Logger` and `Retry` — every knob its workers actually run under is a
+declared `metadata` document on a `worker_config` row, read from the
+fleet at provision. The manager owns no config because the fleet
+already declares it — the same ecosystem the group config joins.
+
+```go
+// PROPOSED — not shipped API.
+return client.RunManager(ctx)
+```
+
+The full ladder, then: the client holds the ambient config once; every
+durable resource is declared by a `Register*` verb that carries its
+config; session and per-call options ride the verb that acts —
+`Consume`, `Produce`.
+
+## Groups that exist today
+
+An existing group's row has no document -> every field resolves to the
+library default -> the first `Register` from a build carrying this
+change writes the group's first declaration. The tuning fields leave
+`ConsumerConfig` for `ConsumeOptions` at `Consume` and `ConsumerConfig`
+itself moves from `NewConsumer` to `client.RegisterConsumer` — old call
+sites break at compile time; the group fields themselves keep their
+meaning.
