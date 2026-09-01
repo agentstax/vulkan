@@ -171,6 +171,13 @@ duty-backoff-lab:
 alert-lab:
   go run examples/phase_1/alertlab/main.go
 
+# worker liveness alert: a produce-only Register warns VK0063 naming the
+# unclaimed topic_janitor and goes silent under a live consumer; the
+# scheduled check publishes an active alert naming the group's
+# message_consumer and resolves it once the consumer is back.
+worker-liveness-lab:
+  go run examples/phase_1/workerlivenesslab/main.go
+
 # cron lab: registration validation (charset, Feb-29, timeout-vs-rate),
 # owner cascade vs standalone survival, produce-once newest-due walk, v7
 # dedupe on a re-backdated scheduled time, suspend/unsuspend, a poisoned row

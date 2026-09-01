@@ -68,6 +68,9 @@ we need a long 1hr repeatable live test:
 - produces report at end of system - failed produces, skipped (dropped) messages, retries
 - We can build on this overtime but keep it relatively simple at start
 - Might make sense to roll this into bench as a correctness or reliability benchmark
+- one of the things I want to make sure we do well here is message processing tracking ie
+  do all messages get processed into delivery_log with deliveryLogMode: all on. I'm sort of
+  concerned with some edge cases we could miss a message or two
 
 need another review to make sure we are not logging any sensitive information like payload
 
