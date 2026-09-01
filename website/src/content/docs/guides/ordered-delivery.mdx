@@ -110,7 +110,7 @@ The cost is honest: a deferred ordered message runs one exception
 poll after its predecessor resolves, and a message waiting on another
 instance's open range waits for that range to commit and the cursor
 advancer to move `committed`. `exclusive` never pays either; it stays
-the cheaper guarantee for handlers that only need "one at a time".
+the cheaper guarantee for handlers that only need "one at a time."
 
 ## What it does not do
 
