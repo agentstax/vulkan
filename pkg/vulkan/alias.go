@@ -29,9 +29,11 @@ type Versioned = topic.Versioned
 
 type (
 	ConsumerInstance[Message Versioned] = consumer.ConsumerInstance[Message]
+	ConsumerFunc[Message Versioned]     = consumer.ConsumerFunc[Message]
 	ConsumeOptions                      = consumer.ConsumeOptions
 
 	ProducerInstance[Message Versioned] = producer.ProducerInstance[Message]
+	ProducerFunc[Message Versioned]     = producer.ProducerFunc[Message]
 	ProduceOptions                      = producer.ProduceOptions
 	ProduceResult[Message Versioned]    = producer.ProduceResult[Message]
 	ProduceItem[Message Versioned]      = producer.ProduceItem[Message]

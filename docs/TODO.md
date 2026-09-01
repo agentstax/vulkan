@@ -252,16 +252,163 @@ did not survive the build (see below).
   `just worker-liveness-lab` (twice, and it leaves no alert heads
   behind), `just alert-lab`, the site's vale/remark/prettier/vitest.
 
-### Chunk 15 -- seams and close-out
+### Chunk 15 -- seams, the schema, and close-out
 
-- `vulkan.Producer[T]` (`Produce`, `ProduceFunc`, `ProduceInTx`) and
-  `vulkan.Consumer[T]` (`Consume`) interfaces satisfied by the instances;
-  `vulkantest.NewClient(t)` (own module under tools/ or a nested module)
-  runs the real library on an ephemeral schema.
-- guides/client.mdx and guides/consumer-group-config.mdx lose their
-  PROPOSED asides; every site sample re-checked against the shipped
-  library; playground headers re-scored (concepts held, traps hit).
-- HISTORY.md entry citing [0625]; this section and the ROADMAP item
-  removed; memory of the proposal marked shipped.
+Reshaped 2026-09-01. Two changes to the original: `vulkantest` left the
+chunk (a doc page comes first -- ROADMAP), and schema-as-a-first-class
+concern joined it. The second was not planned work: asking how
+`vulkantest` would isolate one test from another surfaced that Vulkan
+has no installation boundary at all, and the answer one-system-per-schema
+needs is the same answer the tests needed. Eight tasks, each reviewed
+before the next starts.
+
+**Task 1 -- the instance interfaces.**
+
+- `vulkan.Producer[Message]` is the instance's WHOLE public surface --
+  `Produce`, `ProduceBatch`, `ProduceFunc`, `ProduceInTx`,
+  `GetCompactionHeadInTx` -- not the three the spec named. A curated
+  subset is a second definition of what a producer is, and anyone who
+  batches writes their own anyway. `vulkan.Consumer[Message]` is
+  `Consume`, which is already its whole surface.
+  USER-SETTLED 2026-09-01, open to narrowing later.
+- Compile-time assertions in `vulkan`; the client's Register verbs keep
+  returning the concrete `*ProducerInstance[Message]`.
+- Done when: build, `go test -race ./pkg/...`.
+- Review: the interface is exactly the instance's public methods.
+
+**Task 2 -- `internal/topic` becomes `pkg/topic/tables.go`.**
+
+- The table-name funcs move to the vocabulary root and become public API
+  (an operator writing a diagnostic query needs them, and labs cannot
+  import `internal/`). Every `iTopic.` import rewrites. `internal/`
+  holds nothing else and is deleted.
+- CONVENTIONS ## Tables: the sentence "Library code names them ONLY
+  through internal/topic's table-name funcs; labs, which cannot import
+  internal/, interpolate the name inline" rewrites to name `pkg/topic`
+  and drops the lab exception.
+- Done when: build, `go test -race ./pkg/...`, targeted labs;
+  `rg "internal/"` returns nothing.
+- Review: a pure move -- no signature, no name, no behaviour changed.
+
+**Task 3 -- the schema is the installation.** [0628]
+
+The design: a schema is one Vulkan installation. That is what makes
+`system_config`'s singleton row and `System()`'s nameless handle correct
+permanently -- multiple systems come from multiple schemas, not from a
+`system_id` dimension growing through every read. It also stops Vulkan
+scattering its shared tables and its ten-per-topic tables through the
+user's `public` schema, which is why river, pgmq, and graphile-worker
+all default to a schema of their own.
+
+- `PostgresConnectionConfig.Schema`, default `"vulkan"`.
+  `NewPostgresDatastore` sets `poolConfig.ConnConfig.RuntimeParams
+  ["search_path"]` to `"<schema>, public"` and `PostgresDatastore`
+  carries the resolved name (task 4 needs it).
+- REJECTED: schema-qualifying the SQL. 314 shared-table references across
+  62 files and 207 SQL literals, every one of which would become a
+  Sprintf -- that breaks the ## SQL rule that a literal is a constant raw
+  string. `search_path` costs one line and changes no SQL.
+- `public` stays second in the path because `InTransaction` hands the
+  user a `Tx` on Vulkan's pool: their `INSERT INTO orders` has to keep
+  finding `public.orders`. Documented caveat: a `CREATE TABLE` a user
+  runs inside `InTransaction` lands in Vulkan's schema.
+- `RegisterSystem` runs `CREATE SCHEMA IF NOT EXISTS` as its first
+  statement inside the lock it already takes. Without it the search_path
+  falls through and every `CREATE TABLE` silently lands in `public`.
+  Missing CREATE privilege is a new failure mode -- likely a declared
+  error, its VK code and hand-written page landing here.
+- Hazard to state on the page, not engineer around: with the schema
+  absent, reads fall through to `public` and an older install's tables
+  are still there to be found. Pre-v1, and a dev database is recreated.
+- Decision record [0628] is written in this task -- the mechanism settles
+  here, not at close-out.
+- Done when: build, tests, drop+recreate of the dev DB, a lab proving two
+  clients on two schemas register the same topic name independently.
+- Review: no new column, no schema value stored in any row. The schema is
+  the scope exactly as a per-topic table's name is its scope.
+
+**Task 4 -- the six advisory lock keys take the schema.**
+
+None of these is a correctness fix. `search_path` already isolates the
+tables, so two installations are writing to different tables either way.
+Every one is a contention fix: two installations serializing on a lock
+neither needs.
+
+- `common.AdvisoryLock` -- one int constant shared by system register,
+  system delete, and migrate -- becomes a per-schema derived key.
+- `hashtext('topic:' || $1)`, `hashtext('schedule:' || $1)`, and
+  `hashtext(format('consumer_group:%s:%s', ...))` gain the schema.
+- `advisoryLockKey(topicId, partition)` packs two int32s into an int64
+  and has no bits to spare, so it becomes
+  `hashtext(format('partition:%s:%s:%s', schema, topic_id, partition))`
+  -- one uniform mechanism across all six. It is not a hot path: it runs
+  from the create-ahead gate at 80% and 95% of a partition's id range and
+  from the missing-partition self-heal, never per produce. The packed
+  int's exact no-collision guarantee is given up; a hashtext collision
+  only makes two unrelated partition creations wait, which the three
+  string-keyed locks already accept.
+- `migrate.IsLocked` reads `pg_locks WHERE objid = $1` and follows the
+  new key with no change.
+- Done when: build, tests, the two-schema lab from task 3 extended to
+  prove the two registers do not serialize.
+- Review: all six sites are one shape; nothing derives a key twice.
+
+**Task 5 -- the schema reaches the operator.**
+
+- 18 diagnose queries across `pkg/{topic,consumergroup,migrate,common}/
+  errors.go` name a table. Pasted into psql by an operator whose own
+  search_path is `public`, `to_regclass('message_log_{topic_id}')`
+  returns NULL.
+- SETTLED 2026-09-01: the queries take a `{schema}` placeholder AND
+  `schema` is attached at every raise site whose declaration carries one
+  of them. Diagnose queries are exempt from the attachable-at-every-site
+  rule, so an unattached `{schema}` would silently drop the query from
+  the operator's output -- attaching it is what keeps all 18 usable. The
+  datastores already hold the resolved name; the controller and admin
+  raise sites need it plumbed. `schema` joins the CONVENTIONS attribute
+  registry in this task.
+- CLI: a `--schema` flag and its env var, threaded to the connection
+  config; `vulkan explain` unaffected.
+- Labs interpolate table names inline -- they run on the client's pool so
+  search_path covers them, but any lab opening its own connection needs
+  the schema.
+- `just compat-lab` breaks silently: the pinned prior build has no
+  `Schema` field and writes to `public` while the working tree writes to
+  `vulkan`, so the two never meet. The lab must pin the new build to
+  `public` for the comparison to mean anything.
+- Done when: `just verify`, the affected labs, `just compat-lab` green
+  against the pinned tag.
+- Review: an operator pastes a diagnose query and it runs.
+
+**Task 6 -- the docs lose PROPOSED.**
+
+- guides/client.mdx and guides/consumer-group-config.mdx drop the
+  `ThreadAside label="PROPOSED"` and the eleven `// PROPOSED -- not
+  shipped API.` sample headers; both descriptions stop saying "proposed".
+- Stale text goes with them: client.mdx's Names section still promises a
+  typed instance exposes `Registered` and `Declaration`, and neither
+  shipped (chunk 12 reverted in full). The Open section's `RequireMatch`
+  and `Data`-sweep bullets are answered or done.
+- Every site sample re-checked against the shipped library; playground
+  headers re-scored (concepts held, traps hit).
+- A schema section lands here -- the default, the `search_path` value and
+  why `public` is second, the `InTransaction` caveat, and the privilege
+  requirement.
+- Done when: `npm run verify` in website/, vale clean.
+- Review: nothing on the site describes API that does not exist.
+
+**Task 7 -- ROADMAP gains what left.**
+
+- `vulkantest`: a doc page comes first, then the build. Carry the sizing
+  (roughly 50 lines for `NewClient(t)` on an ephemeral database, 30 for
+  running a consumer inside a test) and the finding that per-schema
+  isolation was rejected for it -- ephemeral database, since advisory
+  locks are database-scoped.
+- Anything task 5's open question defers.
+
+**Task 8 -- close-out.**
+
+- HISTORY.md entry citing [0625] and [0628]; this section removed; the
+  ROADMAP item removed; the memory marked shipped.
 - Done when: full fresh-DB suite, `just verify`, `npm run verify`,
   `just compat-lab`.
