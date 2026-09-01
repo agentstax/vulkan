@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
+	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
@@ -171,6 +172,14 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	workerLivenessProvisioner, err := workerliveness.NewWorkerLivenessProvisioner(ds, &workerliveness.WorkerLivenessConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	migrateController, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -199,7 +208,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		metricsController:  metricsController,
 		workerController:   workerController,
 		migrateController:  migrateController,
-		alertDeclarers:     []worker.Declarer{partitionCountProvisioner, compactionReadCostProvisioner},
+		alertDeclarers:     []worker.Declarer{partitionCountProvisioner, compactionReadCostProvisioner, workerLivenessProvisioner},
 		allowDestroy:       cfg.AllowDestroy,
 	}, nil
 }

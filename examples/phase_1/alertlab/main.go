@@ -31,6 +31,7 @@ import (
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
+	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
@@ -128,6 +129,7 @@ func run() (err error) {
 	// job still runs on run-now)
 	must(client.Schedule(partitioncount.JobName).Suspend(ctx))
 	must(client.Schedule(compactionreadcost.JobName).Suspend(ctx))
+	must(client.Schedule(workerliveness.JobName).Suspend(ctx))
 
 	executorCapture = newCaptureLogger()
 	stopExecutor := startExecutor(ctx)

@@ -7,6 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
+	workerlivenesscontroller "github.com/agentstax/vulkan/pkg/alert/workerliveness/controller"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
@@ -74,12 +75,20 @@ func NewProducer(ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Produc
 		return nil, err
 	}
 
+	workerLivenessController, err := workerlivenesscontroller.NewWorkerLivenessController(ds, &workerlivenesscontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Producer{
 		Config:          cfg,
 		Logger:          cfg.Logger,
 		controller:      producerController,
 		topicController: topicController,
-		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController},
+		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController, workerLivenessController},
 	}, nil
 }
 

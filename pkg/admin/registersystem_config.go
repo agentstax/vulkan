@@ -5,6 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
+	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 )
 
@@ -24,6 +25,10 @@ type RegisterSystemConfig struct {
 	// evaluated on.
 	// Default: JobConfig's own defaults.
 	CompactionReadCost *compactionreadcost.JobConfig
+
+	// WorkerLiveness - the schedule the worker_liveness alert is evaluated on.
+	// Default: JobConfig's own defaults.
+	WorkerLiveness *workerliveness.JobConfig
 }
 
 func (c *RegisterSystemConfig) WithDefaults() *RegisterSystemConfig {
@@ -39,6 +44,10 @@ func (c *RegisterSystemConfig) WithDefaults() *RegisterSystemConfig {
 		c.CompactionReadCost = &compactionreadcost.JobConfig{}
 	}
 	c.CompactionReadCost.WithDefaults()
+	if c.WorkerLiveness == nil {
+		c.WorkerLiveness = &workerliveness.JobConfig{}
+	}
+	c.WorkerLiveness.WithDefaults()
 	return c
 }
 
@@ -53,6 +62,9 @@ func (c *RegisterSystemConfig) Validate() error {
 	}
 	if err := c.CompactionReadCost.Validate(); err != nil {
 		return fmt.Errorf("CompactionReadCost: %w", err)
+	}
+	if err := c.WorkerLiveness.Validate(); err != nil {
+		return fmt.Errorf("WorkerLiveness: %w", err)
 	}
 	return nil
 }
