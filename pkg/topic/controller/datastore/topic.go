@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
@@ -156,11 +157,16 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicConfigRow,
 	}
 	defer tx.Rollback(ctx)
 
+	lockKey, err := common.NewAdvisoryLockKey("topic", d.Datastore.Schema, declared.Name)
+	if err != nil {
+		return nil, err
+	}
+
 	// txn-scoped, per-name -- auto-released at commit/rollback
 	if _, err := tx.Exec(ctx, `
 		-- vulkan: topic.register
-		SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));
-	`, declared.Name); err != nil {
+		SELECT pg_advisory_xact_lock($1);
+	`, lockKey.Value()); err != nil {
 		return nil, err
 	}
 

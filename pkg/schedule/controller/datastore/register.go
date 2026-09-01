@@ -2,6 +2,8 @@ package datastore
 
 import (
 	"context"
+
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 // Register resolves declared.Name to its row, creating it if it doesn't
@@ -33,11 +35,16 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 	}
 	defer tx.Rollback(ctx)
 
+	lockKey, err := common.NewAdvisoryLockKey("schedule", d.Datastore.Schema, declared.Name)
+	if err != nil {
+		return nil, err
+	}
+
 	// txn-scoped, per-name -- auto-released at commit/rollback
 	if _, err := tx.Exec(ctx, `
 		-- vulkan: schedule.register
-		SELECT pg_advisory_xact_lock(hashtext('schedule:' || $1));
-	`, declared.Name); err != nil {
+		SELECT pg_advisory_xact_lock($1);
+	`, lockKey.Value()); err != nil {
 		return nil, err
 	}
 

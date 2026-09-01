@@ -21,14 +21,25 @@ func (d *MigrateDatastore) IsLocked(ctx context.Context) (bool, error) {
 }
 
 func (d *MigrateDatastore) isLocked(ctx context.Context) (bool, error) {
+	lockKey, err := common.NewAdvisoryLockKey("schema", d.Datastore.Schema)
+	if err != nil {
+		return false, err
+	}
+
+	// objsubid 1 is postgres's marker for a bigint key, which is the form
+	// every vulkan lock takes -- a two-int key lands under 2 and is not ours
 	var locked bool
-	err := d.Datastore.Pool.QueryRow(ctx, `
+	err = d.Datastore.Pool.QueryRow(ctx, `
 		-- vulkan: migrate.isLocked
 		SELECT EXISTS (
 			SELECT 1 FROM pg_locks
-			WHERE locktype = 'advisory' AND classid = 0 AND objid = $1 AND granted
+			WHERE locktype = 'advisory'
+				AND classid = $1
+				AND objid = $2
+				AND objsubid = 1
+				AND granted
 		);
-	`, common.AdvisoryLock).Scan(&locked)
+	`, lockKey.ClassId(), lockKey.ObjId()).Scan(&locked)
 	return locked, err
 }
 
@@ -36,6 +47,11 @@ func (d *MigrateDatastore) isLocked(ctx context.Context) (bool, error) {
 // xact, so it outlives the per-step txns (an xact lock releases at each commit).
 // Auto-released if the connection dies.
 func (d *MigrateDatastore) AcquireLock(ctx context.Context) (*pgxpool.Conn, error) {
+	lockKey, err := common.NewAdvisoryLockKey("schema", d.Datastore.Schema)
+	if err != nil {
+		return nil, err
+	}
+
 	conn, err := d.Datastore.Pool.Acquire(ctx)
 	if err != nil {
 		return nil, err
@@ -43,7 +59,7 @@ func (d *MigrateDatastore) AcquireLock(ctx context.Context) (*pgxpool.Conn, erro
 	if _, err := conn.Exec(ctx, `
 		-- vulkan: migrate.AcquireLock
 		SELECT pg_advisory_lock($1);
-	`, common.AdvisoryLock); err != nil {
+	`, lockKey.Value()); err != nil {
 		conn.Release()
 		return nil, err
 	}
@@ -54,10 +70,18 @@ func (d *MigrateDatastore) AcquireLock(ctx context.Context) (*pgxpool.Conn, erro
 // migration must not also leak the session lock.
 func (d *MigrateDatastore) ReleaseLock(ctx context.Context, conn *pgxpool.Conn) {
 	ctx = context.WithoutCancel(ctx)
+
+	lockKey, err := common.NewAdvisoryLockKey("schema", d.Datastore.Schema)
+	if err != nil {
+		d.Logger.ErrorContext(ctx, "could not release migration advisory lock", "error", err)
+		conn.Release()
+		return
+	}
+
 	if _, err := conn.Exec(ctx, `
 		-- vulkan: migrate.ReleaseLock
 		SELECT pg_advisory_unlock($1);
-	`, common.AdvisoryLock); err != nil {
+	`, lockKey.Value()); err != nil {
 		d.Logger.ErrorContext(ctx, "could not release migration advisory lock", "error", err)
 	}
 	conn.Release()

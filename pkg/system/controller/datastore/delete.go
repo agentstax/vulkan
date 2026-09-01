@@ -20,12 +20,17 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 	}
 	defer tx.Rollback(ctx)
 
+	lockKey, err := common.NewAdvisoryLockKey("schema", d.Datastore.Schema)
+	if err != nil {
+		return err
+	}
+
 	// txn-scoped, same lock Register takes -- a concurrent register
 	// waits here and recreates the schema after the drop commits.
 	if _, err := tx.Exec(ctx, `
 		-- vulkan: system.delete
 		SELECT pg_advisory_xact_lock($1);
-	`, common.AdvisoryLock); err != nil {
+	`, lockKey.Value()); err != nil {
 		return err
 	}
 

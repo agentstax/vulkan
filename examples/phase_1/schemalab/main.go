@@ -11,6 +11,8 @@
 //  3. absence -- a client pointed at a schema nobody registered reads an
 //     absence rather than the neighbouring schema's rows: Get is (nil, nil),
 //     every other verb raises ErrTopicNotFound
+//  4. locks -- a register held up on one schema does not hold up the same
+//     register on the other, and every key carries vulkan's namespace
 package main
 
 import (
@@ -20,6 +22,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -146,9 +149,61 @@ func run() (err error) {
 	}
 	fmt.Println("   ✅ every other verb raises ErrTopicNotFound rather than reading a neighbour")
 
+	fmt.Println("\n=== 4. locks ===")
+
+	// hold the key vulkan derives for a register on the left schema -- the
+	// register blocking on it is what proves the datastore takes the same one
+	const lockedName = "schemalab.locked"
+	lockKey, err := common.NewAdvisoryLockKey("topic", leftSchema, lockedName)
+	must(err)
+
+	holder, err := leftDs.Pool.Acquire(ctx)
+	must(err)
+	defer holder.Release()
+	_, err = holder.Exec(ctx, `SELECT pg_advisory_lock($1);`, lockKey.Value())
+	must(err)
+
+	if lockKey.ClassId() != common.AdvisoryLockNamespace {
+		die(fmt.Sprintf("every key should carry the namespace, got classid %d", lockKey.ClassId()))
+	}
+
+	// the same predicate migrate.isLocked reads: finding the lock by the two
+	// halves proves ClassId and ObjId split it the way postgres filed it
+	var held int
+	must(leftDs.Pool.QueryRow(ctx, `
+		SELECT count(*) FROM pg_locks
+		WHERE locktype = 'advisory'
+			AND classid = $1
+			AND objid = $2
+			AND objsubid = 1
+			AND granted;
+	`, lockKey.ClassId(), lockKey.ObjId()).Scan(&held))
+	if held != 1 {
+		die(fmt.Sprintf("pg_locks should hold the key under classid %d objid %d, found %d rows", lockKey.ClassId(), lockKey.ObjId(), held))
+	}
+	fmt.Printf("   ✅ the held lock reads back under classid %d -- vulkan's namespace -- and objid %d\n", lockKey.ClassId(), lockKey.ObjId())
+
+	blocked, cancelBlocked := context.WithTimeout(ctx, 2*time.Second)
+	defer cancelBlocked()
+	if _, err := left.RegisterTopic(blocked, lockedName, nil); err == nil {
+		die("registering under the held key should have waited, it returned")
+	}
+	fmt.Println("   ✅ the same schema's register waits on the held key")
+
+	free, cancelFree := context.WithTimeout(ctx, 2*time.Second)
+	defer cancelFree()
+	if _, err := right.RegisterTopic(free, lockedName, nil); err != nil {
+		die("the other schema's register must not wait on it: " + err.Error())
+	}
+	fmt.Println("   ✅ the other schema's register takes a different key and completes")
+
+	_, err = holder.Exec(ctx, `SELECT pg_advisory_unlock($1);`, lockKey.Value())
+	must(err)
+
 	fmt.Println("\n✅ SCHEMA LAB PASSED")
 	fmt.Println("   one schema is one installation: the same topic name registers in each,")
-	fmt.Println("   messages and lifecycles are separate, and no read crosses the boundary.")
+	fmt.Println("   messages and lifecycles are separate, no read crosses the boundary, and")
+	fmt.Println("   neither installation waits on the other's locks.")
 	return nil
 }
 

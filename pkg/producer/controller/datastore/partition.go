@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -76,7 +77,10 @@ func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId
 			FOR VALUES FROM (%d) TO (%d);
 	`, topic.MessageLogPartitionTable(topicId, next), topic.MessageLogTable(topicId), next*partitionSize, (next+1)*partitionSize)
 
-	lockKey := advisoryLockKey(topicId, next)
+	lockKey, err := common.NewAdvisoryLockKey("partition", d.Datastore.Schema, topicId, next)
+	if err != nil {
+		return err
+	}
 
 	// one round trip -- a batch outside an explicit txn runs as one implicit
 	// transaction, which scopes the SET LOCAL to exactly these statements
@@ -93,7 +97,7 @@ func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId
 	batch.Queue(`
 		-- vulkan: producer.ensureCoveringPartition
 		SELECT pg_advisory_xact_lock($1);
-	`, lockKey)
+	`, lockKey.Value())
 	batch.Queue(createPartitionSql)
 
 	results := d.Datastore.Pool.SendBatch(ctx, batch)
@@ -105,7 +109,7 @@ func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId
 		results.Close()
 		return err
 	}
-	_, err := results.Exec() // createPartitionSql query
+	_, err = results.Exec() // createPartitionSql query
 	closeErr := results.Close()
 	if err != nil {
 		// IF NOT EXISTS still races -- losing to a concurrent creator means it exists
@@ -157,21 +161,6 @@ func isMissingPartition(err error) bool {
 	return errors.As(err, &pgErr) &&
 		pgErr.Code == "23514" && // check_violation doubles as partition-routing failure
 		strings.Contains(pgErr.Message, "no partition of relation")
-}
-
-// advisoryLockKey packs the (topic, partition) pair into one bigint key,
-// the two numbers sitting side by side in the int64's bits:
-//
-//	topicId<<20  slides topicId's bits 20 places left, leaving the low 20
-//	             bits all zero -- same value as topicId * 2^20 (1048576)
-//	| partition  bitwise OR copies partition's bits into those zeroed low
-//	             bits -- same value as + partition, since the bits don't overlap
-//
-// e.g. topic 83, partition 4 -> 83*1048576 + 4 = 87031812, and no other
-// (topic, partition) pair produces that number while partition stays under
-// 2^20 (~1M). A partition past 2^20 bleeds into the next topic's key range.
-func advisoryLockKey(topicId int64, partition int64) int64 {
-	return topicId<<20 | partition
 }
 
 // isMissingTable matches a statement against a table that no longer exists.

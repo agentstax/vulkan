@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -98,11 +99,16 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 		return found, nil
 	}
 
+	lockKey, err := common.NewAdvisoryLockKey("consumer_group", d.Datastore.Schema, topicId, name)
+	if err != nil {
+		return nil, err
+	}
+
 	// txn-scoped, per-(topic, name) -- auto-released at commit/rollback
 	if _, err := tx.Exec(ctx, `
 		-- vulkan: consumergroup.registerGroup
-		SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint, $2::text)));
-	`, topicId, name); err != nil {
+		SELECT pg_advisory_xact_lock($1);
+	`, lockKey.Value()); err != nil {
 		return nil, err
 	}
 

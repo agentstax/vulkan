@@ -31,11 +31,16 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemConfigRow, error
 	}
 	defer tx.Rollback(ctx)
 
+	lockKey, err := common.NewAdvisoryLockKey("schema", d.Datastore.Schema)
+	if err != nil {
+		return nil, err
+	}
+
 	// txn-scoped -- acquired here, auto-released at commit.
 	if _, err := tx.Exec(ctx, `
 		-- vulkan: system.register
 		SELECT pg_advisory_xact_lock($1);
-	`, common.AdvisoryLock); err != nil {
+	`, lockKey.Value()); err != nil {
 		return nil, err
 	}
 
