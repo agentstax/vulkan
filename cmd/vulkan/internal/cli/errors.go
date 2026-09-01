@@ -14,7 +14,7 @@ import (
 // cliFixes rewrites a code's fix into a vulkan command that runs verbatim as
 // pasted; codes absent here keep the library's Go-API fix.
 var cliFixes = map[string]string{
-	// VK0017 schema not registered
+	// VK0017 system not registered
 	"VK0017": "run `vulkan migrate init`",
 }
 
@@ -127,7 +127,7 @@ func exitCode(err error) int {
 // translateAdminError rewrites raw library errors into operator-facing ones:
 // a structured error becomes the block (fix swapped for a pasteable vulkan
 // command when cliFixes has one, then filled from the raise's own values);
-// a topic command run before the schema was
+// a topic command run before the system was
 // ever migrated hits Postgres 42P01 (undefined_table) deep in a query --
 // surface the fix, not the raw SQLSTATE.
 func translateAdminError(err error) error {
@@ -141,7 +141,7 @@ func translateAdminError(err error) error {
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
-		return failOp("schema not initialized -- run `vulkan migrate init` first")
+		return failOp("system not initialized -- run `vulkan migrate init` first")
 	}
 	return failOp("%s", err.Error())
 }

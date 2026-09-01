@@ -25,7 +25,7 @@ func newMigrateVersionsCmd(g *globalFlags) *cobra.Command {
 				return nil
 			}
 
-			printScopeVersions(out, "system schema versions (this binary):", availableSystemVersion())
+			printScopeVersions(out, "system migration versions (this binary):", availableSystemVersion())
 			fmt.Fprintln(out)
 			printScopeVersions(out, "topic schema versions (this binary):", availableTopicVersion())
 			return nil

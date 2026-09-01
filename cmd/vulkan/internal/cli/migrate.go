@@ -40,14 +40,14 @@ func newMigrateCmd(g *globalFlags) *cobra.Command {
 type scope int
 
 const (
-	scopeSystem scope = iota // the shared control-plane schema (a singleton)
+	scopeSystem scope = iota // the shared control-plane tables (a singleton)
 	scopeTopics              // every registered topic
 	scopeTopic               // one topic, by name
 )
 
 // direction is the guardrail the operator committed to on the command line.
 // It's not passed to the controller (which infers up/down from target vs current);
-// it's enforced CLI-side so `down` can never silently roll a schema forward.
+// it's enforced CLI-side so `down` can never silently roll a migration forward.
 type direction int
 
 const (
@@ -139,7 +139,7 @@ func gatherTargets(ctx context.Context, client *vulkan.Client, controller *migra
 }
 
 // guardDirection rejects a target that sits on the wrong side of the operator's
-// chosen direction: `up` must never roll a schema back, `down` must always. The
+// chosen direction: `up` must never roll a migration back, `down` must always. The
 // controller would happily do either from a bare target -- this is what makes the
 // explicit up/down split mean something. Returns the count of targets that will
 // actually move (target != current) so the caller can no-op cleanly.
@@ -159,9 +159,9 @@ func guardDirection(targets []migrateTarget, dir direction, to int64) (moving in
 }
 
 // errSystemNotRegistered is the single teaching error every path raises when the
-// control-plane schema is missing -- one wording, one place to change it.
+// control-plane tables is missing -- one wording, one place to change it.
 func errSystemNotRegistered() error {
-	return failUsage("system schema not registered -- run `vulkan migrate init` first")
+	return failUsage("system not registered -- run `vulkan migrate init` first")
 }
 
 // migrateError maps a failed admin migrate call to operator-facing output. Most

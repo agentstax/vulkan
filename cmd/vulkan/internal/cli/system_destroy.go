@@ -110,7 +110,7 @@ messages).`,
 					return failUsage("refusing to destroy the system without confirmation -- pass --yes in non-interactive contexts (e.g. CI)")
 				}
 				if len(liveWorkers) > 0 { // implies --force by the gate above
-					fmt.Fprintf(out, "%s workers still run (%s) -- --force destroys the schema out from under them.\n", glyphWarn(), strings.Join(liveWorkers, ", "))
+					fmt.Fprintf(out, "%s workers still run (%s) -- --force destroys the control-plane tables out from under them.\n", glyphWarn(), strings.Join(liveWorkers, ", "))
 				}
 				if len(userTopics) > 0 { // implies --force by the gate above
 					fmt.Fprintf(out, "%s topics still registered (%s) -- --force destroys them and every message they hold.\n", glyphWarn(), strings.Join(userTopics, ", "))

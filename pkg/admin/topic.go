@@ -35,7 +35,7 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.TopicData, erro
 // it. Safe to call on every startup: cfg is applied on every call, so changing
 // a value and redeploying changes the topic -- and two services passing
 // different cfg for one topic will overwrite each other. Against an empty
-// database it first stands up the control-plane schema -- RegisterSystem
+// database it first stands up the control-plane tables -- RegisterSystem
 // with a nil cfg.
 //   - name: must match ^[a-z0-9._-]+$; dot-namespaced by domain and entity
 //     ("orders.created", "billing.invoice.paid"); safe to rename later --
@@ -53,7 +53,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topi
 	}
 
 	// no system row means an empty database -- the first topic stands up the
-	// control-plane schema with defaults; a customized system keeps its
+	// control-plane tables with defaults; a customized system keeps its
 	// declaration, since nothing runs when the row exists
 	sys, err := a.systemController.Get(ctx)
 	if err != nil {
@@ -69,7 +69,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topi
 }
 
 func (a *MessageAdmin) registerTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) (*topic.TopicData, error) {
-	// gate -- a topic can't exist without the control-plane schema it rides on;
+	// gate -- a topic can't exist without the control-plane tables it rides on;
 	// otherwise RegisterTopic dies with a raw undefined-table error.
 	sys, err := a.systemController.Get(ctx)
 	if err != nil {

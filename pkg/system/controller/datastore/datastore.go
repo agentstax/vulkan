@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
-// SystemDatastore owns the shared control-plane schema.
+// SystemDatastore owns the shared control-plane tables.
 // Tables:
 // - system_config
 // - topic_config

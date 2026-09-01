@@ -12,7 +12,7 @@ import (
 )
 
 // AssertSystemSchemaSupported gates startup for a system-owned caller against
-// the shared system schema.
+// the shared system tables.
 // Too new -> upgrade the binary; too old -> migrate the database.
 func (c *Controller) AssertSystemSchemaSupported(ctx context.Context, systemId int64) error {
 	if systemId <= 0 {
@@ -26,7 +26,7 @@ func (c *Controller) AssertSystemSchemaSupported(ctx context.Context, systemId i
 }
 
 // AssertTopicSchemaSupported gates startup for a topic- or group-owned
-// caller against both the shared system schema and the topic's own schema.
+// caller against both the shared system tables and the topic's own tables.
 func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId int64, topicId int64) error {
 	if err := c.AssertSystemSchemaSupported(ctx, systemId); err != nil {
 		return err

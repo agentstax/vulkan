@@ -80,6 +80,8 @@ surfaces it.
 | snooze | a job-queue verb for what is a handler-requested later run | delay; `consumergroup.Delay`, the `delays` column, `RetryPolicy.MaxDelays` |
 | allow, defer (concurrency policy values) | verbs for what the new message does; the values name what the key permits | parallel, exclusive, ordered (`deferred` stays the row status) |
 | compaction key (the message's key) | the key is a message property; compaction is one of its two readers [0612] | message key (compaction_head's own compaction_key column keeps its name) |
+| schema (a migration target) | a third sense of a word Postgres already owns; the rows a migrate command reports are the system and its topics, not schemas | name the resource -- `system`, `topic`; `schema` is the Postgres namespace and nothing else [0629] |
+| control-plane schema (the shared tables) | same collision: the shared tables are not a Postgres schema | the control-plane tables |
 
 ## Structure
 

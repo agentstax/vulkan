@@ -13,7 +13,7 @@ import (
 func newMigrateSystemCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "system",
-		Short: "Migrate the shared control-plane schema",
+		Short: "Migrate the shared control-plane tables",
 	}
 	cmd.AddCommand(newDirectionCmd(g, scopeSystem, dirUp))
 	cmd.AddCommand(newDirectionCmd(g, scopeSystem, dirDown))
@@ -23,7 +23,7 @@ func newMigrateSystemCmd(g *globalFlags) *cobra.Command {
 func newMigrateTopicsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "topics",
-		Short: "Migrate every registered topic's schema",
+		Short: "Migrate every registered topic's tables",
 	}
 	cmd.AddCommand(newDirectionCmd(g, scopeTopics, dirUp))
 	cmd.AddCommand(newDirectionCmd(g, scopeTopics, dirDown))
@@ -33,7 +33,7 @@ func newMigrateTopicsCmd(g *globalFlags) *cobra.Command {
 func newMigrateTopicCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "topic",
-		Short: "Migrate a single topic's schema, by name",
+		Short: "Migrate a single topic's tables, by name",
 	}
 	cmd.AddCommand(newDirectionCmd(g, scopeTopic, dirUp))
 	cmd.AddCommand(newDirectionCmd(g, scopeTopic, dirDown))
@@ -55,7 +55,7 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   use,
-		Short: fmt.Sprintf("Migrate the %s schema %s to --to N", scopeNoun(s), directionWord(dir)),
+		Short: fmt.Sprintf("Migrate the %s tables %s to --to N", scopeNoun(s), directionWord(dir)),
 		Args:  args,
 		RunE: func(cmd *cobra.Command, cmdArgs []string) error {
 			ctx := cmd.Context()
@@ -136,7 +136,7 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Int64Var(&to, "to", 0, "target schema version (required)")
+	cmd.Flags().Int64Var(&to, "to", 0, "target migration version (required)")
 	return cmd
 }
 
@@ -176,16 +176,17 @@ func runScopeMigrate(ctx context.Context, client *vulkan.Client, s scope, name s
 }
 
 // migrateResultDocument is a migrate up/down's json result; migrated_count 0
-// means every target was already at the target version.
+// means every target was already at the target version. The command names
+// what it targeted, so the document reports only what happened: topic is
+// present when one topic was named and absent otherwise.
 type migrateResultDocument struct {
-	Scope         string `json:"scope"`           // system | topic | topics
-	Topic         string `json:"topic,omitempty"` // topic scope only
+	Topic         string `json:"topic,omitempty"` // the named topic; absent for system and every-topic runs
 	To            int64  `json:"to"`
 	MigratedCount int    `json:"migrated_count"`
 }
 
 func toMigrateResultDocument(s scope, targets []migrateTarget, to int64, moving int) migrateResultDocument {
-	document := migrateResultDocument{Scope: scopeNoun(s), To: to, MigratedCount: moving}
+	document := migrateResultDocument{To: to, MigratedCount: moving}
 	if s == scopeTopic {
 		document.Topic = targets[0].owner.Name
 	}

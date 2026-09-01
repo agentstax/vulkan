@@ -55,7 +55,7 @@ func TestRenderErrorBlockDropsAbsentParts(t *testing.T) {
 	var builder strings.Builder
 	renderErrorBlock(&builder, raised, "")
 
-	want := "error[VK0017]: schema not registered\n" +
+	want := "error[VK0017]: system not registered\n" +
 		"  topic: \"__system.metrics\"\n" +
 		"  docs:  https://vulkan-5ss.pages.dev/errors/VK0017\n"
 	if builder.String() != want {

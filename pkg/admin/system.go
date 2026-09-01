@@ -20,7 +20,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RegisterSystem stands up the shared control-plane schema every topic uses.
+// RegisterSystem stands up the shared control-plane tables every topic uses.
 // The first RegisterTopic against an empty database runs it with a nil cfg,
 // so calling it directly matters when cfg does. Safe to call on every startup:
 // cfg is applied on every call, so changing a value and redeploying changes
@@ -96,7 +96,7 @@ func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.SystemData, error
 	return sys, nil
 }
 
-// MigrateSystem moves the system schema to targetVersion.
+// MigrateSystem moves the system's tables to targetVersion.
 // Returns an error ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) error {
 	sys, err := a.systemController.Get(ctx)

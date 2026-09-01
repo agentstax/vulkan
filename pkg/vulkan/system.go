@@ -29,7 +29,7 @@ func (s *System) Get(ctx context.Context) (*SystemData, error) {
 	return sys, err
 }
 
-// Migrate moves the system schema to targetVersion.
+// Migrate moves the system's tables to targetVersion.
 func (s *System) Migrate(ctx context.Context, targetVersion int64) error {
 	return s.client.admin.MigrateSystem(ctx, targetVersion)
 }

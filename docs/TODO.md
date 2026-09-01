@@ -292,7 +292,74 @@ before the next starts.
   vendored cron parser, is a package-level internal and stays).
 - Review: a pure move -- no signature, no name, no behaviour changed.
 
-**Task 3 -- the schema is the installation.** [0629]
+**Task 3a -- "schema" gets one meaning.** [0629]
+
+Found while planning task 3, not planned work. The word already carries
+three senses: a payload's version (`SchemaVersion`, `schema_version`,
+[0618] -- keeps its compound name, not in question), a migration target
+(the CLI and `pkg/migrate`), and the Postgres namespace task 3 adds.
+Postgres's own noun for the third is `schema`, and coining an alternative
+is what ## Vocabulary bans, so the migration sense is the one that moves.
+
+The fix is not a rename. The CLI has no collective noun that works
+(`migrate up/down` already emits `{"scope": ...}` while `migrate status`
+emits `{"schemas": [{"schema": ...}]}` for the same concept), and
+`common.Owner` -- the library's real name for a polymorphic row's owner
+-- reads backwards at a surface where nothing is being owned. Removing
+the need for a collective noun closes all of it. USER-SETTLED
+2026-09-01.
+
+- `migrate status --output json` splits the list by what the rows are:
+
+      {
+        "initialized": true,
+        "system_available": 3,
+        "topic_available": 5,
+        "system": { "current": 3, "available": 3, "behind": false },
+        "topics": [
+          { "topic": "orders", "current": 4, "available": 5, "behind": true },
+          { "topic": "system", "current": 5, "available": 5, "behind": false }
+        ]
+      }
+
+  The system is an object, not a list entry -- there is only ever one,
+  the singleton [0625] settled. `topic` is already the log attribute
+  registry's key.
+- This fixes a real bug, not just a word. Only the `__system.` PREFIX is
+  reserved (`pkg/topic/errors.go:87`), so a topic named exactly `system`
+  registers, and today `migrate status` prints two rows both reading
+  `system` -- in JSON and in text -- with nothing to tell the
+  control-plane row from the topic. The split makes it unambiguous by
+  construction.
+- The result documents lose their collective noun the same way. The
+  command already says what it targeted; the document says what
+  happened:
+
+      migrate system up --to 3    -> { "to": 3, "migrated_count": 1 }
+      migrate topic up orders     -> { "topic": "orders", "to": 5, "migrated_count": 1 }
+      migrate topics up --to 5    -> { "to": 5, "migrated_count": 12 }
+
+  `scope`, `schema`, and `topic` restating each other all collapse.
+- VK0017's problem line `"schema not registered"` becomes
+  `"system not registered"` -- its raise site is the migrate read that
+  finds no baseline row. Its docs page title is the verbatim problem
+  text, so the page moves in the same change and codes.json re-syncs.
+- The ~25 comments and help strings calling the shared tables "the
+  control-plane schema" say "the control-plane tables". `cmd/vulkan`'s
+  internal `type scope` stays -- it drives command construction and
+  never reaches a user.
+- ## Vocabulary gains the row: schema (a migration target) -> the
+  resource itself, `system` or `topic`; `schema` is the Postgres
+  namespace and nothing else.
+- `--output json` is a contract [0575][0576]. Pre-v1, so the break is
+  allowed, but the CLI golden-output tests move with it and the labs get
+  grepped for `->>'schema'` before and after.
+- Done when: build, `go test -race ./...`, `just verify`, the CLI golden
+  tests, `npm run verify` for the moved error page.
+- Review: no surface says "schema" about anything but a Postgres schema;
+  a topic named `system` reads unambiguously in both output modes.
+
+**Task 3 -- the schema is the installation.** [0630]
 
 The design: a schema is one Vulkan installation. That is what makes
 `system_config`'s singleton row and `System()`'s nameless handle correct
@@ -314,20 +381,27 @@ all default to a schema of their own.
   user a `Tx` on Vulkan's pool: their `INSERT INTO orders` has to keep
   finding `public.orders`. Documented caveat: a `CREATE TABLE` a user
   runs inside `InTransaction` lands in Vulkan's schema.
+- The name is interpolated into `CREATE SCHEMA` and into the search_path
+  runtime param, so `Validate` guards it against an identifier pattern.
+  Quoting is not the answer -- a rejected name is.
 - `RegisterSystem` runs `CREATE SCHEMA IF NOT EXISTS` as its first
   statement inside the lock it already takes. Without it the search_path
   falls through and every `CREATE TABLE` silently lands in `public`.
-  Missing CREATE privilege is a new failure mode -- likely a declared
-  error, its VK code and hand-written page landing here.
+  Missing CREATE privilege (42501) is a new failure mode: a declared
+  error, next VK code, Permanent, its fix naming the GRANT, its
+  hand-written page landing here.
+- `DestroySystem` leaves the schema standing (USER-SETTLED 2026-09-01).
+  It drops the tables it created; the namespace may be shared or
+  pre-created by a DBA, and dropping it is past what the verb promises.
 - Hazard to state on the page, not engineer around: with the schema
   absent, reads fall through to `public` and an older install's tables
   are still there to be found. Pre-v1, and a dev database is recreated.
-- Decision record [0629] is written in this task -- the mechanism settles
+- Decision record [0630] is written in this task -- the mechanism settles
   here, not at close-out.
 - Done when: build, tests, drop+recreate of the dev DB, a lab proving two
   clients on two schemas register the same topic name independently.
 - Review: no new column, no schema value stored in any row. The schema is
-  the scope exactly as a per-topic table's name is its scope.
+  the boundary exactly as a per-topic table's name is its own.
 
 **Task 4 -- the six advisory lock keys take the schema.**
 
@@ -410,7 +484,7 @@ neither needs.
 
 **Task 8 -- close-out.**
 
-- HISTORY.md entry citing [0625], [0628], and [0629]; this section removed; the
+- HISTORY.md entry citing [0625] and [0628]-[0630]; this section removed; the
   ROADMAP item removed; the memory marked shipped.
 - Done when: full fresh-DB suite, `just verify`, `npm run verify`,
   `just compat-lab`.

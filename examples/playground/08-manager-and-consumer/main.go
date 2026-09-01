@@ -16,7 +16,7 @@
 //   - What the manager covers versus what the consumer covers is not
 //     discoverable from the API -- the quickstart's CAUTION aside is the
 //     only place it is written.
-//   - The manager needs the control-plane schema to exist but registers
+//   - The manager needs the control-plane tables to exist but registers
 //     no topic itself -- it assumes some producer's RegisterTopic (or
 //     RegisterSystem) already ran.
 package main

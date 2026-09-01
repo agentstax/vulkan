@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// createSystemTables creates the shared control-plane schema every topic rides
+// createSystemTables creates the shared control-plane tables every topic rides
 // on. This is the BASELINE -- later schema changes go through migration steps,
 // not edits here.
 //

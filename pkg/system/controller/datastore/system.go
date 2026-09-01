@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Register creates the shared control-plane schema and resolves the
+// Register creates the shared control-plane tables and resolves the
 // singleton system row, returning it.
 func (d *SystemDatastore) Register(ctx context.Context) (*SystemConfigRow, error) {
 	var registered *SystemConfigRow
@@ -52,7 +52,7 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemConfigRow, error
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "system schema registered")
+	d.Logger.InfoContext(ctx, "system registered")
 	return registered, nil
 }
 

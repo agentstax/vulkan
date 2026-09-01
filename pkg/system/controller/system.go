@@ -7,7 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/system"
 )
 
-// Register creates the shared control-plane schema and resolves the
+// Register creates the shared control-plane tables and resolves the
 // singleton system row, returning it. Idempotent. cfg may be nil or a sparse
 // struct -- WithDefaults fills every field left unset, Validate rejects
 // what's out of range.
@@ -47,7 +47,7 @@ func (c *SystemController) Get(ctx context.Context) (*system.SystemData, error) 
 	return toSystemData(found), nil
 }
 
-// Delete drops the shared control-plane schema -- every table
+// Delete drops the shared control-plane tables -- every table
 // Register creates. Callers drop the per-topic tables first; a topic
 // still registered when this runs leaves its physical tables orphaned.
 func (c *SystemController) Delete(ctx context.Context) error {

@@ -14,7 +14,7 @@ import (
 func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Compare each schema's current version against what this binary offers",
+		Short: "Compare the system's and each topic's current version against what this binary offers",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -75,11 +75,16 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 					Initialized:     true,
 					SystemAvailable: sysAvail,
 					TopicAvailable:  topicAvail,
-					Schemas:         make([]migrateSchemaDocument, 0, len(rows)),
+					System: &migrateSystemDocument{
+						Current:   sysCurrent,
+						Available: sysAvail,
+						Behind:    sysCurrent < sysAvail,
+					},
+					Topics: make([]migrateTopicDocument, 0, len(rows)-1),
 				}
-				for _, r := range rows {
-					document.Schemas = append(document.Schemas, migrateSchemaDocument{
-						Schema:    r.name,
+				for _, r := range rows[1:] {
+					document.Topics = append(document.Topics, migrateTopicDocument{
+						Topic:     r.name,
 						Current:   r.current,
 						Available: r.available,
 						Behind:    r.current < r.available,
@@ -91,9 +96,11 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 
 			fmt.Fprintf(out, "latest available: system %d, topic %d\n\n", sysAvail, topicAvail)
 
+			fmt.Fprintf(out, "system: current %d, available %d\n\n", sysCurrent, sysAvail)
+
 			tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
-			fmt.Fprintln(tw, "SCHEMA\tCURRENT\tAVAILABLE")
-			for _, r := range rows {
+			fmt.Fprintln(tw, "TOPIC\tCURRENT\tAVAILABLE")
+			for _, r := range rows[1:] {
 				fmt.Fprintf(tw, "%s\t%d\t%d\n", r.name, r.current, r.available)
 			}
 			tw.Flush()
@@ -122,18 +129,28 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 }
 
 // migrateStatusDocument is migrate status's json result. Initialized false
-// means the control-plane schema was never created; schemas is then empty.
+// means the control-plane tables were never created; system is then null and
+// topics empty.
 type migrateStatusDocument struct {
-	Initialized     bool                    `json:"initialized"`
-	SystemAvailable int64                   `json:"system_available"`
-	TopicAvailable  int64                   `json:"topic_available"`
-	Schemas         []migrateSchemaDocument `json:"schemas"`
+	Initialized     bool                   `json:"initialized"`
+	SystemAvailable int64                  `json:"system_available"`
+	TopicAvailable  int64                  `json:"topic_available"`
+	System          *migrateSystemDocument `json:"system"`
+	Topics          []migrateTopicDocument `json:"topics"`
 }
 
-// migrateSchemaDocument is one schema row: the system schema or one
-// registered topic.
-type migrateSchemaDocument struct {
-	Schema    string `json:"schema"`
+// migrateSystemDocument is the control-plane tables' versions. It carries no
+// name: a database holds exactly one system, so a name could only repeat the
+// key it already sits under -- and a topic may itself be named "system".
+type migrateSystemDocument struct {
+	Current   int64 `json:"current"`
+	Available int64 `json:"available"`
+	Behind    bool  `json:"behind"`
+}
+
+// migrateTopicDocument is one registered topic's versions.
+type migrateTopicDocument struct {
+	Topic     string `json:"topic"`
 	Current   int64  `json:"current"`
 	Available int64  `json:"available"`
 	Behind    bool   `json:"behind"`
@@ -146,10 +163,10 @@ func migrateStatusNotInitialized(w io.Writer, g *globalFlags) error {
 		writeJSON(w, migrateStatusDocument{
 			SystemAvailable: availableSystemVersion(),
 			TopicAvailable:  availableTopicVersion(),
-			Schemas:         make([]migrateSchemaDocument, 0),
+			Topics:          make([]migrateTopicDocument, 0),
 		})
 		return nil
 	}
-	fmt.Fprintln(w, "system schema not initialized -- run `vulkan migrate init`")
+	fmt.Fprintln(w, "system not initialized -- run `vulkan migrate init`")
 	return nil
 }

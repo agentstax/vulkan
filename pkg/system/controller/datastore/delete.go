@@ -55,6 +55,6 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 		return err
 	}
 
-	d.Logger.InfoContext(ctx, "system destroyed -- control-plane schema dropped")
+	d.Logger.InfoContext(ctx, "system destroyed -- control-plane tables dropped")
 	return nil
 }

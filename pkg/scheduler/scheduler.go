@@ -98,7 +98,7 @@ func (s *Scheduler) Register[Message topic.Versioned](ctx context.Context, name 
 		return nil, err
 	}
 
-	// gate -- a schedule needs the control-plane schema RegisterSystem creates
+	// gate -- a schedule needs the control-plane tables RegisterSystem creates
 	sys, err := s.systemController.Get(ctx)
 	if err != nil {
 		return nil, err

@@ -24,7 +24,7 @@ block; paste the message text or code into search to land on its page.
 | [VK0014](/errors/VK0014) | consumer group not found | permanent |
 | [VK0015](/errors/VK0015) | consumer group still has a live consumer | permanent |
 | [VK0016](/errors/VK0016) | consumer group still has delivery rows | permanent |
-| [VK0017](/errors/VK0017) | schema not registered | permanent |
+| [VK0017](/errors/VK0017) | system not registered | permanent |
 | [VK0018](/errors/VK0018) | could not create the covering partition | transient |
 | [VK0019](/errors/VK0019) | commit confirmation was lost | permanent |
 | [VK0020](/errors/VK0020) | topic partitions remain after draining | permanent |

@@ -1,7 +1,7 @@
 package main
 
 // systemregister is the go-forward dev bootstrap: it stands up the shared
-// control-plane schema in Go (RegisterSystem), superseding the golang-migrate
+// control-plane tables in Go (RegisterSystem), superseding the golang-migrate
 // migrate-up path. Idempotent -- safe to re-run.
 
 import (
@@ -50,7 +50,7 @@ func run() (err error) {
 	must(err)
 
 	must(client.RegisterSystem(ctx, nil))
-	fmt.Println("system schema registered")
+	fmt.Println("system registered")
 	return nil
 }
 

@@ -7,7 +7,7 @@ import (
 // ErrNotRegistered means the queried owner has no baseline record -- the system
 // or topic was never registered, or migration_log is missing.
 var ErrNotRegistered = diagnostic.NewError("VK0017", diagnostic.Permanent,
-	"schema not registered",
+	"system not registered",
 	"register the system with Client.RegisterSystem first")
 
 // ErrSchemaOlderThanBuild means the stored schema version is below what this

@@ -9,8 +9,8 @@ import (
 func newMigrateInitCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Create the control-plane schema at its baseline (idempotent)",
-		Long: "Stand up the shared control-plane schema every topic rides on, at version 1.\n" +
+		Short: "Create the control-plane tables at its baseline (idempotent)",
+		Long: "Stand up the shared control-plane tables every topic rides on, at version 1.\n" +
 			"Idempotent -- safe to run on an already-initialized database. Run this once\n" +
 			"before registering topics; `migrate system up` applies later versioned steps.",
 		Args: cobra.NoArgs,
@@ -33,7 +33,7 @@ func newMigrateInitCmd(g *globalFlags) *cobra.Command {
 				return nil
 			}
 
-			fmt.Fprintf(out, "%s system schema initialized (version 1)\n", glyphOK())
+			fmt.Fprintf(out, "%s system initialized (version 1)\n", glyphOK())
 			return nil
 		},
 	}

@@ -200,7 +200,7 @@
     "VK0017": {
       "code": "VK0017",
       "kind": "error",
-      "problem": "schema not registered",
+      "problem": "system not registered",
       "recovery": "permanent",
       "fix": "register the system with Client.RegisterSystem first"
     },

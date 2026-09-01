@@ -29,7 +29,7 @@ func newSystemGetCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 			if sys == nil {
-				return failOp("system schema not registered -- run `vulkan migrate init` first")
+				return failOp("system not registered -- run `vulkan migrate init` first")
 			}
 
 			if g.jsonOutput() {
