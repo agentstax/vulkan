@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -35,7 +35,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 			c.pending_head
 		FROM %s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
+	`, topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var snapshotHead, claimed, settledHead, pendingHead int64
 	var snapshotXmax string
@@ -163,7 +163,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 		--                                                       snapshot read it -> error
 		--
 		SELECT u.low, u.high FROM updated u;
-	`, iTopic.ConsumerGroupCursorTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
+	`, topic.ConsumerGroupCursorTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 	cursorRows, err := tx.Query(ctx, cursorSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return nil, err
@@ -212,7 +212,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 			high,
 			expires_at,
 			reclaims;
-	`, iTopic.ClaimLeaseTable(topicId))
+	`, topic.ClaimLeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, leaseSql, groupId, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err

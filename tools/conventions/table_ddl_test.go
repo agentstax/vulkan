@@ -1,7 +1,7 @@
 package conventions
 
 // Walks every baseline CREATE TABLE literal under pkg/ plus the per-topic
-// table-name funcs in internal/topic and enforces the mechanical half of
+// table-name funcs in pkg/topic and enforces the mechanical half of
 // CONVENTIONS.md ## Tables naming rules [0611][0613]: table names end in a
 // known kind, TIMESTAMPTZ columns end _at/_after, duration columns are
 // BIGINT nanoseconds ending _ns. Judgment rules (root wording, prefix
@@ -164,7 +164,7 @@ func parseCreateTable(text string, file string, startLine int) tableStatement {
 	lines := strings.Split(text, "\n")
 
 	// the CREATE line names the table; a %s placeholder means per-topic --
-	// those names are checked through internal/topic's funcs instead
+	// those names are checked through pkg/topic's funcs instead
 	createIndex := -1
 	for i, line := range lines {
 		after, found := strings.CutPrefix(strings.TrimSpace(line), "CREATE TABLE IF NOT EXISTS ")
@@ -209,12 +209,12 @@ func parseCreateTable(text string, file string, startLine int) tableStatement {
 	return statement
 }
 
-// perTopicTableNames reads internal/topic's table-name funcs: every Sprintf
+// perTopicTableNames reads pkg/topic's table-name funcs: every Sprintf
 // format shaped <name>_%d is a per-topic table name.
 func perTopicTableNames(t *testing.T) map[string]string {
 	t.Helper()
 	root := repoRoot(t)
-	path := filepath.Join(root, "internal", "topic", "tables.go")
+	path := filepath.Join(root, "pkg", "topic", "tables.go")
 
 	fileSet := token.NewFileSet()
 	parsed, err := parser.ParseFile(fileSet, path, nil, 0)
@@ -237,7 +237,7 @@ func perTopicTableNames(t *testing.T) map[string]string {
 		if match == nil {
 			return true
 		}
-		names[match[1]] = "internal/topic/tables.go:" + strconv.Itoa(fileSet.Position(literal.Pos()).Line)
+		names[match[1]] = "pkg/topic/tables.go:" + strconv.Itoa(fileSet.Position(literal.Pos()).Line)
 		return true
 	})
 	return names

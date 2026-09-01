@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -52,7 +52,7 @@ func (d *ProducerDatastore) createNextIdPartition(ctx context.Context, topicId i
 	lastValueSql := fmt.Sprintf(`
 		-- vulkan: producer.createNextIdPartition
 		SELECT last_value FROM %s;
-	`, iTopic.MessageLogIdSequence(topicId))
+	`, topic.MessageLogIdSequence(topicId))
 
 	var lastValue int64
 	if err := d.Datastore.Pool.QueryRow(ctx, lastValueSql).Scan(&lastValue); err != nil {
@@ -74,7 +74,7 @@ func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
-	`, iTopic.MessageLogPartitionTable(topicId, next), iTopic.MessageLogTable(topicId), next*partitionSize, (next+1)*partitionSize)
+	`, topic.MessageLogPartitionTable(topicId, next), topic.MessageLogTable(topicId), next*partitionSize, (next+1)*partitionSize)
 
 	lockKey := advisoryLockKey(topicId, next)
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // SweepExpiredWaitingDeclarations deletes waiting binding_config_log rows whose
@@ -62,7 +62,7 @@ func (d *JanitorDatastore) sweepTopicWaitingDeclarations(ctx context.Context, to
 			AND binding_config_log.id < newest_waiting.newest_id
 			LIMIT $2
 		);
-	`, iTopic.BindingConfigLogTable(topicId))
+	`, topic.BindingConfigLogTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, cutoff, batchSize)
 	if err != nil {
 		return 0, err

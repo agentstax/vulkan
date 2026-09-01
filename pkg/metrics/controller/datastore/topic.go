@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -24,7 +24,7 @@ func (d *MetricsDatastore) isCompacted(ctx context.Context, topicId int64) (bool
 	sql := fmt.Sprintf(`
 		-- vulkan: metrics.isCompacted
 		SELECT EXISTS (SELECT 1 FROM %s);
-	`, iTopic.CompactionHeadTable(topicId))
+	`, topic.CompactionHeadTable(topicId))
 	var compacted bool
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&compacted)
 	return compacted, err
@@ -53,7 +53,7 @@ func (d *MetricsDatastore) schemaVersionCounts(ctx context.Context, topicId int6
 		LEFT JOIN %s h ON h.head_id = m.id
 		GROUP BY m.schema_version
 		ORDER BY m.schema_version;
-	`, iTopic.MessageLogTable(topicId), iTopic.CompactionHeadTable(topicId))
+	`, topic.MessageLogTable(topicId), topic.CompactionHeadTable(topicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func (d *MetricsDatastore) groupSchemaVersionLag(ctx context.Context, topicId in
 		FROM %[1]s c
 		JOIN consumer_group_config g ON g.id = c.consumer_group_id
 		ORDER BY g.name;
-	`, iTopic.ConsumerGroupCursorTable(topicId), iTopic.MessageLogTable(topicId), iTopic.ExceptionQueueTable(topicId))
+	`, topic.ConsumerGroupCursorTable(topicId), topic.MessageLogTable(topicId), topic.ExceptionQueueTable(topicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql, schemaVersion)
 	if err != nil {
 		return nil, err

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -34,7 +34,7 @@ func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, messag
 		FROM %s h
 		JOIN %s m ON m.id = h.head_id
 		WHERE h.compaction_key = $1;
-	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
+	`, topic.CompactionHeadTable(topicId), topic.MessageLogTable(topicId))
 
 	var head MessageLogRow
 	err := d.Datastore.Pool.QueryRow(ctx, sql, messageKey).Scan(
@@ -79,7 +79,7 @@ func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]M
 		FROM %s h
 		JOIN %s m ON m.id = h.head_id
 		ORDER BY h.compaction_key;
-	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
+	`, topic.CompactionHeadTable(topicId), topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {

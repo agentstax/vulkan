@@ -328,8 +328,9 @@ topic's family -- never both.
   exception_queue, delivery_log, consumer_group_cursor, claim_lease,
   message_key_lease, compaction_head, binding_config, binding_config_log
   -- one physical table per topic, created by topic createTopicTables.
-  Library code names them ONLY through internal/topic's table-name funcs;
-  labs, which cannot import internal/, interpolate the name inline.
+  Everything names them ONLY through pkg/topic's table-name funcs
+  (`topic.MessageLogTable(topicId)`) -- library code, labs, and a user
+  writing a diagnostic query alike [0628].
 - Every table name is `<root>_<kind>` [0611]: the leading words name the
   resource a row is about, the trailing word the table's kind --
   `_config` (declared state, written by declaration verbs), `_config_log`

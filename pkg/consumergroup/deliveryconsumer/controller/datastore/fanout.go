@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -30,7 +30,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			c.pending_head
 		FROM %s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
+	`, topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
@@ -164,7 +164,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			pending_xmax = GREATEST(c.pending_xmax, $4::xid8) -- also skips the initial NULL
 		FROM mark
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId), iTopic.BindingConfigTable(topicId), iTopic.CompactionHeadTable(topicId))
+	`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId), topic.BindingConfigTable(topicId), topic.CompactionHeadTable(topicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, limit, snapshotHead, snapshotXmax, schemaVersion)
 	if err != nil {

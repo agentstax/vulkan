@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -61,7 +61,7 @@ func (d *ScheduleDatastore) matchingGroups(ctx context.Context, topicId int64, n
 			OR EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern_regex)
 		  )
 		ORDER BY cg.name;
-	`, iTopic.BindingConfigTable(topicId))
+	`, topic.BindingConfigTable(topicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId, name)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (d *ScheduleDatastore) keyMessageIds(ctx context.Context, topicId int64, na
 		SELECT m.id
 		FROM %s m
 		WHERE m.message_key = $1;
-	`, iTopic.MessageLogTable(topicId))
+	`, topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, name)
 	if err != nil {
@@ -119,7 +119,7 @@ func (d *ScheduleDatastore) headId(ctx context.Context, topicId int64, name stri
 		SELECT head_id
 		FROM %s
 		WHERE compaction_key = $1;
-	`, iTopic.CompactionHeadTable(topicId))
+	`, topic.CompactionHeadTable(topicId))
 
 	var headId int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name).Scan(&headId)
@@ -146,7 +146,7 @@ func (d *ScheduleDatastore) messageOutcomes(ctx context.Context, topicId int64, 
 		WHERE d.consumer_group_id = $1
 		  AND d.message_id = ANY($2)
 		GROUP BY d.message_id;
-	`, iTopic.DeliveryLogTable(topicId))
+	`, topic.DeliveryLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, consumerGroupId, messageIds)
 	if err != nil {

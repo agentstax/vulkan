@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
@@ -34,7 +33,7 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicId in
 	headSql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.dropExpiredPartitions
 		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, iTopic.MessageLogTable(topicId))
+	`, topic.MessageLogTable(topicId))
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
 		return err
@@ -110,7 +109,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 		DELETE FROM %s
 		WHERE message_id >= $1
 			AND message_id < $2;
-	`, iTopic.ExceptionQueueTable(topicId))
+	`, topic.ExceptionQueueTable(topicId))
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
 		return false, err
 	}
@@ -121,7 +120,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 			DELETE FROM %s
 			WHERE message_id >= $1
 				AND message_id < $2;
-		`, iTopic.DeliveryLogTable(topicId))
+		`, topic.DeliveryLogTable(topicId))
 		if _, err := tx.Exec(ctx, orphanLogSql, low, high); err != nil {
 			return false, err
 		}
@@ -134,7 +133,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 		DELETE FROM %s
 		WHERE head_id >= $1
 			AND head_id < $2;
-	`, iTopic.CompactionHeadTable(topicId))
+	`, topic.CompactionHeadTable(topicId))
 	if _, err := tx.Exec(ctx, orphanKeySql, low, high); err != nil {
 		return false, err
 	}
@@ -142,7 +141,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	dropSql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.dropPartition
 		DROP TABLE IF EXISTS %s;
-	`, iTopic.MessageLogPartitionTable(topicId, n))
+	`, topic.MessageLogPartitionTable(topicId, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {
 		return false, err

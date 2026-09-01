@@ -6,7 +6,6 @@ import (
 	"slices"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
@@ -78,7 +77,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 			LIMIT $2
 		)
 		RETURNING id, compaction_rank;
-	`, iTopic.MessageLogPartitionTable(topicId, n), iTopic.MessageLogPartitionTable(topicId, n))
+	`, topic.MessageLogPartitionTable(topicId, n), topic.MessageLogPartitionTable(topicId, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
 	if err != nil {
@@ -100,7 +99,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 			-- vulkan: topicjanitor.sweepBatch
 			DELETE FROM %s
 			WHERE message_id = ANY($1);
-		`, iTopic.ExceptionQueueTable(topicId))
+		`, topic.ExceptionQueueTable(topicId))
 		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
 			return 0, err
 		}
@@ -110,7 +109,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 				-- vulkan: topicjanitor.sweepBatch
 				DELETE FROM %s
 				WHERE message_id = ANY($1);
-			`, iTopic.DeliveryLogTable(topicId))
+			`, topic.DeliveryLogTable(topicId))
 			if _, err := tx.Exec(ctx, orphanLogSql, ids); err != nil {
 				return 0, err
 			}
@@ -126,7 +125,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 			-- vulkan: topicjanitor.sweepBatch
 			DELETE FROM %s
 			WHERE head_id = ANY($1);
-		`, iTopic.CompactionHeadTable(topicId))
+		`, topic.CompactionHeadTable(topicId))
 		if _, err := tx.Exec(ctx, orphanKeySql, ids); err != nil {
 			return 0, err
 		}

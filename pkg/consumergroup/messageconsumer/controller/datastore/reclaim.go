@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -49,7 +48,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 			high,
 			expires_at,
 			reclaims;
-	`, iTopic.ClaimLeaseTable(topicId), iTopic.ClaimLeaseTable(topicId))
+	`, topic.ClaimLeaseTable(topicId), topic.ClaimLeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, reclaimSql, groupId, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
@@ -125,7 +124,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 			FROM %s
 			WHERE id > $2
 				AND id <= $3;
-		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId))
+		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId))
 	} else {
 		// inserted CTE + INSERT keeps the range-wide write and its delivery_log_<topic_id>
 		// rows atomic -- one log row per message written, same first-recorded-attempt
@@ -157,7 +156,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 			)
 			INSERT INTO %[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, message_id, 0, last_error FROM inserted;
-		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId))
+		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.DeliveryLogTable(topicId))
 	}
 	if _, err := tx.Exec(ctx, deliverySql, groupId, lease.Low, lease.High); err != nil {
 		return err
@@ -168,7 +167,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.ClaimLeaseTable(topicId))
+	`, topic.ClaimLeaseTable(topicId))
 	_, err := tx.Exec(ctx, freeSql, groupId, lease.Token)
 	return err
 }
@@ -194,7 +193,7 @@ func (d *MessageConsumerGroupDatastore) forceReclaimRange(ctx context.Context, t
 			token = gen_random_uuid()              -- rotate token so any retry matches 0 rows instead of double decrementing
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.ClaimLeaseTable(topicId))
+	`, topic.ClaimLeaseTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupId, token)
 	if err != nil {
 		return err

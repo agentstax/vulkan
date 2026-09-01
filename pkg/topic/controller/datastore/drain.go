@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -28,7 +27,7 @@ const dropPartitionBatchSize = 100
 // batch at a time so no single transaction holds more than a batch's
 // worth of lock slots, leaving the parent empty for a cheap final DROP.
 func (d *TopicDatastore) drainPartitions(ctx context.Context, topicId int64) error {
-	parentTableName := iTopic.MessageLogTable(topicId)
+	parentTableName := topic.MessageLogTable(topicId)
 
 	countSql := `
 		-- vulkan: topic.drainPartitions

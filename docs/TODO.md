@@ -286,11 +286,13 @@ before the next starts.
   through internal/topic's table-name funcs; labs, which cannot import
   internal/, interpolate the name inline" rewrites to name `pkg/topic`
   and drops the lab exception.
-- Done when: build, `go test -race ./pkg/...`, targeted labs;
-  `rg "internal/"` returns nothing.
+- Supersedes [0371], which is marked superseded; the record is [0628].
+- Done when: build, `go test -race ./pkg/...`, targeted labs; the
+  repo-root `internal/` is gone (`pkg/schedule/internal/robfig`, the
+  vendored cron parser, is a package-level internal and stays).
 - Review: a pure move -- no signature, no name, no behaviour changed.
 
-**Task 3 -- the schema is the installation.** [0628]
+**Task 3 -- the schema is the installation.** [0629]
 
 The design: a schema is one Vulkan installation. That is what makes
 `system_config`'s singleton row and `System()`'s nameless handle correct
@@ -320,7 +322,7 @@ all default to a schema of their own.
 - Hazard to state on the page, not engineer around: with the schema
   absent, reads fall through to `public` and an older install's tables
   are still there to be found. Pre-v1, and a dev database is recreated.
-- Decision record [0628] is written in this task -- the mechanism settles
+- Decision record [0629] is written in this task -- the mechanism settles
   here, not at close-out.
 - Done when: build, tests, drop+recreate of the dev DB, a lab proving two
   clients on two schemas register the same topic name independently.
@@ -408,7 +410,7 @@ neither needs.
 
 **Task 8 -- close-out.**
 
-- HISTORY.md entry citing [0625] and [0628]; this section removed; the
+- HISTORY.md entry citing [0625], [0628], and [0629]; this section removed; the
   ROADMAP item removed; the memory marked shipped.
 - Done when: full fresh-DB suite, `just verify`, `npm run verify`,
   `just compat-lab`.

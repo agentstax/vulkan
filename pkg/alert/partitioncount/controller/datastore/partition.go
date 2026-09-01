@@ -3,7 +3,7 @@ package datastore
 import (
 	"context"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // locksPerPartition: a partition owns 5 lockable relations -- table, pkey
@@ -28,7 +28,7 @@ func (d *PartitionCountDatastore) partitionCount(ctx context.Context, topicId in
 		SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);
 	`
 	var count int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, iTopic.MessageLogTable(topicId)).Scan(&count)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, topic.MessageLogTable(topicId)).Scan(&count)
 	return count, err
 }
 

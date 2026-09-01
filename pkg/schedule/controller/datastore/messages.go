@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // ListMessages is the schedule's newest limit messages, one row per
@@ -67,7 +67,7 @@ func (d *ScheduleDatastore) keyMessages(ctx context.Context, topicId int64, name
 		WHERE m.message_key = $1
 		ORDER BY m.id DESC
 		LIMIT $2;
-	`, iTopic.MessageLogTable(topicId))
+	`, topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, name, limit)
 	if err != nil {

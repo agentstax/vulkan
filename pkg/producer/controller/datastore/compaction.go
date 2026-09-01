@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
 )
@@ -31,7 +31,7 @@ func (d *ProducerDatastore) getCompactionHead(ctx context.Context, q iDatastore.
 		JOIN %s m ON m.id = h.head_id
 		WHERE h.compaction_key = $1
 		FOR UPDATE OF h;
-	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
+	`, topic.CompactionHeadTable(topicId), topic.MessageLogTable(topicId))
 
 	var head MessageLogRow
 	err := q.QueryRow(ctx, sql, messageKey).Scan(

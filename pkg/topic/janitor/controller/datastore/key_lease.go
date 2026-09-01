@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // SweepExpiredKeyLeases deletes this topic's expired message_key_lease rows.
@@ -44,7 +44,7 @@ func (d *JanitorDatastore) sweepKeyLeasesBatch(ctx context.Context, topicId int6
 			WHERE k.expires_at < now()
 			LIMIT $1
 		);
-	`, iTopic.MessageKeyLeaseTable(topicId))
+	`, topic.MessageKeyLeaseTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, batchSize)
 	if err != nil {
 		return 0, err

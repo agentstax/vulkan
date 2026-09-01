@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -37,7 +36,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts, 'success', ''
 			FROM deleted;
-		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordSuccess
@@ -45,7 +44,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, iTopic.ExceptionQueueTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId))
 	}
 
 	if keyClaim == nil {
@@ -81,7 +80,7 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $5;
-		`, iTopic.ExceptionQueueTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordFailure
@@ -102,7 +101,7 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $6, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), retryPolicy.CalculateDelay(exception.Attempts - exception.Delays - 1).Seconds(), exception.LeaseToken}
@@ -143,7 +142,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDelayed(ctx context.Context, del
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $5;
-		`, iTopic.ExceptionQueueTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordDelayed
@@ -165,7 +164,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDelayed(ctx context.Context, del
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, $6, 'delayed', $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, delayErr.Error(), delay.Seconds(), exception.LeaseToken}
@@ -202,7 +201,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $4;
-		`, iTopic.ExceptionQueueTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT ... WHERE EXISTS keeps the UPDATE and its
 		// delivery_log_<topic_id> row atomic
@@ -224,7 +223,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $5, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), exception.LeaseToken}
@@ -269,7 +268,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, iTopic.ExceptionQueueTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
 		// row atomic
@@ -291,7 +290,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts + 1, 'superseded', $4
 			FROM updated;
-		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken}
@@ -327,7 +326,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, iTopic.ExceptionQueueTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
 		// row atomic
@@ -350,7 +349,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts + 1, 'deferred', $5
 			FROM updated;
-		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken, concurrency}
@@ -380,7 +379,7 @@ func (d *ExceptionConsumerGroupDatastore) recordAndReleaseKey(ctx context.Contex
 		WHERE consumer_group_id = $1
 			AND message_key = $2
 			AND lease_token = $3;
-	`, iTopic.MessageKeyLeaseTable(keyClaim.TopicId))
+	`, topic.MessageKeyLeaseTable(keyClaim.TopicId))
 	releaseTag, err := tx.Exec(ctx, releaseSql, keyClaim.ConsumerGroupId, keyClaim.MessageKey, keyClaim.Token)
 	if err != nil {
 		return err

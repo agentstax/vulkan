@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // committed is the mark below which every offset is resolved.
@@ -48,7 +48,7 @@ func (d *CursorAdvancerDatastore) advanceCommitted(ctx context.Context, topicId 
 		)
 		FROM %s
 		WHERE consumer_group_id = $1;
-	`, iTopic.ClaimLeaseTable(topicId), iTopic.ExceptionQueueTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
+	`, topic.ClaimLeaseTable(topicId), topic.ExceptionQueueTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var target int64
 	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupId).Scan(&target); err != nil {
@@ -62,7 +62,7 @@ func (d *CursorAdvancerDatastore) advanceCommitted(ctx context.Context, topicId 
 		SET committed = GREATEST(committed, $2)
 		WHERE consumer_group_id = $1
 		RETURNING committed;
-	`, iTopic.ConsumerGroupCursorTable(topicId))
+	`, topic.ConsumerGroupCursorTable(topicId))
 
 	var committed int64
 	err := d.Datastore.Pool.QueryRow(ctx, advanceSql, groupId, target).Scan(&committed)

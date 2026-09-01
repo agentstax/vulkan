@@ -3,7 +3,7 @@ package datastore
 import (
 	"context"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/metrics"
 )
 
@@ -32,7 +32,7 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 			(payload->>'message_id')::bigint,
 			(payload->>'attempt')::int,
 			MIN((payload->>'at')::timestamptz)
-		FROM ` + iTopic.MessageLogTable(metricsTopicId) + `
+		FROM ` + topic.MessageLogTable(metricsTopicId) + `
 		WHERE routing_key = $1 AND payload->>'type' = $2
 		GROUP BY (payload->>'message_id')::bigint, (payload->>'attempt')::int;
 	`

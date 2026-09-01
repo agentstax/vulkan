@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -37,7 +36,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 				AND status = 'inflight'
 				AND lease_expires_at < now()
 				AND attempts - delays >= $2;
-		`, iTopic.ExceptionQueueTable(topicId))
+		`, topic.ExceptionQueueTable(topicId))
 	} else {
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
 		// atomic in one statement.
@@ -60,7 +59,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT consumer_group_id, message_id, attempts, 'killed', last_error
 			FROM killed;
-		`, iTopic.ExceptionQueueTable(topicId), iTopic.DeliveryLogTable(topicId))
+		`, topic.ExceptionQueueTable(topicId), topic.DeliveryLogTable(topicId))
 	}
 	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, groupId, maxRetries)
 	if err != nil {

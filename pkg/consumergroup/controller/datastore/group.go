@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -156,7 +155,7 @@ func (d *ConsumerGroupDatastore) insertCursor(ctx context.Context, q datastore.Q
 			INSERT INTO %s (consumer_group_id)
 			VALUES ($1)
 			RETURNING committed;
-		`, iTopic.ConsumerGroupCursorTable(topicId))
+		`, topic.ConsumerGroupCursorTable(topicId))
 	case consumergroup.CursorPositionHead:
 		sql = fmt.Sprintf(`
 			-- vulkan: consumergroup.insertCursor
@@ -164,7 +163,7 @@ func (d *ConsumerGroupDatastore) insertCursor(ctx context.Context, q datastore.Q
 			SELECT $1, head, head, head
 			FROM (SELECT COALESCE(MAX(id), 0) AS head FROM %s) AS log
 			RETURNING committed;
-		`, iTopic.ConsumerGroupCursorTable(topicId), iTopic.MessageLogTable(topicId))
+		`, topic.ConsumerGroupCursorTable(topicId), topic.MessageLogTable(topicId))
 	default:
 		return 0, fmt.Errorf("unrecognized cursor position kind: %q", start.Kind)
 	}
@@ -193,7 +192,7 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	leaseSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
 		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, iTopic.ClaimLeaseTable(topicId))
+	`, topic.ClaimLeaseTable(topicId))
 	if _, err := tx.Exec(ctx, leaseSql, groupId); err != nil {
 		return err
 	}
@@ -202,7 +201,7 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	keyLeaseSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
 		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, iTopic.MessageKeyLeaseTable(topicId))
+	`, topic.MessageKeyLeaseTable(topicId))
 	if _, err := tx.Exec(ctx, keyLeaseSql, groupId); err != nil {
 		return err
 	}
@@ -211,7 +210,7 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	deliverySql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
 		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, iTopic.ExceptionQueueTable(topicId))
+	`, topic.ExceptionQueueTable(topicId))
 	if _, err := tx.Exec(ctx, deliverySql, groupId); err != nil {
 		return err
 	}
@@ -220,7 +219,7 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	deliveryLogSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
 		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, iTopic.DeliveryLogTable(topicId))
+	`, topic.DeliveryLogTable(topicId))
 	if _, err := tx.Exec(ctx, deliveryLogSql, groupId); err != nil {
 		return err
 	}

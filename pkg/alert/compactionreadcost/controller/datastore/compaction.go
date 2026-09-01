@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // IsCompacted reports whether the topic has any compaction_head rows.
@@ -22,7 +22,7 @@ func (d *CompactionReadCostDatastore) isCompacted(ctx context.Context, topicId i
 	sql := fmt.Sprintf(`
 		-- vulkan: compactionreadcost.isCompacted
 		SELECT EXISTS (SELECT 1 FROM %s);
-	`, iTopic.CompactionHeadTable(topicId))
+	`, topic.CompactionHeadTable(topicId))
 	var compacted bool
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&compacted)
 	return compacted, err

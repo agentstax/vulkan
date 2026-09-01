@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // SweepExpiredIdempotencyKeys drains idempotency_key rows older than ttl for this topic.
@@ -55,7 +55,7 @@ func (d *JanitorDatastore) sweepIdempotencyKeysBatch(ctx context.Context, topicI
 			WHERE created_at < $1
 			LIMIT $2
 		);
-	`, iTopic.IdempotencyKeyTable(topicId), iTopic.IdempotencyKeyTable(topicId))
+	`, topic.IdempotencyKeyTable(topicId), topic.IdempotencyKeyTable(topicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, cutoff, batchSize)
 	if err != nil {

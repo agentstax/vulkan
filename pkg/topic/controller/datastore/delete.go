@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // IsEmpty reports whether the topic's log holds any row at all.
@@ -23,7 +23,7 @@ func (d *TopicDatastore) isEmpty(ctx context.Context, topicId int64) (bool, erro
 	sql := fmt.Sprintf(`
 		-- vulkan: topic.isEmpty
 		SELECT EXISTS (SELECT 1 FROM %s LIMIT 1);
-	`, iTopic.MessageLogTable(topicId))
+	`, topic.MessageLogTable(topicId))
 	var notEmpty bool
 	if err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&notEmpty); err != nil {
 		return false, err
@@ -57,16 +57,16 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 
 	// the now-empty message_log parent and every other per-topic table
 	for _, table := range []string{
-		iTopic.MessageLogTable(topicId),
-		iTopic.ExceptionQueueTable(topicId),
-		iTopic.DeliveryLogTable(topicId),
-		iTopic.IdempotencyKeyTable(topicId),
-		iTopic.ConsumerGroupCursorTable(topicId),
-		iTopic.ClaimLeaseTable(topicId),
-		iTopic.MessageKeyLeaseTable(topicId),
-		iTopic.CompactionHeadTable(topicId),
-		iTopic.BindingConfigTable(topicId),
-		iTopic.BindingConfigLogTable(topicId),
+		topic.MessageLogTable(topicId),
+		topic.ExceptionQueueTable(topicId),
+		topic.DeliveryLogTable(topicId),
+		topic.IdempotencyKeyTable(topicId),
+		topic.ConsumerGroupCursorTable(topicId),
+		topic.ClaimLeaseTable(topicId),
+		topic.MessageKeyLeaseTable(topicId),
+		topic.CompactionHeadTable(topicId),
+		topic.BindingConfigTable(topicId),
+		topic.BindingConfigLogTable(topicId),
 	} {
 		dropSql := fmt.Sprintf(`
 			-- vulkan: topic.delete

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
@@ -65,7 +65,7 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 		SELECT
 			EXISTS (SELECT 1 FROM head WHERE head_id = $3),
 			(SELECT lease_token FROM attempt);
-	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageKeyLeaseTable(topicId))
+	`, topic.CompactionHeadTable(topicId), topic.MessageKeyLeaseTable(topicId))
 
 	// the claimSql head CTE snapshot could be stale on the INSERT that
 	// follows -- this rechecks with a fresh snapshot and deletes the
@@ -83,7 +83,7 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 				WHERE compaction_key = $1
 					AND head_id = $3
 			);
-	`, iTopic.MessageKeyLeaseTable(topicId), iTopic.CompactionHeadTable(topicId))
+	`, topic.MessageKeyLeaseTable(topicId), topic.CompactionHeadTable(topicId))
 
 	// one round trip
 	batch := &pgx.Batch{}
@@ -140,7 +140,7 @@ func (d *KeyLeaseDatastore) claimUncompacted(ctx context.Context, topicId int64,
 		-- own lease instead of reading it as busy
 		WHERE kl.expires_at < now() OR kl.lease_token = $3
 		RETURNING lease_token;
-	`, iTopic.MessageKeyLeaseTable(topicId))
+	`, topic.MessageKeyLeaseTable(topicId))
 
 	claim := KeyLease{TopicId: topicId, ConsumerGroupId: groupId, MessageKey: key}
 	err := d.Datastore.Pool.QueryRow(ctx, sql, groupId, key, token, duration.Seconds()).Scan(&claim.Token)
@@ -193,7 +193,7 @@ func (d *KeyLeaseDatastore) claimOrdered(ctx context.Context, topicId int64, gro
 		-- own lease instead of reading it as busy
 		WHERE kl.expires_at < now() OR kl.lease_token = $3
 		RETURNING lease_token;
-	`, iTopic.MessageKeyLeaseTable(topicId), iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
+	`, topic.MessageKeyLeaseTable(topicId), topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	claim := KeyLease{TopicId: topicId, ConsumerGroupId: groupId, MessageKey: key}
 	err := d.Datastore.Pool.QueryRow(ctx, sql, groupId, key, token, duration.Seconds(), messageId, ownLow, ownHigh).Scan(&claim.Token)
@@ -229,7 +229,7 @@ func (d *KeyLeaseDatastore) release(ctx context.Context, q datastore.Querier, cl
 		WHERE consumer_group_id = $1
 			AND message_key = $2
 			AND lease_token = $3;
-	`, iTopic.MessageKeyLeaseTable(claim.TopicId))
+	`, topic.MessageKeyLeaseTable(claim.TopicId))
 	tag, err := q.Exec(ctx, sql, claim.ConsumerGroupId, claim.MessageKey, claim.Token)
 	if err != nil {
 		return false, err

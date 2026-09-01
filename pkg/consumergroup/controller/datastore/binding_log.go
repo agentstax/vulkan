@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
@@ -118,7 +118,7 @@ func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.T
 		-- vulkan: consumergroup.appendDeclaration
 		INSERT INTO %s (consumer_group_id, status, patterns, declared_by, declared_at)
 		VALUES ($1, $2, $3, $4, $5);
-	`, iTopic.BindingConfigLogTable(topicId))
+	`, topic.BindingConfigLogTable(topicId))
 	_, err := tx.Exec(ctx, sql, groupId, status, patterns, declaredBy, declaredAt)
 	return err
 }
@@ -128,7 +128,7 @@ func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx,
 		-- vulkan: consumergroup.replaceBindings
 		DELETE FROM %s
 		WHERE consumer_group_id = $1;
-	`, iTopic.BindingConfigTable(topicId))
+	`, topic.BindingConfigTable(topicId))
 	if _, err := tx.Exec(ctx, deleteSql, groupId); err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx,
 		-- vulkan: consumergroup.replaceBindings
 		INSERT INTO %s (consumer_group_id, pattern_regex, pattern)
 		VALUES ($1, $2, $3);
-	`, iTopic.BindingConfigTable(topicId))
+	`, topic.BindingConfigTable(topicId))
 	for _, pattern := range patterns {
 		expression := wildcardToRegex(pattern)
 		if _, err := tx.Exec(ctx, insertSql, groupId, expression, pattern); err != nil {
@@ -198,7 +198,7 @@ func (d *ConsumerGroupDatastore) listTopicBindingLog(ctx context.Context, querie
 		-- $1 = 0 -> every group
 		WHERE ($1 = 0 OR binding_config_log.consumer_group_id = $1)
 		ORDER BY binding_config_log.consumer_group_id, binding_config_log.status, binding_config_log.declared_by, binding_config_log.id DESC;
-	`, iTopic.BindingConfigLogTable(topicId))
+	`, topic.BindingConfigLogTable(topicId))
 	rows, err := querier.Query(ctx, sql, groupId)
 	if err != nil {
 		return nil, err

@@ -3,7 +3,7 @@ package datastore
 import (
 	"context"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // PartitionCount is the number of partitions on the topic's message log.
@@ -23,6 +23,6 @@ func (d *CompactionReadCostDatastore) partitionCount(ctx context.Context, topicI
 		SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);
 	`
 	var count int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, iTopic.MessageLogTable(topicId)).Scan(&count)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, topic.MessageLogTable(topicId)).Scan(&count)
 	return count, err
 }

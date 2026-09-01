@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -38,7 +37,7 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.ClaimLeaseTable(topicId))
+	`, topic.ClaimLeaseTable(topicId))
 	tag, err := tx.Exec(ctx, freeSql, groupId, token)
 	if err != nil {
 		return err
@@ -93,7 +92,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 		SET low = $3
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.ClaimLeaseTable(topicId))
+	`, topic.ClaimLeaseTable(topicId))
 	tag, err := tx.Exec(ctx, truncateSql, groupId, token, lastProcessed)
 	if err != nil {
 		return err
@@ -156,7 +155,7 @@ func deliveryStatement(topicId int64) string {
 			now() + make_interval(secs => $5),
 			$4
 		);
-	`, iTopic.ExceptionQueueTable(topicId))
+	`, topic.ExceptionQueueTable(topicId))
 }
 
 // a freshly written delivery row is always the first recorded attempt (0)
@@ -165,7 +164,7 @@ func logStatement(topicId int64) string {
 		-- vulkan: messageconsumer.logStatement
 		INSERT INTO %s (consumer_group_id, message_id, attempt, status, error)
 		VALUES ($1, $2, 0, $3, $4);
-	`, iTopic.DeliveryLogTable(topicId))
+	`, topic.DeliveryLogTable(topicId))
 }
 
 // queueOutcomes queues one delivery insert + one log statement per resolved message, sent

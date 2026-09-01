@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // ConsumerGroupSnapshot is the current cursor/delivery/lease picture for
@@ -69,7 +69,7 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId in
 			), 0) AS open_leases
 		FROM %[4]s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId), iTopic.ExceptionQueueTable(topicId), iTopic.ClaimLeaseTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
+	`, topic.MessageLogTable(topicId), topic.ExceptionQueueTable(topicId), topic.ClaimLeaseTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var data ConsumerGroupSnapshotRow
 	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupId).Scan(

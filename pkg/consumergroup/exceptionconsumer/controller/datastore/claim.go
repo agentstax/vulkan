@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
@@ -96,7 +95,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.MessageKeyLeaseTable(topicId))
+		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.MessageKeyLeaseTable(topicId))
 	} else {
 		// eligible is split out so it can remember each row's pre-claim status
 		// and attempts -- the expired_logged CTE needs both, atomically with
@@ -181,7 +180,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId), iTopic.MessageKeyLeaseTable(topicId))
+		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.DeliveryLogTable(topicId), topic.MessageKeyLeaseTable(topicId))
 	}
 
 	rows, err := d.Datastore.Pool.Query(ctx, claimSql, groupId, limit, leaseDuration.Seconds(), topicId, maxRetries, schemaVersion)
@@ -214,7 +213,7 @@ func (d *ExceptionConsumerGroupDatastore) renewLease(ctx context.Context, except
 		WHERE consumer_group_id = $1
 			AND message_id = $2
 			AND lease_token = $3;
-	`, iTopic.ExceptionQueueTable(exception.TopicId))
+	`, topic.ExceptionQueueTable(exception.TopicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken, duration.Seconds())
 	if err != nil {

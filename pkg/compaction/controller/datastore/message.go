@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // ListKeyMessages reads messageKey's retained messages, newest first.
@@ -32,7 +32,7 @@ func (d *CompactionDatastore) listKeyMessages(ctx context.Context, topicId int64
 		WHERE message_key = $1
 		ORDER BY id DESC
 		LIMIT $2;
-	`, iTopic.MessageLogTable(topicId))
+	`, topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, messageKey, limit)
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
@@ -82,7 +81,7 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, iTopic.MessageLogTable(topicId), iTopic.BindingConfigTable(topicId), iTopic.BindingConfigTable(topicId), iTopic.CompactionHeadTable(topicId))
+	`, topic.MessageLogTable(topicId), topic.BindingConfigTable(topicId), topic.BindingConfigTable(topicId), topic.CompactionHeadTable(topicId))
 
 	rows, err := tx.Query(ctx, sql, low, high, groupId, schemaVersion)
 	if err != nil {
