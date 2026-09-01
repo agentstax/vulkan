@@ -60,11 +60,11 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 func (c *AlertController) logAlerts(ctx context.Context, published *alert.Alert) {
 	if published.Status == alert.StatusResolved {
 		c.Logger.InfoContext(ctx, "alert resolved",
-			"alert", published.Name, "message", published.Message, "owner", published.Owner.Name)
+			"alert", published.Name, "alert_message", published.Message, "owner", published.Owner.Name)
 		return
 	}
 	c.Logger.WarnContext(ctx, "alert active",
-		"alert", published.Name, "message", published.Message,
+		"alert", published.Name, "alert_message", published.Message,
 		"detail", published.Detail, "hint", published.Hint,
 		"owner", published.Owner.Name, "severity", published.Severity)
 }

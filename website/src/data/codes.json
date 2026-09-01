@@ -727,6 +727,11 @@
           ]
         }
       ]
+    },
+    "VK0063": {
+      "code": "VK0063",
+      "kind": "event",
+      "message": "alert condition holds -- nothing was published; the scheduled check is what publishes and resolves an alert"
     }
   }
 }

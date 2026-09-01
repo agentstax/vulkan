@@ -641,6 +641,14 @@ the code is the line's breadcrumb to its own explanation.
                     stringified first -- .Error() defeats
                     diagnostic.Error.LogValue)
       code          a declared log event's code (Event.Code)
+      alert         a built-in alert's name (Alert.Name)
+      alert_message the alert's own message clause -- never `message`, which
+                    is the log record's own field
+      detail        the alert's detail clause
+      hint          the alert's hint clause
+      severity      the alert's severity
+      message       a buffered record's own message, inside a `preceding`
+                    group attribute
       topic         topic name
       topic_id      topic id
       topics        the topic names a guard names, comma-separated

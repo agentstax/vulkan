@@ -3,6 +3,7 @@ package producer
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -27,8 +28,9 @@ func (p *Producer) logAlerts(ctx context.Context, current *topic.TopicData) {
 		if found == nil {
 			continue
 		}
-		p.Logger.WarnContext(ctx, "alert condition holds",
-			"alert", found.Name, "message", found.Message,
+		p.Logger.WarnContext(ctx, alert.EventAlertConditionHolds.Message,
+			"code", alert.EventAlertConditionHolds.Code,
+			"alert", found.Name, "alert_message", found.Message,
 			"detail", found.Detail, "hint", found.Hint,
 			"owner", found.Owner.Name, "severity", found.Severity)
 	}
