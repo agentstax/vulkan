@@ -121,17 +121,15 @@ case vulkan.DeclarationUpdated: // stored document differed, overwritten
 }
 ```
 
-The strict form is a config field. With `RequireMatch: true` a
-differing stored document returns `vulkan.ErrGroupConfigMismatch` and
-writes nothing. The owning service declares newest-wins; every other
-consumer of the group declares `RequireMatch` and fails at startup
-instead of flip-flopping the retry budget. JetStream ships the same
-pair as two verbs (`CreateConsumer` refuses a differing config,
-`CreateOrUpdateConsumer` overwrites); a field keeps it to one verb.
-The cost is that forgetting the field on a non-owner is today's
-behaviour, so nothing gets worse, and nothing gets better until it is
-set. `Start` and `Bindings` keep their own rules: read once at
-creation, and install / wait.
+There is no strict form. A differing declaration always overwrites,
+and the overwrite is the [VK0059](/errors/VK0059/) warn naming the
+change as `old -> new`. A refusing form was built and reverted: a
+service that refuses a differing config can never have its config
+changed without redeploying it as accepting first, and nobody wants
+that dance. One declaring service per group is a convention the log
+makes visible, and the same line on every restart is the tell.
+`Start` and `Bindings` keep their own rules: read once at creation,
+and install / wait.
 
 ## Produce
 
@@ -418,13 +416,16 @@ datastore package for the users' sake, compile-time only.
 ## Worked case
 
 `charge-cards` runs three replicas on `payments.requested` (topic id
-`1`). A fourth service, `reconciliation`, also consumes the group by
-mistake and declares `MaxRetries: 5` with `RequireMatch: true`. Its
-`RegisterConsumer` returns `vulkan.ErrGroupConfigMismatch` naming the
-group and the two documents, and it exits; the three replicas never
-see a different retry budget. The owning service redeclares
-`MaxRetries: 5` deliberately, its instance reports
-`DeclarationUpdated`, and the row shows it:
+`1`) with the default retry budget. A fourth service, `reconciliation`,
+also consumes the group by mistake and declares `MaxRetries: 5`. Its
+`RegisterConsumer` overwrites the stored document, its logger warns
+[VK0059](/errors/VK0059/) with the `metadata` change as `old -> new`,
+and the three replicas pick the new budget up on their next config
+refresh. When the owning service next restarts it declares the default
+again -> VK0059 again, the other way round -> and the budget flips on
+every deploy of either service until someone reads the warn. Once `reconciliation` stops
+declaring the group, the owning service redeclares `MaxRetries: 5`
+deliberately and the row shows it:
 
 ```sql
 SELECT w.name, w.metadata
@@ -444,8 +445,6 @@ data, err := client.Topic("payments.requested").Group("charge-cards").Get(ctx)
 
 ## Open
 
-- `RequireMatch` as a field on `ConsumerConfig` versus a second verb.
-  The field keeps one verb; a verb (`DeclareConsumer`) is greppable.
 - `GetSchedule`-style sugar returning a handle with its row, for
   scripts. Left out; see the handles section.
 - The `Data` sweep is compile-time only but touches every read-model

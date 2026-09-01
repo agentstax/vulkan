@@ -15,3 +15,22 @@ var EventMessageAlreadyProduced = diagnostic.NewEvent("VK0037",
 var EventTargetKeepsNoSuccessRows = diagnostic.NewEvent("VK0058",
 	"schedule target topic keeps no success rows",
 	"ScheduleStatus counts no successes for it; set DeliveryLogMode all on the topic to count them")
+
+// EventScheduleConfigReplaced means a declaration overwrote a schedule row's
+// differing config -- two declarers disagree about the schedule.
+//
+// Diagnose queries: vulkan explain VK0062
+var EventScheduleConfigReplaced = diagnostic.NewEvent("VK0062",
+	"schedule config replaced",
+	"the newest declaration wins; if this is unexpected or repeats on every restart, two services declare this schedule with different configs and overwrite each other").
+	Diagnose(
+		diagnostic.NewQuery("the schedule row as stored now (schedule_config keeps no declaration trail)", `
+SELECT
+	name,
+	expression,
+	concurrency,
+	timeout_ns,
+	suspended
+FROM schedule_config
+WHERE id = {schedule_id};`),
+	)

@@ -171,22 +171,36 @@ close-out.
 - Review: the hot path has no config read; the pin closes the
   exclusive-and-parallel-at-once window.
 
-### Chunk 12 -- `Declaration` outcome and `RequireMatch`
+### Chunk 12 -- `RequireMatch`
 
-- `Declaration` (`DeclarationCreated` / `Joined` / `Updated`) on the
-  consumer and schedule instances. `ConsumerConfig.RequireMatch` returns
-  `ErrGroupConfigMismatch` (next VK code, Permanent, docs page) on a
-  differing stored document and writes nothing.
-- Done when: build, tests, a lab per outcome, the error page lands.
-- Review: the outcome is a value, not a log line.
+MANUAL DENIED BY USER SHIT CODE AND SHIT IMPLEMENTATION
+WHO IS GOING TO USE THIS???? A user has to set RequireMatch
+and then they can never change it without setting it to false
+then deploying then updating then setting it back to true???
+who in their right god damn mind would want that. Horrible suggestion
+
+- `ConsumerConfig.RequireMatch` returns `worker.ErrWorkerConfigMismatch`
+  (VK0061, Permanent, docs page) on a differing stored document and
+  writes nothing. Raised by the worker datastore inside the same
+  transaction as the compare, before the UPDATE, so no window exists.
+- The `Declaration` outcome the chunk originally carried is cut to
+  ROADMAP Later -- it reported, it did not protect; VK0059 already
+  reports an overwrite. Its client.mdx sections keep their PROPOSED
+  marks in chunk 15 rather than being unmarked or deleted.
+- Also in this chunk: every typed instance exposes the row it resolved
+  as `Registered` (client.mdx:404), and the worker datastore takes a
+  `WorkerDeclaration` write shape like the schedule datastore's.
+- Done when: build, tests, a lab proving VK0061 leaves row and log
+  untouched, the error page lands.
+- Review: the refusal happens before the write, not after.
 
 ### Chunk 13 -- a stale build cannot declare
 
-- A build whose document would drop fields a newer build declared is
-  refused with a declared error, on the migration gate's
-  `min_compatible_version` mechanics; consuming is untouched.
-- Done when: `just compat-lab` against the prior tag shows the verdict.
-- Review: the gate refuses the write only.
+CUT 2026-08-31, nothing built: same lock-with-no-key as chunk 12 (a
+rollback cannot start), and additive on the migration gate's own terms.
+Parked in ROADMAP's parking lot under "Strict declaration forms" with
+the full reasoning; the spec section was deleted from
+guides/consumer-group-config.mdx.
 
 ### Chunk 14 -- the producer's liveness warn
 

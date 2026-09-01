@@ -675,7 +675,7 @@
     "VK0059": {
       "code": "VK0059",
       "kind": "event",
-      "message": "worker config replaced -- the newest declaration wins",
+      "message": "worker config replaced -- the newest declaration wins; if this is unexpected or repeats on every restart, two services declare this worker with different configs and overwrite each other",
       "queries": [
         {
           "label": "every declaration this worker row has received, newest first",
@@ -696,6 +696,34 @@
           "sql": "SELECT worker_config.name, worker_config.metadata\nFROM worker_config\nJOIN consumer_group_config ON consumer_group_config.id = worker_config.consumer_group_id\nWHERE consumer_group_config.name = '{group}'\nORDER BY worker_config.name;",
           "placeholders": [
             "group"
+          ]
+        }
+      ]
+    },
+    "VK0061": {
+      "code": "VK0061",
+      "kind": "event",
+      "message": "topic config replaced -- the newest declaration wins; if this is unexpected or repeats on every restart, two services declare this topic with different configs and overwrite each other",
+      "queries": [
+        {
+          "label": "every declaration this topic has received, newest first",
+          "sql": "SELECT\n\tname,\n\tretention_ttl_ns,\n\tallow_drop_past_committed,\n\tidempotency_key_ttl_ns,\n\tdelivery_log_mode,\n\tdeclared_by,\n\tdeclared_at\nFROM topic_config_log\nWHERE topic_id = {topic_id}\nORDER BY id DESC\nLIMIT 10;",
+          "placeholders": [
+            "topic_id"
+          ]
+        }
+      ]
+    },
+    "VK0062": {
+      "code": "VK0062",
+      "kind": "event",
+      "message": "schedule config replaced -- the newest declaration wins; if this is unexpected or repeats on every restart, two services declare this schedule with different configs and overwrite each other",
+      "queries": [
+        {
+          "label": "the schedule row as stored now (schedule_config keeps no declaration trail)",
+          "sql": "SELECT\n\tname,\n\texpression,\n\tconcurrency,\n\ttimeout_ns,\n\tsuspended\nFROM schedule_config\nWHERE id = {schedule_id};",
+          "placeholders": [
+            "schedule_id"
           ]
         }
       ]

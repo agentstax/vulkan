@@ -76,9 +76,8 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicConfigRo
 		return nil, err
 	}
 
-	// the only signal that two services declare this topic differently
-	d.Logger.InfoContext(ctx, "topic registered (config replaced)",
-		append([]any{"topic", updated.Name, "topic_id", updated.Id}, changes...)...)
+	d.Logger.WarnContext(ctx, topic.EventTopicConfigReplaced.Message,
+		append([]any{"code", topic.EventTopicConfigReplaced.Code, "topic", updated.Name, "topic_id", updated.Id}, changes...)...)
 	return updated, nil
 }
 

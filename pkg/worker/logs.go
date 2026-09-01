@@ -76,7 +76,7 @@ var EventSlowTick = diagnostic.NewEvent("VK0040",
 // Diagnose queries: vulkan explain VK0059
 var EventWorkerConfigReplaced = diagnostic.NewEvent("VK0059",
 	"worker config replaced",
-	"the newest declaration wins").
+	"the newest declaration wins; if this is unexpected or repeats on every restart, two services declare this worker with different configs and overwrite each other").
 	Diagnose(
 		diagnostic.NewQuery("every declaration this worker row has received, newest first", `
 SELECT

@@ -207,6 +207,25 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
 
+- **A declaration reports what it did** — `Declaration`
+  (created / joined / updated) on the consumer and schedule instances,
+  spec'd in guides/client.mdx ("What a declaration reports", and
+  `nightly.Declaration` in the schedule section). Cut from the [0625]
+  chunk 12 build: `RequireMatch` + VK0061 is the mechanism that stops two
+  services flip-flopping a group's config, and VK0059 already reports an
+  overwrite as a Warn, so the value bought reporting only. Two things to
+  settle before it is worth building: whether the always-on soft report
+  earns an API surface when the strict form is opt-in (client.mdx:130
+  argues it does — `RequireMatch` only protects a service that already
+  knows it is a non-owner), and where a schedule's outcome would live,
+  since `client.RegisterSchedule` returns the handle and a handle is not
+  the product of one call. The handle cannot carry it; the options are
+  returning `*SchedulerInstance` with the client's `SystemManager` passed
+  in (today it builds a rival per call, which schedulepermitlab forbids)
+  or dropping the schedule half. The plumbing was built once and reverted
+  in full — a declaration verb returning the outcome and the instance
+  carrying it — so the shape is known.
+
 - **`schedule_config` declaration trail** — surfaced by the 2026-08-30
   init-model rethink (guides/consumer-group-config.mdx): topic, worker,
   and binding declarations all keep a `_config_log` trail;
@@ -304,6 +323,27 @@ Post-v1, unordered. Pick up only if a real workload demands it. Known
 dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
+
+- **Strict declaration forms: `RequireMatch` and the stale-build gate**
+  (parked 2026-08-31, cut from the [0625] chunks 12 and 13). Both are a
+  lock with no key. `RequireMatch` (chunk 12, built and reverted in
+  full): a service sets it and the group's config can never change
+  again without redeploying that service with it false, deploying the
+  change, then setting it back -- nobody wants that dance. The
+  stale-build gate (chunk 13, never built): refusing a declaration from
+  a build whose document would drop a newer build's fields turns every
+  rollback into an outage -- the old build's `RegisterConsumer` is
+  refused and no verb lowers the stored floor. It also has no premise on
+  the migration gate's own terms: a new config field is additive (older
+  builds run without it, absent resolves to the default), which is
+  `MinCompatibleVersion = 0`, the floor that never locks anyone out; and
+  the sparse `omitempty` document cannot tell "old build" from "unset"
+  without a version stamp plus a hand-kept field->version registry. The
+  dropped field is source code -- it comes back the moment the newer
+  build declares again. What stands instead: newest-wins with the
+  differing-overwrite warn (VK0059) naming the change. Re-examine only
+  with a concrete workload where the warn was not enough, and any strict
+  form must ship with the verb that unlocks it.
 
 - **File the view-transition `ready` leak upstream on Astro** (parked
   2026-08-27 [0604]). Their router attaches no handler to the promise,

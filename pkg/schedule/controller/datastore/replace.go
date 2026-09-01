@@ -77,9 +77,8 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleCo
 		return updated, nil
 	}
 
-	// the only signal that two services declare this schedule differently
-	d.Logger.InfoContext(ctx, "schedule registered (config replaced)",
-		append([]any{"schedule", updated.Name, "schedule_id", updated.Id, "next_scheduled_at", updated.NextScheduledAt}, changes...)...)
+	d.Logger.WarnContext(ctx, schedule.EventScheduleConfigReplaced.Message,
+		append([]any{"code", schedule.EventScheduleConfigReplaced.Code, "schedule", updated.Name, "schedule_id", updated.Id, "next_scheduled_at", updated.NextScheduledAt}, changes...)...)
 	return updated, nil
 }
 

@@ -121,9 +121,11 @@ library default; there is no field-level patch, and `nil` declares the
 empty document — the same total-set rule bindings already have. The
 cost: two services both declaring `charge-cards` with different
 configs will overwrite each other on every restart, visibly
-in the log but endlessly. A group's config wants exactly one
-declarer — the service that owns the group; every other declarer sets
-`RequireMatch` and fails at startup instead of overwriting.
+in the log but endlessly. There is no strict form. A group's config
+wants exactly one declaring service, and that is a convention: the
+library enforces nothing, every differing overwrite logs
+[VK0059](/errors/VK0059/) naming the change, and the same line on
+every restart is the tell.
 
 ## Sparse stored, resolved at read
 
@@ -179,17 +181,6 @@ it and when.
 Every replica follows within one refresh interval. A message sitting
 at attempt 3, about to dead-letter, gets attempts 4 and 5 under the
 new budget instead.
-
-## A stale build cannot declare
-
-The [migration gate](/guides/migrations/) already refuses a build
-whose schema version falls outside what the database allows. Config
-declarations get the same treatment: a build old enough that its
-document would silently drop fields a newer build declared is refused
-with a declared error code. The gate refuses the write; consuming is
-untouched. The exact floor rides the same `min_compatible_version`
-mechanics as every schema step, and the error's code and page land
-with the build.
 
 ## The producer's version
 
