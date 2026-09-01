@@ -11,6 +11,9 @@ import (
 
 type PostgresDatastore struct {
 	Pool *pgxpool.Pool
+
+	// Schema is the namespace every vulkan table lives in
+	Schema string
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -42,6 +45,12 @@ func NewPostgresDatastore(ctx context.Context, user string, host string, databas
 	if err != nil {
 		return nil, err
 	}
+
+	// public trails the schema so a caller's own SQL inside InTransaction --
+	// which runs on this pool -- still finds the caller's own tables. Vulkan's
+	// name wins on a tie, and CREATE TABLE lands in the leading entry.
+	poolConfig.ConnConfig.RuntimeParams["search_path"] = cfg.Schema + ", public"
+
 	if cfg.MaxConns > 0 {
 		poolConfig.MaxConns = int32(cfg.MaxConns)
 	}
@@ -63,7 +72,8 @@ func NewPostgresDatastore(ctx context.Context, user string, host string, databas
 	}
 
 	return &PostgresDatastore{
-		Pool: pool,
+		Pool:   pool,
+		Schema: cfg.Schema,
 	}, nil
 }
 

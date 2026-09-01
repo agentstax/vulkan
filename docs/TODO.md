@@ -354,6 +354,12 @@ the need for a collective noun closes all of it. USER-SETTLED
 - `--output json` is a contract [0575][0576]. Pre-v1, so the break is
   allowed, but the CLI golden-output tests move with it and the labs get
   grepped for `->>'schema'` before and after.
+- DEFERRED 2026-09-01: "schema version" for a MIGRATION version stays as
+  it is (VK0022/VK0023's problem lines, `ErrSchemaOlderThanBuild`/
+  `ErrSchemaNewerThanBuild`, ~8 files of prose). The rule if it is ever
+  taken up: `migration_log.migration_version` reads "migration version",
+  `message_log.schema_version` keeps "schema version" -- so
+  guides/schema-versions.mdx, which is about payloads, never moves.
 - Done when: build, `go test -race ./...`, `just verify`, the CLI golden
   tests, `npm run verify` for the moved error page.
 - Review: no surface says "schema" about anything but a Postgres schema;

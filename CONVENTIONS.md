@@ -668,6 +668,7 @@ the code is the line's breadcrumb to its own explanation.
       group_id      consumer group id
       session       consumer session id -- one Consume call's uuid
       system_id     system id
+      schema        the Postgres schema vulkan's tables live in
       owner         owner name (Owner.Name)
       owner_kind    owner kind (Owner.Kind())
       worker        worker name

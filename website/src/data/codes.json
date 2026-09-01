@@ -732,6 +732,16 @@
       "code": "VK0063",
       "kind": "event",
       "message": "alert condition holds -- nothing was published; the scheduled check is what publishes and resolves an alert"
+    },
+    "VK0064": {
+      "code": "VK0064",
+      "kind": "error",
+      "problem": "the connecting role cannot create the schema",
+      "recovery": "permanent",
+      "fix": "grant it CREATE on the database, or create schema {schema} yourself and grant the role USAGE and CREATE on it",
+      "fix_placeholders": [
+        "schema"
+      ]
     }
   }
 }

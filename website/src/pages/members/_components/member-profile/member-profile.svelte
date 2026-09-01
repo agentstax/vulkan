@@ -39,7 +39,7 @@
 			<dd><a href={websiteHref}>{websiteHref}</a></dd>
 		</dl>
 	</div>
-  <!-- little stanley reference for the cultured folks out there -->
+	<!-- little stanley reference for the cultured folks out there -->
 	<MemberPersonalText {personalText} />
 </div>
 

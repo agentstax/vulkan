@@ -171,6 +171,13 @@ duty-backoff-lab:
 alert-lab:
   go run examples/phase_1/alertlab/main.go
 
+# schema lab: a schema is one installation -- two clients on two schemas in
+# one database register the same topic name, hold their own tables and
+# messages, and neither read crosses the boundary; an unregistered schema
+# reads an absence rather than the neighbour's rows.
+schema-lab:
+  go run examples/phase_1/schemalab/main.go
+
 # worker liveness alert: a produce-only Register warns VK0063 naming the
 # unclaimed topic_janitor and goes silent under a live consumer; the
 # scheduled check publishes an active alert naming the group's

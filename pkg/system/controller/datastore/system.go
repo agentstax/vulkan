@@ -3,9 +3,11 @@ package datastore
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -37,6 +39,9 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemConfigRow, error
 		return nil, err
 	}
 
+	if err := d.createSchema(ctx, tx); err != nil {
+		return nil, err
+	}
 	if err := d.createSystemTables(ctx, tx); err != nil {
 		return nil, err
 	}
@@ -54,6 +59,24 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemConfigRow, error
 
 	d.Logger.InfoContext(ctx, "system registered")
 	return registered, nil
+}
+
+// createSchema creates the namespace the pool's search_path points at.
+func (d *SystemDatastore) createSchema(ctx context.Context, tx pgx.Tx) error {
+	// the name passed PostgresConnectionConfig.Validate's identifier guard
+	createSchemaSql := fmt.Sprintf(`
+		-- vulkan: system.createSchema
+		CREATE SCHEMA IF NOT EXISTS %s;
+	`, d.Datastore.Schema)
+
+	if _, err := tx.Exec(ctx, createSchemaSql); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42501" { // insufficient_privilege
+			return system.ErrSchemaNotCreatable.With("schema", d.Datastore.Schema)
+		}
+		return err
+	}
+	return nil
 }
 
 // seedSystem seeds the singleton row, first register wins.

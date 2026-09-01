@@ -112,12 +112,12 @@ describe('embedded SQL matches the Go source byte-exact', () => {
 		],
 		[
 			'messageconsumer.freshClaimMessagesWithCursor',
-			'pkg/consumergroup/messageconsumer/controller/datastore/freshclaim.go',
+			'pkg/consumergroup/messageconsumer/controller/datastore/fresh_claim.go',
 			[claimSnapshotSqlTemplate, claimCursorSqlTemplate],
 		],
 		[
 			'messageconsumer.claimMessages',
-			'pkg/consumergroup/messageconsumer/controller/datastore/freshclaim.go',
+			'pkg/consumergroup/messageconsumer/controller/datastore/fresh_claim.go',
 			[claimLeaseSqlTemplate],
 		],
 		[

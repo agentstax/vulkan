@@ -7,8 +7,10 @@ import { fillText } from '../../helpers/placeholders';
 
 // declaration order is the order values render on a composed line
 export const exampleValues: Record<string, string> = {
+	schema: 'vulkan',
 	topic: 'orders.created',
 	topic_id: '1',
+	group: 'charge-cards',
 	group_id: '7',
 	message_id: '214',
 	low: '4100',
@@ -17,7 +19,9 @@ export const exampleValues: Record<string, string> = {
 	build_version: '3',
 	owner_kind: 'topic',
 	schedule: 'alert.partition_count',
+	schedule_id: '3',
 	worker: 'topic_janitor',
+	worker_id: '12',
 	existing_partition_size: '1000000',
 };
 

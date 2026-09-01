@@ -5,7 +5,7 @@
 	const { Story } = defineMeta({
 		title: 'Board/BoardStats',
 		component: BoardStats,
-		args: { threadCount: 74, codeCount: 53, decisionRecordCount: 250 },
+		args: { docCount: 74, codeCount: 53, decisionRecordCount: 250 },
 	});
 </script>
 
