@@ -344,9 +344,7 @@ return client.RunManager(ctx)
 The client holds the one `SystemManager`, so the refuse-a-second-Run
 permit survives: today every `Schedule` call builds a fresh manager and
 two calls in one process run two rival reconcile loops; under the
-client the second is refused. The client's start line carries
-`runs_manager`, so a pasted log answers whether this process runs
-upkeep without a second question.
+client the second is refused.
 
 Nothing else on this page runs workers or stops running them. A
 `Consume` already runs the fleet-wide workers beside its group's own
@@ -356,27 +354,35 @@ schedules. Admin verbs run nothing. The producer runs nothing, and
 that is the one gap: a deployment that only produces accumulates
 partitions with no log line saying why.
 
-The fix is one more evaluator in the pass `RegisterProducer` already
-runs. Today `Register` measures the topic against the fleet's alert
-conditions and logs any that hold, log-only, never failing the call.
-The new condition is "no live instance of this topic's `topic_janitor`",
-answered by the predicate the worker claim already uses:
+The `worker_liveness` alert closes it, the third built-in beside
+`partition_count` and `compaction_read_cost`. Its condition is the
+state the fleet already classifies: a worker row that wants instances
+and has none live. Nothing is running it.
 
-```sql
-SELECT count(*) FROM worker_instance
-WHERE worker_id = $1 AND expires_at > now();
-```
+It reports the way both other built-ins do, once at register and once
+on a schedule:
 
-Zero -> a declared warn naming the topic and `vulkan manager run`. A
-rolling deploy where the producer starts before its consumers trips it
-once; that is the price of a warn over silence.
+- `RegisterProducer` logs [VK0063](/errors/VK0063/) naming the topic,
+  the unclaimed rows, and who declared them. The pass reads only:
+  nothing is published, and `Register` never fails on it.
+- Hourly under the manager, the check publishes an active alert to
+  `__system.alerts` and resolves it once the rows are claimed again.
+  `vulkan alert list` reads both states.
 
 Worked case: `orders-api` runs only `RegisterProducer` on
-`orders.placed` (topic id `1`). At `Register` the pass finds no
-`worker_instance` row for topic 1's `topic_janitor` with `expires_at >
-now()` and logs one warn. `fulfillment` starts its `Consume`, its
-manager claims that worker, and the next `orders-api` restart is
-silent.
+`orders.placed`. Its register-time line names
+`orders.placed (topic_janitor)`, so nothing is dropping that topic's
+expired partitions. `fulfillment` starts its `Consume` on the
+`pack-orders` group, its manager claims that row, and the next
+`orders-api` restart is silent. Scale `fulfillment` to zero later and
+the hourly check publishes the group itself:
+`pack-orders (message_consumer, exception_consumer, cursor_advancer, manager)`.
+
+One process that produces and then consumes trips the register-time
+line once on a cold start, because `Register` runs before `Consume`
+claims anything. An instance row lingers 30 seconds past its last
+heartbeat, so a restart inside that window finds the old rows still
+live and says nothing; a longer gap logs one line and clears itself.
 
 ## Testing your code
 

@@ -202,57 +202,55 @@ Parked in ROADMAP's parking lot under "Strict declaration forms" with
 the full reasoning; the spec section was deleted from
 guides/consumer-group-config.mdx.
 
-### Chunk 14 -- the worker liveness alert
+### Chunk 14 -- the worker liveness alert -- BUILT [0627]
 
 Reshaped 2026-08-31 from "the producer's liveness warn": the janitor case
-is one row of a real alert, not a bespoke check. A register-time-only
-evaluator would carry a scheduled job that could never fire; a check
-outside the evaluator loop would be a second shape in the pass.
+is one row of a real alert, not a bespoke check. Built 2026-09-01 as the
+third built-in alert; what shipped is [0627], and the plan's threshold
+did not survive the build (see below).
 
-- `pkg/alert/workerliveness`, file for file the `partitioncount`
-  pattern: provisioner, `Declare`, instance (`Run` -> consume the
-  schedule's message -> `evaluateTopics` -> `produceCheckSummary`),
-  `job.go` (`alert.worker_liveness`, exclusive), `JobConfig{Expression,
-  Threshold}`, metadata, configs, `controller/` with `Evaluate` and the
-  alert adapter.
-- The fact is the one `metrics.WorkerSnapshots` already computes
-  (`live_instances`, `target_instances`, `unclaimed_for_secs`), scoped to
-  the owner topic: its `topic_janitor` plus every group's workers on it.
-  A topic-scoped read only if the fleet-wide snapshot is too wide.
-- `Evaluate(ctx, owner, threshold)`: `threshold` is seconds unclaimed, 0
-  derives the default (60s, twice the janitor TTL). One alert per worker
-  with `live_instances < target_instances` past the threshold; `Data`
-  carries worker, group, live, target, unclaimed seconds; the hint names
-  `vulkan manager run` or starting the consumer.
-- Wiring: `RegisterSystemConfig.WorkerLiveness *JobConfig`; the third job
-  in `admin/system.go`; the provisioner built in `admin` and
-  `systemmanager`; the controller added to the producer's evaluators.
+- `pkg/alert/workerliveness`, file for file the `partitioncount` pattern:
+  provisioner, `Declare`, instance (`Run` -> consume the schedule's
+  message -> `evaluateTopics` -> `produceCheckSummary`), `job.go`
+  (`alert.worker_liveness`, exclusive, `@hourly`), `JobConfig`, metadata,
+  configs, `controller/` with `Evaluate` and the alert adapter.
+- The fact is `metrics.WorkerSnapshots`, the read `admin` already
+  composes, filtered to the owner topic: its `topic_janitor` plus every
+  row its consumer groups declare. The controller owns no SQL.
+- The condition is the existing classification `metrics.WorkerUnclaimed`
+  (`target_instances != 0`, no live instance row). NO threshold: the
+  manager DELETEs expired instance rows every tick, so `UnclaimedFor` is
+  0 for exactly the workers the alert is for, and
+  `live < target` never trips for the `NoInstanceTarget` (-1) group
+  consumers. The cron cadence plus the alert's repeat/resolve is the
+  debounce.
+- Wiring: `RegisterSystemConfig.WorkerLiveness`, the third job in
+  `admin/system.go`, the provisioner in `admin.alertDeclarers` and the
+  system manager's list, the controller in the producer's evaluators.
   The consumer's pass is untouched -- its own `Consume` starts the
   workers the check would miss.
 - Accepted: a produce-and-consume process warns once on a cold start
-  (janitor row not live until `Consume` starts the manager, rows linger
-  `InstanceTTL` 30s); dev `go run` after a pause; a full-outage restart.
+  (`Register` runs before `Consume` claims anything; rows linger the 30s
+  `InstanceTTL`); dev `go run` after a pause; a full-outage restart.
   Silent under rolling deploys and restarts inside the TTL.
-- The register-time line `alert condition holds` is declared as VK0063
-  (Warn, `alert` attribute names the condition, one docs page listing
-  the three) so every register-time hit pastes to a page. The alert
-  itself gets its section on the alerts guide.
-- `runs_manager` on a client start line is cut: the client has no start
+- The register-time line `alert condition holds` is declared VK0063 for
+  all three built-ins, one hand-written page. The alert's own message
+  clause moved from the `message` attribute to `alert_message` at every
+  site, `AlertController`'s two lines included; both keys are in the
+  CONVENTIONS registry.
+- `runs_manager` on a client start line: cut. The client has no start
   line and cannot know at construction; `manager instance starting`
   already prints in every process that runs upkeep.
-- Lab `workerlivenesslab`: produce-only `RegisterProducer` on a fresh
-  topic -> one VK0063 naming `topic_janitor`; start `Consume` -> the next
-  `RegisterProducer` is silent; stop the consumer, wait past the
-  threshold, run the manager and the job -> an active alert in
-  `ListAlerts` naming the group's `message_consumer`; restart the
-  consumer -> resolved.
-- Docs: client.mdx drops `runs_manager` and rewrites the janitor section
-  to the alert; codes.json re-synced.
-- Done when: build, `go test -race` on alert/producer/admin/systemmanager,
-  `just verify`, the new lab and the existing alert labs on the dev DB,
-  codes vitest.
-- Review: the alert resolves the way the other two do; the producer's
-  pass is still one loop; nothing runs in the consumer's Register.
+- Lab `workerlivenesslab` (`just worker-liveness-lab`): a produce-only
+  `RegisterProducer` warns VK0063 naming the unclaimed `topic_janitor`;
+  under a live consumer the next `Register` is silent; with the consumer
+  stopped a job run publishes an active alert whose evidence names the
+  group's `message_consumer`, and restarting the consumer resolves it.
+- Docs: guides/client.mdx's manager section rewritten to the alert,
+  `runs_manager` gone; errors/VK0063.md; codes.json re-synced.
+- Green: build, `go test -race ./pkg/...`, `just verify`,
+  `just worker-liveness-lab` (twice, and it leaves no alert heads
+  behind), `just alert-lab`, the site's vale/remark/prettier/vitest.
 
 ### Chunk 15 -- seams and close-out
 
