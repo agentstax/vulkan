@@ -97,15 +97,15 @@ func run() (err error) {
 	must(err)
 
 	var groupId int64
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, registered.Id, group).Scan(&groupId))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema), registered.Id, group).Scan(&groupId))
 	var hasMessage, hasBackoff, hasReclaims bool
-	must(ds.Pool.QueryRow(ctx, `
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT
 			metadata ? 'message',
 			metadata ? 'exception_initial_backoff',
 			metadata ? 'max_range_reclaims'
-		FROM worker_config
-		WHERE consumer_group_id = $1 AND name = 'message_consumer';`, groupId).
+		FROM %s.worker_config
+		WHERE consumer_group_id = $1 AND name = 'message_consumer';`, ds.Schema), groupId).
 		Scan(&hasMessage, &hasBackoff, &hasReclaims))
 	if !hasMessage || !hasBackoff {
 		die(fmt.Sprintf("stored document is missing declared keys: message=%t exception_initial_backoff=%t", hasMessage, hasBackoff))
@@ -129,20 +129,20 @@ func run() (err error) {
 		die(fmt.Sprintf("first declarer logged %d VK0059 warns, want 0", count))
 	}
 	var storedMaxRetries string
-	must(ds.Pool.QueryRow(ctx, `
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT metadata->'message'->'retry'->>'max_retries'
-		FROM worker_config
-		WHERE consumer_group_id = $1 AND name = 'message_consumer';`, groupId).
+		FROM %s.worker_config
+		WHERE consumer_group_id = $1 AND name = 'message_consumer';`, ds.Schema), groupId).
 		Scan(&storedMaxRetries))
 	if storedMaxRetries != "2" {
 		die(fmt.Sprintf("stored max_retries is %q, want \"2\" -- the newest declaration did not win", storedMaxRetries))
 	}
 	var logRows int
-	must(ds.Pool.QueryRow(ctx, `
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM worker_config_log l
-		JOIN worker_config w ON w.id = l.worker_id
-		WHERE w.consumer_group_id = $1 AND w.name = 'message_consumer' AND l.declared_by <> '';`, groupId).
+		FROM %s.worker_config_log l
+		JOIN %s.worker_config w ON w.id = l.worker_id
+		WHERE w.consumer_group_id = $1 AND w.name = 'message_consumer' AND l.declared_by <> '';`, ds.Schema, ds.Schema), groupId).
 		Scan(&logRows))
 	if logRows != 2 {
 		die(fmt.Sprintf("message_consumer has %d worker_config_log rows, want 2 (create + replace)", logRows))
@@ -200,7 +200,7 @@ func run() (err error) {
 	})
 	must(err)
 	var liveGroupId int64
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, registered.Id, liveGroup).Scan(&liveGroupId))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema), registered.Id, liveGroup).Scan(&liveGroupId))
 	_, err = produced.Produce(ctx, &labMessage{N: 2}, nil)
 	must(err)
 

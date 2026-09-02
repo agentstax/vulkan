@@ -114,20 +114,43 @@ ids are per-installation serials, so the collisions are real:
    that record is the table-name funcs going public; the clause reversed
    is [0630]'s. CONVENTIONS ## SQL carries the binding rule, since a
    record is rationale and the rule file is what governs code.
-8. **The labs.** 242 unqualified table references across 45 files under
-   examples/. They work today -- a lab connects through the datastore, so
-   search_path resolves them -- but they are the "user writing a
-   diagnostic query" case [0628] names, and they hand-write
-   `message_log_%d` instead of calling `topic.MessageLogTable`, which
-   that record already forbids. Scope call at pickup: qualify them, route
-   them through the table-name funcs, both, or neither.
-9. **Verification.** `just verify`, directly-affected labs per change;
-   full fresh-DB suite + `just compat-lab` + `npm run verify` at the
-   review-ready checkpoint. The pinned compat build is unaffected — its
-   own SQL is unqualified and resolves through its search_path as
-   before.
+8. ~~**The labs.**~~ DONE, both halves. The scope call was already made
+   by CONVENTIONS ## Tables, which names labs explicitly -- [0628] removed
+   the lab exception and the labs were never updated. All 217 per-topic
+   SQL sites now call `topic.*Table()` and carry the schema; the 51
+   shared-table references are qualified too (37 raw literals became
+   `fmt.Sprintf`, 8 already were, and 6 helpers in invariantlab and
+   schemagatelab gained a `schema` param, since they take a bare pool).
+   Zero unqualified references remain in examples/.
+   The 62 display strings (`die("delivery_log_5 has %d rows")`) stay
+   bare: they name a table for a human, not for Postgres.
+   The sweep broke 8 labs, all one mistake -- a blanket qualification
+   flattens the distinction task 4 got right in production. The bare name
+   is required wherever it is compared to a catalog `relname` (topiclab,
+   dropfloorlab, compactionheadwritelab), matched against EXPLAIN output,
+   which prints partition names unqualified (partitionlab and three
+   compaction labs), or used as an `ALTER TABLE ... RENAME TO` target,
+   which Postgres refuses to qualify (dutybackofflab). All 8 pass with
+   the two names kept apart.
+9. ~~**Verification.**~~ DONE. Fresh-DB suite 47/47, `just compat-lab`
+   round-trip, `just verify`, tools 24 conventions tests, and
+   `npm run verify` (vale 0 errors/94 files, vitest 114, Playwright 18
+   across three engines).
+   `npm run verify` caught a real task-6 bug the unit tests could not:
+   `getGroupSql` and `registerGroupInsertSql` needed no interpolation
+   until the re-sync gave them `%[1]s.consumer_group_config`, and
+   database.ts used them raw, so a literal `%[1]s` reached PGlite and the
+   prerender of `/` failed with `syntax error at or near "%"`. Both are
+   now a `*SqlTemplate` plus a filled function, and a test asserts
+   database.ts names no `*SqlTemplate` at all -- executing a template is
+   the bug, so the guard is structural rather than a value check.
 
-Open at pickup: whether search_path slims from `"<schema>, public"` once
-vulkan's own SQL no longer needs the leading entry — the schema entry
-becomes belt-and-braces, but keeping it is the smaller delta and CREATE
-placement for any future unqualified statement still favors it.
+**search_path stays `"<schema>, public"`.** With every literal qualified
+the leading entry is belt-and-braces, and dropping it would even fix
+[0630]'s noted wart -- a caller's `CREATE TABLE` inside `InTransaction`
+would land in their own schema rather than Vulkan's. It stays anyway,
+because the qualification walk sees only pkg/ and cmd/ literals: a
+post-v1 migration step reaches no schema at all (its funcs take
+`(ctx, q, topicId)`), so without the entry its SQL would silently read
+and create in `public`. Revisit when that gap closes; the InTransaction
+improvement is the payoff.

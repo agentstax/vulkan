@@ -127,7 +127,7 @@ func run() (err error) {
 	// a system topic's id, so the teardown assert can cover a physical
 	// table the destroy itself must drop (not one DestroyTopic already took)
 	var alertsTopicId int64
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = '__system.alerts';`).Scan(&alertsTopicId))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.topic_config WHERE name = '__system.alerts';`, ds.Schema)).Scan(&alertsTopicId))
 
 	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	must(client.System().Destroy(ctx, nil))
@@ -147,7 +147,7 @@ func run() (err error) {
 		assertTableExists(ctx, table, true)
 	}
 	var topicCount int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM topic_config;`).Scan(&topicCount))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.topic_config;`, ds.Schema)).Scan(&topicCount))
 	assertTrue(fmt.Sprintf("the 3 system topics re-registered (got %d)", topicCount), topicCount == 3)
 
 	fmt.Println("\n✅ DESTROY SYSTEM LAB PASSED")
@@ -165,9 +165,9 @@ func waitLiveInstances(ctx context.Context, want bool) {
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		var live bool
-		must(ds.Pool.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM worker_instance WHERE expires_at > now());
-		`).Scan(&live))
+		must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
+			SELECT EXISTS (SELECT 1 FROM %s.worker_instance WHERE expires_at > now());
+		`, ds.Schema)).Scan(&live))
 		if live == want {
 			return
 		}

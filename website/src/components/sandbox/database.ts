@@ -140,7 +140,7 @@ export class VulkanDatabase {
 			await tx.query(registerGroupLockSql, [sandboxGroupLockKey]);
 			if ((await this.getGroup(tx, name)) !== null) return;
 
-			const inserted = await tx.query<GroupRow>(registerGroupInsertSql, [demoTopicId, name]);
+			const inserted = await tx.query<GroupRow>(registerGroupInsertSql(), [demoTopicId, name]);
 			await tx.query(insertCursorBeginningSql(demoTopicId), [inserted.rows[0]!.id]);
 		});
 	}
@@ -230,7 +230,7 @@ export class VulkanDatabase {
 	}
 
 	private async getGroup(q: Querier, name: string): Promise<GroupRow | null> {
-		const found = await q.query<GroupRow>(getGroupSql, [demoTopicId, name]);
+		const found = await q.query<GroupRow>(getGroupSql(), [demoTopicId, name]);
 		return found.rows[0] ?? null;
 	}
 

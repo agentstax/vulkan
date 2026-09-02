@@ -118,7 +118,7 @@ func run() (err error) {
 // topic_config_log, so the lab asserts on the table itself.
 func topicLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int {
 	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM topic_config_log WHERE topic_id = $1;`, topicId).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.topic_config_log WHERE topic_id = $1;`, ds.Schema), topicId).Scan(&count))
 	return count
 }
 

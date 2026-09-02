@@ -142,7 +142,8 @@ func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 // (WHERE m.id > low AND m.id <= high) and counts distinct message_log_<id>_N
 // partitions named anywhere in the plan -- pruned partitions never appear.
 func explainReadMessages(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64, want int) {
-	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
+	logName := topic.MessageLogTable(topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, logName)
 	bindingTable := fmt.Sprintf("%s.%s", ds.Schema, topic.BindingConfigTable(topicId))
 	sql := fmt.Sprintf(`
 		EXPLAIN SELECT m.id, m.payload, m.created_at FROM %s m
@@ -158,7 +159,7 @@ func explainReadMessages(ctx context.Context, ds *iDatastore.PostgresDatastore, 
 	must(err)
 	defer rows.Close()
 
-	partitionRe := regexp.MustCompile(regexp.QuoteMeta(logTable) + `_\d+`)
+	partitionRe := regexp.MustCompile(regexp.QuoteMeta(logName) + `_\d+`)
 	touched := map[string]bool{}
 	for rows.Next() {
 		var line string

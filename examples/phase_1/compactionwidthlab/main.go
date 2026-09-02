@@ -195,7 +195,8 @@ func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 // partition pruning) meant it was never actually opened. Only lines WITHOUT
 // that tag count as a real touch.
 func explainCompactionTouches(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, id int64, label string) (int, string) {
-	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
+	logName := topic.MessageLogTable(topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, logName)
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) SELECT 1 FROM %s m
 		WHERE m.id = $1
@@ -210,7 +211,7 @@ func explainCompactionTouches(ctx context.Context, ds *iDatastore.PostgresDatast
 	must(err)
 	defer rows.Close()
 
-	partitionRe := regexp.MustCompile(regexp.QuoteMeta(logTable) + `_\d+`)
+	partitionRe := regexp.MustCompile(regexp.QuoteMeta(logName) + `_\d+`)
 	executed := map[string]bool{}
 	var plan strings.Builder
 	for rows.Next() {

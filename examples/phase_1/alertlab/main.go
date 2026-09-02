@@ -180,7 +180,7 @@ func seedingSection(ctx context.Context) {
 	}
 
 	partitionCountGroup = scalarInt64(ctx,
-		`SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
+		fmt.Sprintf(`SELECT id FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema),
 		schedulesTopic.Id, partitioncount.JobName)
 	groupOwner, err = common.NewConsumerGroupOwner(schedulesTopic.SystemId, schedulesTopic.Id, partitionCountGroup, partitioncount.JobName)
 	must(err)
@@ -550,10 +550,10 @@ func cleanup() {
 	must(client.Topic(labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
-		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.ExceptionQueueTable(schedulesTopic.Id), prefix),
-		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.DeliveryLogTable(schedulesTopic.Id), prefix),
-		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.ClaimLeaseTable(schedulesTopic.Id), prefix),
-		fmt.Sprintf(`DELETE FROM consumer_group_config WHERE name LIKE '%s.%%';`, prefix),
+		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM %s.consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.ExceptionQueueTable(schedulesTopic.Id), ds.Schema, prefix),
+		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM %s.consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.DeliveryLogTable(schedulesTopic.Id), ds.Schema, prefix),
+		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM %s.consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.ClaimLeaseTable(schedulesTopic.Id), ds.Schema, prefix),
+		fmt.Sprintf(`DELETE FROM %s.consumer_group_config WHERE name LIKE '%s.%%';`, ds.Schema, prefix),
 	} {
 		exec(ctx, sql)
 	}

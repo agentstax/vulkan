@@ -11,9 +11,9 @@ import {
 } from './create-topic-tables/statements';
 import { protectedInsertCompactedSqlTemplate } from './protected-insert-compacted';
 import { protectedInsertUncompactedSqlTemplate } from './protected-insert-uncompacted';
-import { getGroupSql } from './get-group';
+import { getGroupSqlTemplate } from './get-group';
 import { registerGroupLockSql } from './register-group-lock';
-import { registerGroupInsertSql } from './register-group-insert';
+import { registerGroupInsertSqlTemplate } from './register-group-insert';
 import {
 	insertCursorBeginningSqlTemplate,
 	insertCursorHeadSqlTemplate,
@@ -30,7 +30,7 @@ const protectedInsertTemplates = [
 	protectedInsertUncompactedSqlTemplate,
 ];
 
-const registerGroupTemplates = [registerGroupLockSql, registerGroupInsertSql];
+const registerGroupTemplates = [registerGroupLockSql, registerGroupInsertSqlTemplate];
 
 const insertCursorTemplates = [insertCursorBeginningSqlTemplate, insertCursorHeadSqlTemplate];
 
@@ -72,7 +72,11 @@ describe('embedded SQL matches the Go source byte-exact', () => {
 			'pkg/producer/controller/datastore/insert.go',
 			protectedInsertTemplates,
 		],
-		['consumergroup.getGroup', 'pkg/consumergroup/controller/datastore/group.go', [getGroupSql]],
+		[
+			'consumergroup.getGroup',
+			'pkg/consumergroup/controller/datastore/group.go',
+			[getGroupSqlTemplate],
+		],
 		[
 			'consumergroup.registerGroup',
 			'pkg/consumergroup/controller/datastore/group.go',
@@ -147,4 +151,14 @@ describe('a statements.ts keeps its two lists in step', () => {
 	test('createTopicTables', () => {
 		expect(createTopicTablesStatements(1, 1000)).toHaveLength(createTopicTablesTemplates.length);
 	});
+});
+
+// a *SqlTemplate holds Sprintf verbs and exists for the drift test above;
+// database.ts executes statements, so a template reaching it is SQL with a
+// literal %[1]s in it -- a PGlite syntax error at prerender, which is how
+// getGroupSql and registerGroupInsertSql broke once they gained a schema
+test('database.ts executes filled statements, never raw templates', () => {
+	const source = readFileSync(fileURLToPath(new URL('../database.ts', import.meta.url)), 'utf8');
+	const templates = source.match(/\b\w+SqlTemplate\b/g) ?? [];
+	expect(templates).toEqual([]);
 });

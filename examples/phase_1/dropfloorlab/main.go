@@ -209,7 +209,8 @@ func freshClaim(ctx context.Context, cd *messageconsumergroupcontroller.MessageC
 }
 
 func partitionNumbers(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) []int64 {
-	prefix := fmt.Sprintf("%s.%s_", ds.Schema, topic.MessageLogTable(topicId))
+	// pg_class.relname is unqualified, so the prefix compared against it is too
+	prefix := topic.MessageLogTable(topicId) + "_"
 	rows, err := ds.Pool.Query(ctx, `
 		SELECT REPLACE(c.relname, $2, '')::bigint AS n
 		FROM pg_inherits i

@@ -257,7 +257,7 @@ func assertLogStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 
 func groupIdOf(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	var id int64
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2`, topicId, group).Scan(&id))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2`, ds.Schema), topicId, group).Scan(&id))
 	return id
 }
 

@@ -102,7 +102,8 @@ func run() (err error) {
 	go func() { done <- execution.Run(runCtx) }()
 
 	table := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id))
-	hidden := table + "_hidden"
+	// RENAME TO names the new table inside the old one's schema, so it is bare
+	hidden := topic.MessageLogTable(tp.Id) + "_hidden"
 
 	step("breaking the janitor: renaming its message_log table away")
 	exec(ctx, ds, fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, table, hidden))
@@ -116,7 +117,7 @@ func run() (err error) {
 	var samples []sample
 	deadline := start.Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		attempts := scalarInt(ctx, ds, `SELECT attempts FROM worker_instance WHERE worker_id=$1`, row.Id)
+		attempts := scalarInt(ctx, ds, fmt.Sprintf(`SELECT attempts FROM %s.worker_instance WHERE worker_id=$1`, ds.Schema), row.Id)
 		if len(samples) == 0 || attempts != samples[len(samples)-1].attempts {
 			samples = append(samples, sample{attempts, time.Since(start)})
 			fmt.Printf("  attempts=%d at %v\n", attempts, time.Since(start).Round(time.Millisecond))
@@ -163,12 +164,12 @@ func run() (err error) {
 	}
 
 	step("healing: renaming the table back and waiting for attempts to reset")
-	exec(ctx, ds, fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, hidden, table))
+	exec(ctx, ds, fmt.Sprintf(`ALTER TABLE %s.%s RENAME TO %s`, ds.Schema, hidden, topic.MessageLogTable(tp.Id)))
 
 	deadline = time.Now().Add(10 * time.Second)
 	var final int
 	for time.Now().Before(deadline) {
-		final = scalarInt(ctx, ds, `SELECT attempts FROM worker_instance WHERE worker_id=$1`, row.Id)
+		final = scalarInt(ctx, ds, fmt.Sprintf(`SELECT attempts FROM %s.worker_instance WHERE worker_id=$1`, ds.Schema), row.Id)
 		if final == 0 {
 			break
 		}

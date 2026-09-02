@@ -353,7 +353,7 @@ func poisonSection(ctx context.Context) {
 
 	// registration validated the schedule, so corrupt the row directly --
 	// every ClaimDueSchedule's ParseSchedule now fails for this row
-	exec(ctx, `UPDATE schedule_config SET expression = 'not a expression' WHERE id = $1;`, poisoned.Id)
+	exec(ctx, fmt.Sprintf(`UPDATE %s.schedule_config SET expression = 'not a expression' WHERE id = $1;`, ds.Schema), poisoned.Id)
 	backdate(ctx, poisoned.Id, time.Now().UTC().Add(-2*time.Hour))
 
 	backdate(ctx, sibling.Id, time.Now().UTC().Add(-10*time.Second))
@@ -751,7 +751,7 @@ func cleanupTarget() {
 // --- assertion helpers ---
 
 func backdate(ctx context.Context, jobId int64, to time.Time) {
-	exec(ctx, `UPDATE schedule_cursor SET next_scheduled_at = $1 WHERE schedule_id = $2;`, to, jobId)
+	exec(ctx, fmt.Sprintf(`UPDATE %s.schedule_cursor SET next_scheduled_at = $1 WHERE schedule_id = $2;`, ds.Schema), to, jobId)
 }
 
 // waitAdvanced returns once the scheduler has moved the row's
@@ -760,7 +760,7 @@ func waitAdvanced(ctx context.Context, jobId int64) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		var advanced bool
-		must(ds.Pool.QueryRow(ctx, `SELECT next_scheduled_at > now() FROM schedule_cursor WHERE schedule_id = $1;`, jobId).Scan(&advanced))
+		must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT next_scheduled_at > now() FROM %s.schedule_cursor WHERE schedule_id = $1;`, ds.Schema), jobId).Scan(&advanced))
 		if advanced {
 			return
 		}

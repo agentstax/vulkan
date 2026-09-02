@@ -80,8 +80,8 @@ func run() (err error) {
 	must(err)
 	sysId := sysOwner.SystemId
 
-	reset(ctx, pool, sysId) // clear leftovers from any prior crashed run
-	defer reset(ctx, pool, sysId)
+	reset(ctx, pool, ds.Schema, sysId) // clear leftovers from any prior crashed run
+	defer reset(ctx, pool, ds.Schema, sysId)
 
 	// 1. fresh == migrate ------------------------------------------------------
 	section("migrate v1 -> v4 builds the same schema as a fresh create-at-4")
@@ -99,18 +99,18 @@ func run() (err error) {
 	// 3. Up idempotency: version says v3 but the DDL is already at v4, so the
 	// re-run re-applies step 4's Up against an object that already exists.
 	section("Up is idempotent under an ambiguous-commit re-run")
-	forgetVersion(ctx, pool, sysId, maxV)
+	forgetVersion(ctx, pool, ds.Schema, sysId, maxV)
 	must(controller.RunOnce(ctx, maxV, sysOwner, reg))
-	check(currentVersion(ctx, pool, sysId) == maxV && sameColumns(ctx, pool),
+	check(currentVersion(ctx, pool, ds.Schema, sysId) == maxV && sameColumns(ctx, pool),
 		"re-applied Up over existing schema -> no-op, schema unchanged")
 
 	// 4. Down idempotency: drop c3 (now at v3), then claim v4 again so the
 	// re-run re-applies step 4's Down against a column that's already gone.
 	section("Down is idempotent under an ambiguous-commit re-run")
 	must(controller.RunOnce(ctx, maxV-1, sysOwner, reg))
-	claimVersion(ctx, pool, sysId, maxV)
+	claimVersion(ctx, pool, ds.Schema, sysId, maxV)
 	must(controller.RunOnce(ctx, maxV-1, sysOwner, reg))
-	check(currentVersion(ctx, pool, sysId) == maxV-1 && !hasColumn(ctx, pool, stepwise, "c3"),
+	check(currentVersion(ctx, pool, ds.Schema, sysId) == maxV-1 && !hasColumn(ctx, pool, stepwise, "c3"),
 		"re-applied Down over absent column -> no-op")
 
 	fmt.Println("\n✅ INVARIANT LAB PASSED")
@@ -192,35 +192,35 @@ func hasColumn(ctx context.Context, pool *pgxpool.Pool, table, col string) bool 
 	return exists
 }
 
-func currentVersion(ctx context.Context, pool *pgxpool.Pool, sysId int64) int64 {
+func currentVersion(ctx context.Context, pool *pgxpool.Pool, schema string, sysId int64) int64 {
 	var v int64
-	must(pool.QueryRow(ctx, `SELECT migration_version FROM migration_log WHERE system_id = $1 AND status = 'success' ORDER BY id DESC LIMIT 1;`, sysId).Scan(&v))
+	must(pool.QueryRow(ctx, fmt.Sprintf(`SELECT migration_version FROM %s.migration_log WHERE system_id = $1 AND status = 'success' ORDER BY id DESC LIMIT 1;`, schema), sysId).Scan(&v))
 	return v
 }
 
 // forgetVersion drops the success records at/above v, so the engine reads the
 // current version as v-1 while the DDL is already at v -- an interrupted migrate.
-func forgetVersion(ctx context.Context, pool *pgxpool.Pool, sysId int64, v int64) {
-	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE system_id = $1 AND migration_version >= $2;`, sysId, v)
+func forgetVersion(ctx context.Context, pool *pgxpool.Pool, schema string, sysId int64, v int64) {
+	_, err := pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.migration_log WHERE system_id = $1 AND migration_version >= $2;`, schema), sysId, v)
 	must(err)
 }
 
 // claimVersion records a success at v without doing v's DDL -- the mirror of
 // forgetVersion, so the engine believes it's ahead of where the schema is.
-func claimVersion(ctx context.Context, pool *pgxpool.Pool, sysId int64, v int64) {
-	_, err := pool.Exec(ctx, `INSERT INTO migration_log (system_id, migration_version, status) VALUES ($1, $2, 'success');`, sysId, v)
+func claimVersion(ctx context.Context, pool *pgxpool.Pool, schema string, sysId int64, v int64) {
+	_, err := pool.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.migration_log (system_id, migration_version, status) VALUES ($1, $2, 'success');`, schema), sysId, v)
 	must(err)
 }
 
 // reset drops the scratch tables and returns the system migration_log to exactly
 // one v1 baseline row -- the lab only ever borrowed the system scope, and its
 // round trips leave extra v1 rows (each down-to-baseline records one).
-func reset(ctx context.Context, pool *pgxpool.Pool, sysId int64) {
+func reset(ctx context.Context, pool *pgxpool.Pool, schema string, sysId int64) {
 	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS `+stepwise+`, `+fresh+`;`)
 	must(err)
-	_, err = pool.Exec(ctx, `DELETE FROM migration_log WHERE system_id = $1;`, sysId)
+	_, err = pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.migration_log WHERE system_id = $1;`, schema), sysId)
 	must(err)
-	_, err = pool.Exec(ctx, `INSERT INTO migration_log (system_id, migration_version, status) VALUES ($1, 1, 'success');`, sysId)
+	_, err = pool.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.migration_log (system_id, migration_version, status) VALUES ($1, 1, 'success');`, schema), sysId)
 	must(err)
 }
 

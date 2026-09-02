@@ -129,7 +129,7 @@ func run() (err error) {
 		must(err)
 	}
 	var raceRows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicA.Id, race).Scan(&raceRows))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema), topicA.Id, race).Scan(&raceRows))
 	if raceRows != 1 {
 		die(fmt.Sprintf("race group has %d registry rows, want 1", raceRows))
 	}
@@ -175,7 +175,7 @@ func run() (err error) {
 	step("destroying a topic destroys ITS groups and no one else's")
 	must(client.Topic(topicB.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	var bRows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`, other.Id).Scan(&bRows))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.consumer_group_config WHERE id = $1;`, ds.Schema), other.Id).Scan(&bRows))
 	if bRows != 0 {
 		die("topicB's group survived its topic's Destroy")
 	}
@@ -193,7 +193,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ topicB's group + children cascaded away, topicA's same-named group untouched\n")
 
 	step("deleting a group row cascades its cursor")
-	if _, err := ds.Pool.Exec(ctx, `DELETE FROM consumer_group_config WHERE id = $1;`, registered.Id); err != nil {
+	if _, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.consumer_group_config WHERE id = $1;`, ds.Schema), registered.Id); err != nil {
 		die(err.Error())
 	}
 	gone, err := cd.GetGroup(ctx, topicA.Id, group)
@@ -207,7 +207,7 @@ func run() (err error) {
 	destroySection(ctx, ds, client, cd, topicA, suffix)
 
 	// cleanup
-	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema), topicA.Id, race)
 	must(err)
 	must(client.Topic(topicA.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
@@ -270,11 +270,11 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, clien
 	must(client.Topic(topicA.Name).Group(doomedName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	for what, sql := range map[string]string{
-		"group rows":        `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`,
+		"group rows":        fmt.Sprintf(`SELECT COUNT(*) FROM %s.consumer_group_config WHERE id = $1;`, ds.Schema),
 		"cursor rows":       fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.ConsumerGroupCursorTable(topicA.Id)),
 		"binding rows":      fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.BindingConfigTable(topicA.Id)),
-		"worker rows":       `SELECT COUNT(*) FROM worker_config WHERE consumer_group_id = $1;`,
-		"instance rows":     `SELECT COUNT(*) FROM worker_instance wi WHERE wi.worker_id IN (SELECT id FROM worker_config WHERE consumer_group_id = $1);`,
+		"worker rows":       fmt.Sprintf(`SELECT COUNT(*) FROM %s.worker_config WHERE consumer_group_id = $1;`, ds.Schema),
+		"instance rows":     fmt.Sprintf(`SELECT COUNT(*) FROM %s.worker_instance wi WHERE wi.worker_id IN (SELECT id FROM %s.worker_config WHERE consumer_group_id = $1);`, ds.Schema, ds.Schema),
 		"lease rows":        fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.ClaimLeaseTable(topicA.Id)),
 		"key lease rows":    fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.MessageKeyLeaseTable(topicA.Id)),
 		"delivery rows":     fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.ExceptionQueueTable(topicA.Id)),
@@ -296,9 +296,9 @@ func readCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId i
 	var committed int64
 	sql := fmt.Sprintf(`
 		SELECT c.committed
-		FROM %s.%s c JOIN consumer_group_config g ON g.id = c.consumer_group_id
+		FROM %s.%s c JOIN %s.consumer_group_config g ON g.id = c.consumer_group_id
 		WHERE g.topic_id = $1 AND g.name = $2;
-	`, ds.Schema, topic.ConsumerGroupCursorTable(topicId))
+	`, ds.Schema, topic.ConsumerGroupCursorTable(topicId), ds.Schema)
 	must(ds.Pool.QueryRow(ctx, sql, topicId, group).Scan(&committed))
 	return committed
 }

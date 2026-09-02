@@ -94,7 +94,7 @@ func run() (err error) {
 	step("Register declares the set; a same-set Register joins without writing")
 	incumbent, err := registerConsumer(ctx, []string{"orders.*"})
 	must(err)
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema),
 		registered.Id, groupName).Scan(&groupId))
 	assertInt("one installed row", installedRows(ctx), 1)
 	assertString("binding rows", bindingDisplays(ctx), "orders.*")
@@ -240,13 +240,13 @@ func waitLiveInstance(ctx context.Context) {
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		var live bool
-		must(ds.Pool.QueryRow(ctx, `
+		must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 			SELECT EXISTS (
 				SELECT 1
-				FROM worker_instance
-				JOIN worker_config ON worker_config.id = worker_instance.worker_id
+				FROM %s.worker_instance
+				JOIN %s.worker_config ON worker_config.id = worker_instance.worker_id
 				WHERE worker_config.consumer_group_id = $1 AND worker_instance.expires_at > now()
-			);`, groupId).Scan(&live))
+			);`, ds.Schema, ds.Schema), groupId).Scan(&live))
 		if live {
 			return
 		}

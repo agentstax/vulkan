@@ -95,31 +95,31 @@ func run() (err error) {
 
 	// 2. additive skew: schema ahead, nothing breaking -> Register succeeds ------
 	section("system schema ahead by an additive step -> Register still succeeds")
-	bump(ctx, pool, sysOwner, 2, 0)
+	bump(ctx, pool, ds.Schema, sysOwner, 2, 0)
 	_, err = client.RegisterProducer[event](ctx, name, nil)
 	check(err == nil, "Register accepted at v2 with no breaking step -- the rolling-deploy window")
-	unbump(ctx, pool, sysOwner, 2)
+	unbump(ctx, pool, ds.Schema, sysOwner, 2)
 
 	// 3. breaking step past the binary (system) -> Register refused --------------
 	section("system schema ahead by a breaking step -> Register refused")
-	bump(ctx, pool, sysOwner, 2, 2)
+	bump(ctx, pool, ds.Schema, sysOwner, 2, 2)
 	_, err = client.RegisterProducer[event](ctx, name, nil)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind system, version 2") && strings.Contains(err.Error(), "min_compatible_version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version, the requirement, and the fix")
-	unbump(ctx, pool, sysOwner, 2)
+	unbump(ctx, pool, ds.Schema, sysOwner, 2)
 
 	// 4. breaking step past ONE topic -> that topic refused, sibling accepted ----
 	section("breaking step past one topic -> that topic refused, sibling accepted")
 	topicOwner := mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name))
-	bump(ctx, pool, topicOwner, 2, 2)
+	bump(ctx, pool, ds.Schema, topicOwner, 2, 2)
 	_, err = client.RegisterProducer[event](ctx, name, nil)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind topic, version 2") && strings.Contains(err.Error(), "min_compatible_version 2"),
 		"refused, naming the topic version and the requirement")
 	_, err = client.RegisterProducer[event](ctx, siblingName, nil)
 	check(err == nil, "sibling topic still registers -- each family gates on its own rows")
-	unbump(ctx, pool, topicOwner, 2)
+	unbump(ctx, pool, ds.Schema, topicOwner, 2)
 
 	fmt.Println("\n✅ SCHEMA GATE LAB PASSED")
 	fmt.Println("   Register rides out additive skew and fails fast, legibly, on a breaking step past the build.")
@@ -129,13 +129,13 @@ func run() (err error) {
 // bump records a success at ver, so the gate reads that scope as version ver
 // without any matching schema change -- a database a newer binary migrated.
 // minCompatibleVersion 0 forges an additive step, ver forges a breaking one.
-func bump(ctx context.Context, pool *pgxpool.Pool, owner *common.Owner, ver int64, minCompatibleVersion int64) {
-	_, err := pool.Exec(ctx, `INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, min_compatible_version, status) VALUES ($1, $2, $3, $4, $5, 'success');`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver, minCompatibleVersion)
+func bump(ctx context.Context, pool *pgxpool.Pool, schema string, owner *common.Owner, ver int64, minCompatibleVersion int64) {
+	_, err := pool.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.migration_log (system_id, topic_id, consumer_group_id, migration_version, min_compatible_version, status) VALUES ($1, $2, $3, $4, $5, 'success');`, schema), owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver, minCompatibleVersion)
 	must(err)
 }
 
-func unbump(ctx context.Context, pool *pgxpool.Pool, owner *common.Owner, ver int64) {
-	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE system_id IS NOT DISTINCT FROM $1 AND topic_id IS NOT DISTINCT FROM $2 AND consumer_group_id IS NOT DISTINCT FROM $3 AND migration_version = $4;`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
+func unbump(ctx context.Context, pool *pgxpool.Pool, schema string, owner *common.Owner, ver int64) {
+	_, err := pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.migration_log WHERE system_id IS NOT DISTINCT FROM $1 AND topic_id IS NOT DISTINCT FROM $2 AND consumer_group_id IS NOT DISTINCT FROM $3 AND migration_version = $4;`, schema), owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
 	must(err)
 }
 

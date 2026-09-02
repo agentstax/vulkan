@@ -303,8 +303,8 @@ func versionHealth(all []*vulkan.VersionHealth, version int) *vulkan.VersionHeal
 func committed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT c.committed FROM %s.%s c
-		JOIN consumer_group_config g ON g.id = c.consumer_group_id
-		WHERE g.name = $1;`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), group)
+		JOIN %s.consumer_group_config g ON g.id = c.consumer_group_id
+		WHERE g.name = $1;`, ds.Schema, topic.ConsumerGroupCursorTable(topicId), ds.Schema), group)
 }
 
 func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {

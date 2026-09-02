@@ -213,10 +213,11 @@ type tableStats struct {
 
 // compactionHeadTable resolves a topic's compaction_head_<id> table name from
 // the catalog.
+// the name comes back bare: its one reader matches pg_stat_user_tables.relname
 func compactionHeadTable(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string) string {
 	var id int64
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = $1;`, topicName).Scan(&id))
-	return fmt.Sprintf("%s.%s", ds.Schema, topic.CompactionHeadTable(id))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.topic_config WHERE name = $1;`, ds.Schema), topicName).Scan(&id))
+	return topic.CompactionHeadTable(id)
 }
 
 func dumpTableStats(ctx context.Context, ds *iDatastore.PostgresDatastore, table string) tableStats {

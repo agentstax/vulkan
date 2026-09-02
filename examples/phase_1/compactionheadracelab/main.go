@@ -188,7 +188,8 @@ func createPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 	if to <= from {
 		return
 	}
-	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
+	logName := topic.MessageLogTable(topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, logName)
 	var sql strings.Builder
 	for n := from; n < to; n++ {
 		fmt.Fprintf(&sql, "CREATE TABLE IF NOT EXISTS %s_%d PARTITION OF %s FOR VALUES FROM (%d) TO (%d);\n",
@@ -218,7 +219,8 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 // counting only message_log partitions the Append node ACTUALLY EXECUTED
 // against (mentions alone don't mean touched, see compactionwidthlab).
 func explainCompactionHeadLookup(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) (int, float64) {
-	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
+	logName := topic.MessageLogTable(topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, logName)
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 FROM %s m
 		WHERE m.id = 1
@@ -233,7 +235,7 @@ func explainCompactionHeadLookup(ctx context.Context, ds *iDatastore.PostgresDat
 	must(err)
 	defer rows.Close()
 
-	partitionRe := regexp.MustCompile(regexp.QuoteMeta(logTable) + `_\d+`)
+	partitionRe := regexp.MustCompile(regexp.QuoteMeta(logName) + `_\d+`)
 	execRe := regexp.MustCompile(`Execution Time: ([\d.]+) ms`)
 	executed := map[string]bool{}
 	var execMs float64

@@ -110,7 +110,7 @@ func run() (err error) {
 	must(err)
 
 	jobGroup = scalarInt64(ctx,
-		`SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
+		fmt.Sprintf(`SELECT id FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema),
 		schedulesTopic.Id, workerliveness.JobName)
 	jobGroupOwner, err = common.NewConsumerGroupOwner(schedulesTopic.SystemId, schedulesTopic.Id, jobGroup, workerliveness.JobName)
 	must(err)
@@ -288,11 +288,11 @@ func cleanup() {
 func waitUnclaimed(ctx context.Context, want int64) {
 	sql := fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM worker_config w
-		LEFT JOIN consumer_group_config g ON g.id = w.consumer_group_id
+		FROM %s.worker_config w
+		LEFT JOIN %s.consumer_group_config g ON g.id = w.consumer_group_id
 		WHERE COALESCE(w.topic_id, g.topic_id) = %d
-			AND NOT EXISTS (SELECT 1 FROM worker_instance i WHERE i.worker_id = w.id AND i.expires_at > now());
-	`, labTopic.Id)
+			AND NOT EXISTS (SELECT 1 FROM %s.worker_instance i WHERE i.worker_id = w.id AND i.expires_at > now());
+	`, ds.Schema, ds.Schema, labTopic.Id, ds.Schema)
 
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {

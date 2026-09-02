@@ -170,7 +170,7 @@ func assertCompactionHeadCount(ctx context.Context, ds *iDatastore.PostgresDatas
 // the topic's groups are destroyed WITH it, via the topic_id FK cascade.
 func assertGroupGone(ctx context.Context, ds *iDatastore.PostgresDatastore, groupId int64) {
 	var rows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`, groupId).Scan(&rows))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.consumer_group_config WHERE id = $1;`, ds.Schema), groupId).Scan(&rows))
 	if rows != 0 {
 		die(fmt.Sprintf("consumer_group %d survived its topic's Destroy", groupId))
 	}
