@@ -23,8 +23,9 @@ type ProducerConfig struct {
 	Batch batcher.BatcherConfig
 
 	// SlowProduceThreshold - a produce call running longer than this logs a
-	// warn line with its duration. ProduceFunc and ProduceInTx durations
-	// include the caller's own closure and transaction time.
+	// warn line with its duration. ProduceFunc and ProduceFuncInTx include
+	// the caller's closure; both InTx verbs end at the insert, before the
+	// caller's commit.
 	// Default: 0 (disabled).
 	SlowProduceThreshold time.Duration
 

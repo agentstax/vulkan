@@ -158,8 +158,8 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 	return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 }
 
-// ProduceInTx appends producerFunc's message inside a transaction the caller
-// owns -- it commits or rolls back with everything else in tx.
+// ProduceInTx appends message inside a transaction the caller owns -- it
+// commits or rolls back with everything else in tx.
 //
 // The message's IdempotencyKey stays locked until tx resolves -- any other
 // call reusing that key blocks the whole time. Keep transactions that reuse
@@ -173,10 +173,23 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // Producing several compacted message keys in one transaction locks each key's
 // compaction_head row until tx resolves. Two transactions taking the same
 // keys in reverse order deadlock: Postgres kills one (40P01, a full
-// rollback) and InTransaction never reruns your closure -- retry it
+// rollback) and InTransaction never reruns your transactionFunc -- retry it
 // yourself. Ordering these calls by message key avoids the cycle;
 // batched Produce sorts the same way, so a consistent order composes.
-func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options *ProduceOptions) (*ProduceResult[Message], error) {
+//
+// options may be nil for the defaults.
+func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, message *Message, options *ProduceOptions) (*ProduceResult[Message], error) {
+	passthrough := func(context.Context, Tx) (*Message, error) { return message, nil }
+	return p.ProduceFuncInTx(ctx, tx, passthrough, options)
+}
+
+// ProduceFuncInTx appends the message returned by producerFunc, which runs
+// inside a transaction the caller owns -- your writes commit or roll back
+// with everything else in tx. Every transaction rule on ProduceInTx applies
+// here unchanged.
+//
+// options may be nil for the defaults.
+func (p *ProducerInstance[Message]) ProduceFuncInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options *ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
 
 	resolved := ProduceOptions{}

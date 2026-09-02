@@ -49,21 +49,31 @@ Pre-v1: both signature changes edit call sites in place.
 
 ### 3. The verb rename + the value form
 
-- [ ] pkg/producer/producer_instance.go: rename `ProduceInTx` ->
-      `ProduceFuncInTx`; add value-taking `ProduceInTx(ctx, tx, message,
-      options)` (passthrough closure internally, the keyed-Produce shape).
-      Key-lock / produce-last / deadlock doc comments sit on both, or on
-      one with a pointer -- decide in the edit.
-- [ ] pkg/vulkan/producer.go interface: rename the closure form, add the
-      value form. pkg/vulkan/transaction.go + producer_config.go comment
-      sweeps (`ProduceFunc/ProduceInTx durations`, `via ProduceInTx`).
+- [x] pkg/producer/producer_instance.go: value `ProduceInTx` builds the
+      passthrough and delegates to `ProduceFuncInTx`, which keeps the old
+      body. SETTLED: the key-lock / produce-last / deadlock doc stays whole
+      on `ProduceInTx` (the verb most callers reach for) and
+      `ProduceFuncInTx` points at it; the deadlock line now names
+      `transactionFunc` so it can't be misread as the ProducerFunc.
+- [x] pkg/vulkan/producer.go interface carries both verbs. The three
+      `via ProduceInTx` comments (producer, controller, vulkan
+      transaction.go) and schedule/producer/instance.go:77 read correctly
+      for the value form -- no edit. Both SlowProduceThreshold comments
+      reworded: ProduceFunc/ProduceFuncInTx include the caller's closure,
+      both InTx verbs end at the insert, before the caller's commit.
+- [x] Forced by the build, so done here: chunk 4's schedule item (the
+      passthrough is deleted, `stored` passes straight to the value form).
+      Root `go build ./...` green, `go test -race ./pkg/...` 120 pass in
+      77 packages, tools/conventions green. No other nested module names
+      these verbs (bench, reference, cmd, otelvulkan, tools all clean).
 
 ### 4. Internal call sites
 
-- [ ] Produce's keyed-path passthrough closure drops the third param
-      (producer_instance.go).
-- [ ] pkg/schedule/producer/instance.go:141: delete the passthrough,
-      call value `ProduceInTx` directly; re-read the lock comment at :77.
+- [x] Produce's keyed-path passthrough closure drops the third param
+      (producer_instance.go) -- done in chunk 2, forced by the type change.
+- [x] pkg/schedule/producer/instance.go: passthrough deleted, value
+      `ProduceInTx` called directly -- done in chunk 3, forced by the build.
+      The lock comment at :77 still reads correctly.
 - [ ] pkg/consumergroup/messageconsumer/controller/datastore/fresh_claim.go:114
       SQL comment names ProduceInTx -- still true of the value form, but
       re-read the sentence once the verbs split.
