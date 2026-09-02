@@ -44,11 +44,20 @@ ids are per-installation serials, so the collisions are real:
    `migrate.SystemOwner`, `producer.protectedInsertSQL`,
    `messageconsumer.deliveryStatement`/`logStatement`) and took a
    trailing `schema string` param.
-3. **DDL — 38 CREATE statements in 6 files** (system tables, topic
-   tables, partitions, migrate). Qualify the created table and the
-   `PARTITION OF` parent; `CREATE INDEX` qualifies only its `ON` clause
-   (index names cannot carry a schema and land in the table's schema);
-   `createSchema`'s `CREATE SCHEMA %s` is already explicit and stays.
+3. ~~**DDL.**~~ DONE. 34 statements across the two `tables.go` files:
+   the created table, the `PARTITION OF` parent, and every FK
+   `REFERENCES` target qualified; `CREATE INDEX` qualifies only its `ON`
+   clause, index names staying bare so they land in the table's schema.
+   `createSchema`'s `CREATE SCHEMA %s` and the six advisory locks stay as
+   they were. Five index literals living as `[]string{...}` elements each
+   became their own `fmt.Sprintf`. 298 qualified references tree-wide,
+   zero unqualified.
+   Also fixed here, because task 3 broke it: `table_ddl_test.go` read the
+   table name straight off the CREATE line and skipped any name holding a
+   `%`, so once the shared tables read `%[1]s.system_config` all 13 fell
+   out of the kind check and it passed while walking nothing. It now
+   trims the `%[1]s.` qualifier first. Sabotaged both ways -- a bogus
+   `system_bogus` table passed before the fix and fails after.
 4. **The nine name-as-value sites** — the class a literal walk cannot
    see, swept by hand: 4x `to_regclass($1)` (drain x2, both partition
    alerts), `'%s'::regclass` (janitor partition list),
@@ -58,9 +67,13 @@ ids are per-installation serials, so the collisions are real:
    is the bug fix; the rest is what keeps it fixed.
 5. **tools/conventions.** Extend the diagnose-query table walk to
    production literals — an unqualified table reference is a test
-   failure, so a missed `{schema}.` is loud instead of silently rescued
-   by search_path. `table_ddl_test.go` strips the `{schema}.` prefix
-   before its `<root>_<kind>` checks. Sabotage-verify both.
+   failure, so a missed `%[1]s.` is loud instead of silently rescued by
+   search_path. Split each reference on `.` and require exactly
+   `%[1]s.<name>`: a prefix test passes `%[1]s.%[2]s.%[3]s`, which is how
+   four double-qualified literals survived task 2's first check.
+   (`table_ddl_test.go`'s half landed in task 3.) Note `tools/` is its
+   own module reading library source as data, so `go test` caches a pass
+   across library edits — these need `-count=1` to mean anything.
 6. **Sandbox mirror re-sync.** sql.test.ts compares ~30 mirrored
    statements byte-exact against the Go source, so every mirrored
    literal carries the same `{schema}.` bytes; `interpolate.ts` gains a

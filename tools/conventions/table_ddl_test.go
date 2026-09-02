@@ -156,6 +156,12 @@ func baselineTableStatements(t *testing.T) []tableStatement {
 	return statements
 }
 
+// schemaQualifier is what every SQL literal writes ahead of a table name --
+// Sprintf verb [1] is the schema on every statement. Trimming it is what keeps
+// a shared table's name visible to the kind check: left on, the name still
+// holds a %% and reads as a per-topic placeholder, so the check walks nothing.
+const schemaQualifier = "%[1]s."
+
 // parseCreateTable reads one CREATE TABLE literal into its name and column
 // lines. startLine is the literal's opening line in its file, so each parsed
 // line can carry a real file:line.
@@ -174,6 +180,7 @@ func parseCreateTable(text string, file string, startLine int) tableStatement {
 		statement.Position = file + ":" + strconv.Itoa(startLine+i)
 		name := strings.Fields(after)[0]
 		name = strings.TrimSuffix(name, "(")
+		name = strings.TrimPrefix(name, schemaQualifier)
 		if !strings.Contains(name, "%") {
 			statement.Name = name
 		}

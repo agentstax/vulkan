@@ -33,7 +33,7 @@ import (
 func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
 	createTableSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
 			-- never ALTER SEQUENCE ... CACHE on this sequence: the consumer's
 			-- claim fence assumes ids are issued in INSERT order, and a cached
@@ -47,7 +47,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			options JSONB,                                -- sparse MessageOptions
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		) PARTITION BY RANGE (id);
-	`, topic.MessageLogTable(id))
+	`, d.Datastore.Schema, topic.MessageLogTable(id))
 	if _, err := tx.Exec(ctx, createTableSql); err != nil {
 		return err
 	}
@@ -55,10 +55,10 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// message_log_<id>_0 -- two-part name avoids colliding with another topic's table
 	createPartitionSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s
-			PARTITION OF %s
-			FOR VALUES FROM (0) TO (%d);
-	`, topic.MessageLogPartitionTable(id, 0), topic.MessageLogTable(id), partitionSize)
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s
+			PARTITION OF %[1]s.%[3]s
+			FOR VALUES FROM (0) TO (%[4]d);
+	`, d.Datastore.Schema, topic.MessageLogPartitionTable(id, 0), topic.MessageLogTable(id), partitionSize)
 	if _, err := tx.Exec(ctx, createPartitionSql); err != nil {
 		return err
 	}
@@ -67,9 +67,9 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// partial, so topics that never set a message key pay nothing.
 	createMessageKeyIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_message_key ON %s (message_key, id)
+		CREATE INDEX IF NOT EXISTS %[2]s_message_key ON %[1]s.%[3]s (message_key, id)
 			WHERE message_key IS NOT NULL;
-	`, topic.MessageLogTable(id), topic.MessageLogTable(id))
+	`, d.Datastore.Schema, topic.MessageLogTable(id), topic.MessageLogTable(id))
 	if _, err := tx.Exec(ctx, createMessageKeyIndexSql); err != nil {
 		return err
 	}
@@ -77,11 +77,11 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// idempotency_key_<id> -- not partitioned (can't effectively be)
 	createIdempotencyKeySql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			idempotency_key UUID NOT NULL PRIMARY KEY,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
-	`, topic.IdempotencyKeyTable(id))
+	`, d.Datastore.Schema, topic.IdempotencyKeyTable(id))
 	if _, err := tx.Exec(ctx, createIdempotencyKeySql); err != nil {
 		return err
 	}
@@ -90,15 +90,15 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// of a sequential scan
 	createIdempotencyKeyCreatedAtIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_created_at ON %s (created_at);
-	`, topic.IdempotencyKeyTable(id), topic.IdempotencyKeyTable(id))
+		CREATE INDEX IF NOT EXISTS %[2]s_created_at ON %[1]s.%[3]s (created_at);
+	`, d.Datastore.Schema, topic.IdempotencyKeyTable(id), topic.IdempotencyKeyTable(id))
 	if _, err := tx.Exec(ctx, createIdempotencyKeyCreatedAtIndexSql); err != nil {
 		return err
 	}
 
 	createExceptionQueueSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			consumer_group_id BIGINT NOT NULL,                -- PK
 			message_id BIGINT NOT NULL,                       -- PK
 			status TEXT NOT NULL,                             -- 'ready' | 'processing' | 'inflight' | 'deferred' | 'done' | 'dead'
@@ -114,7 +114,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (consumer_group_id, message_id)
 		);
-	`, topic.ExceptionQueueTable(id))
+	`, d.Datastore.Schema, topic.ExceptionQueueTable(id))
 	if _, err := tx.Exec(ctx, createExceptionQueueSql); err != nil {
 		return err
 	}
@@ -122,8 +122,8 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// the same-key predecessor lookup: an earlier unresolved row on this key
 	createExceptionQueueMessageKeyIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_message_key ON %s (consumer_group_id, message_key, message_id);
-	`, topic.ExceptionQueueTable(id), topic.ExceptionQueueTable(id))
+		CREATE INDEX IF NOT EXISTS %[2]s_message_key ON %[1]s.%[3]s (consumer_group_id, message_key, message_id);
+	`, d.Datastore.Schema, topic.ExceptionQueueTable(id), topic.ExceptionQueueTable(id))
 	if _, err := tx.Exec(ctx, createExceptionQueueMessageKeyIndexSql); err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	//   - 'success': the attempt ran clean -- written only under mode 'all'
 	createDeliveryLogSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL,
 			message_id BIGINT NOT NULL,
@@ -148,7 +148,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			error TEXT NOT NULL,
 			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
-	`, topic.DeliveryLogTable(id))
+	`, d.Datastore.Schema, topic.DeliveryLogTable(id))
 	if _, err := tx.Exec(ctx, createDeliveryLogSql); err != nil {
 		return err
 	}
@@ -157,8 +157,8 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// give the triage joins
 	createDeliveryLogAttemptIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_attempt ON %s (consumer_group_id, message_id, attempt);
-	`, topic.DeliveryLogTable(id), topic.DeliveryLogTable(id))
+		CREATE INDEX IF NOT EXISTS %[2]s_attempt ON %[1]s.%[3]s (consumer_group_id, message_id, attempt);
+	`, d.Datastore.Schema, topic.DeliveryLogTable(id), topic.DeliveryLogTable(id))
 	if _, err := tx.Exec(ctx, createDeliveryLogAttemptIndexSql); err != nil {
 		return err
 	}
@@ -167,9 +167,9 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// UNIQUE keeps group <-> cursor 1:1
 	createConsumerGroupCursorSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES %[1]s.consumer_group_config (id) ON DELETE CASCADE,
 			claimed BIGINT NOT NULL DEFAULT 0,      -- the read frontier 'inflight' work
 			committed BIGINT NOT NULL DEFAULT 0,    -- every message id > committed is in an end state done / dead
 			-- the snapshot fence: claims stop at settled_head, not the raw MAX(id),
@@ -178,14 +178,14 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			pending_head BIGINT NOT NULL DEFAULT 0, -- candidate head awaiting that proof
 			pending_xmax XID8                       -- txid fence read in the same snapshot as pending_head
 		);
-	`, topic.ConsumerGroupCursorTable(id))
+	`, d.Datastore.Schema, topic.ConsumerGroupCursorTable(id))
 	if _, err := tx.Exec(ctx, createConsumerGroupCursorSql); err != nil {
 		return err
 	}
 
 	createClaimLeaseSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			token UUID NOT NULL DEFAULT gen_random_uuid(),
 			consumer_group_id BIGINT NOT NULL,
 			low BIGINT NOT NULL,             -- low of claimed range of lease
@@ -194,7 +194,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			reclaims INT NOT NULL DEFAULT 0, -- times this range has been reclaimed; past MaxReclaims it's quarantined
 			PRIMARY KEY (token, consumer_group_id)
 		);
-	`, topic.ClaimLeaseTable(id))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(id))
 	if _, err := tx.Exec(ctx, createClaimLeaseSql); err != nil {
 		return err
 	}
@@ -203,14 +203,14 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// per consumer group.
 	createMessageKeyLeaseSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			consumer_group_id BIGINT NOT NULL, -- PK
 			message_key TEXT NOT NULL,         -- PK
 			lease_token UUID NOT NULL,
 			expires_at TIMESTAMPTZ NOT NULL,
 			PRIMARY KEY (consumer_group_id, message_key)
 		);
-	`, topic.MessageKeyLeaseTable(id))
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(id))
 	if _, err := tx.Exec(ctx, createMessageKeyLeaseSql); err != nil {
 		return err
 	}
@@ -220,13 +220,13 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// as every keyed publish, never a background job.
 	createCompactionHeadSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			compaction_key  TEXT   NOT NULL PRIMARY KEY,
 			head_id         BIGINT NOT NULL,            -- the winning message_log id for this key
 			schema_version  BIGINT NOT NULL,            -- the winner's payload version; compared before rank
 			compaction_rank BIGINT NOT NULL DEFAULT 0   -- the winner's rank
 		);
-	`, topic.CompactionHeadTable(id))
+	`, d.Datastore.Schema, topic.CompactionHeadTable(id))
 	if _, err := tx.Exec(ctx, createCompactionHeadSql); err != nil {
 		return err
 	}
@@ -236,14 +236,14 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// `pattern_regex`.
 	createBindingConfigSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT NOT NULL REFERENCES %[1]s.consumer_group_config (id) ON DELETE CASCADE,
 			pattern_regex TEXT NOT NULL,              -- POSIX regex translated from the declared pattern
 			pattern TEXT,                             -- the declared NATS-style pattern, for humans
 			UNIQUE (consumer_group_id, pattern_regex) -- its index also serves the group lookup
 		);
-	`, topic.BindingConfigTable(id))
+	`, d.Datastore.Schema, topic.BindingConfigTable(id))
 	if _, err := tx.Exec(ctx, createBindingConfigSql); err != nil {
 		return err
 	}
@@ -255,16 +255,16 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// Claims never read this table; the effective set stays in binding_config rows.
 	createBindingConfigLogSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT NOT NULL REFERENCES %[1]s.consumer_group_config (id) ON DELETE CASCADE,
 			status TEXT NOT NULL,                            -- 'installed' | 'waiting'
 			patterns TEXT[] NOT NULL,                        -- the full declared set, original NATS-style; empty = whole topic
 			declared_by TEXT NOT NULL,                       -- hostname:pid:<random> of the declaring process, display only
 			declared_at TIMESTAMPTZ NOT NULL,                -- when this declarer first stated this set; constant across its retries
 			attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()  -- when this attempt ran; an installed row's declared_at -> attempted_at is the wait it ended
 		);
-	`, topic.BindingConfigLogTable(id))
+	`, d.Datastore.Schema, topic.BindingConfigLogTable(id))
 	if _, err := tx.Exec(ctx, createBindingConfigLogSql); err != nil {
 		return err
 	}
@@ -273,8 +273,8 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// scan a long wait's appended retry rows
 	createBindingLogIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_group ON %s (consumer_group_id, status, declared_by, id);
-	`, topic.BindingConfigLogTable(id), topic.BindingConfigLogTable(id))
+		CREATE INDEX IF NOT EXISTS %[2]s_group ON %[1]s.%[3]s (consumer_group_id, status, declared_by, id);
+	`, d.Datastore.Schema, topic.BindingConfigLogTable(id), topic.BindingConfigLogTable(id))
 	_, err := tx.Exec(ctx, createBindingLogIndexSql)
 	return err
 }
