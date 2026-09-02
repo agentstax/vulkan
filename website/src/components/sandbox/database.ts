@@ -249,7 +249,7 @@ export async function createVulkanDatabase(
 	const db = await PGlite.create();
 
 	onStage('creating tables');
-	for (const statement of createSystemTablesStatements) {
+	for (const statement of createSystemTablesStatements()) {
 		await db.exec(statement);
 	}
 	for (const statement of createTopicTablesStatements(demoTopicId, demoPartitionSize)) {

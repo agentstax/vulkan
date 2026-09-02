@@ -5,7 +5,7 @@ import { messageLogTable } from '../table-names';
 
 export const createTableSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
 			-- never ALTER SEQUENCE ... CACHE on this sequence: the consumer's
 			-- claim fence assumes ids are issued in INSERT order, and a cached

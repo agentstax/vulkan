@@ -6,7 +6,7 @@ import { claimLeaseTable } from './table-names';
 
 export const claimLeaseSqlTemplate = `
 		-- vulkan: messageconsumer.claimMessages
-		INSERT INTO %s (consumer_group_id, low, high, expires_at)
+		INSERT INTO %[1]s.%[2]s (consumer_group_id, low, high, expires_at)
 		VALUES (
 			$1,
 			$2,

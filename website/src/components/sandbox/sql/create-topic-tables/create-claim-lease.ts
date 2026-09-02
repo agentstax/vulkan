@@ -5,7 +5,7 @@ import { claimLeaseTable } from '../table-names';
 
 export const createClaimLeaseSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			token UUID NOT NULL DEFAULT gen_random_uuid(),
 			consumer_group_id BIGINT NOT NULL,
 			low BIGINT NOT NULL,             -- low of claimed range of lease

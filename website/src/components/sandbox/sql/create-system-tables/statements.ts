@@ -1,4 +1,5 @@
 // the statement order of createSystemTables -- one entry per Exec in the Go method
+import { interpolate } from '../interpolate';
 import { createSystemConfigSql } from './create-system-config';
 import { createTopicConfigSql } from './create-topic-config';
 import { createTopicConfigLogSql } from './create-topic-config-log';
@@ -18,7 +19,8 @@ import { createScheduleCursorSql } from './create-schedule-cursor';
 import { createScheduleCursorDueIndexSql } from './create-schedule-cursor-due-index';
 import { createMigrationLogSql } from './create-migration-log';
 
-export const createSystemTablesStatements: string[] = [
+// the raw literals, byte-exact against the Go source -- what the drift test reads
+export const createSystemTablesTemplates: string[] = [
 	createSystemConfigSql,
 	createTopicConfigSql,
 	createTopicConfigLogSql,
@@ -38,3 +40,9 @@ export const createSystemTablesStatements: string[] = [
 	createScheduleCursorDueIndexSql,
 	createMigrationLogSql,
 ];
+
+// every statement names only shared tables, so the schema is the one verb to
+// fill -- the topic side's sibling takes the topic id as well
+export function createSystemTablesStatements(): string[] {
+	return createSystemTablesTemplates.map((template) => interpolate(template));
+}

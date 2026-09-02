@@ -2,7 +2,7 @@
 // consumer_group is shared catalog schema, so the name carries no topic id
 export const registerGroupInsertSql = `
 		-- vulkan: consumergroup.registerGroup
-		INSERT INTO consumer_group_config (topic_id, name)
+		INSERT INTO %[1]s.consumer_group_config (topic_id, name)
 		VALUES ($1, $2)
 		RETURNING id, topic_id, name, created_at;
 	`;

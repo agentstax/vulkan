@@ -5,7 +5,7 @@ import { idempotencyKeyTable } from '../table-names';
 
 export const createIdempotencyKeySqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			idempotency_key UUID NOT NULL PRIMARY KEY,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);

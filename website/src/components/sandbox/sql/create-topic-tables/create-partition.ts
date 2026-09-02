@@ -5,9 +5,9 @@ import { messageLogPartitionTable, messageLogTable } from '../table-names';
 
 export const createPartitionSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s
-			PARTITION OF %s
-			FOR VALUES FROM (0) TO (%d);
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s
+			PARTITION OF %[1]s.%[3]s
+			FOR VALUES FROM (0) TO (%[4]d);
 	`;
 
 export function createPartitionSql(topicId: number, partitionSize: number): string {

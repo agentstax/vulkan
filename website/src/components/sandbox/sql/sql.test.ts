@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { createSystemTablesStatements } from './create-system-tables/statements';
+import { createSystemTablesTemplates } from './create-system-tables/statements';
 import { createTableSqlTemplate } from './create-topic-tables/create-table';
 import { createPartitionSqlTemplate } from './create-topic-tables/create-partition';
 import { createMessageKeyIndexSqlTemplate } from './create-topic-tables/create-message-key-index';
@@ -32,6 +32,7 @@ import { claimCursorSqlTemplate } from './claim-cursor';
 import { claimLeaseSqlTemplate } from './claim-lease';
 import { readMessagesSqlTemplate } from './read-messages';
 import { freeLeaseSqlTemplate } from './free-lease';
+import { interpolate } from './interpolate';
 
 const createTopicTablesTemplates = [
 	createTableSqlTemplate,
@@ -87,7 +88,7 @@ describe('embedded SQL matches the Go source byte-exact', () => {
 		[
 			'system.createSystemTables',
 			'pkg/system/controller/datastore/tables.go',
-			createSystemTablesStatements,
+			createSystemTablesTemplates,
 		],
 		[
 			'topic.createTopicTables',
@@ -139,5 +140,26 @@ describe('embedded SQL matches the Go source byte-exact', () => {
 		}
 		// count both ways: a statement added to the verb on the Go side fails here too
 		expect(goLiterals(source, owner)).toHaveLength(embedded.length);
+	});
+});
+
+describe('interpolate fills a template the way fmt.Sprintf does', () => {
+	test('verb [1] is the schema, and the caller never passes it', () => {
+		expect(interpolate('FROM %[1]s.topic_config')).toBe('FROM public.topic_config');
+	});
+
+	test('values fill [2] onward, in order, and repeat where the verb repeats', () => {
+		expect(interpolate('%[1]s.%[2]s JOIN %[1]s.%[3]s ON %[2]s.id', 'a', 'b')).toBe(
+			'public.a JOIN public.b ON a.id',
+		);
+	});
+
+	test('%d carries a number', () => {
+		expect(interpolate('TO (%[2]d)', 512)).toBe('TO (512)');
+	});
+
+	// a template whose verbs outrun its values is drift, not a rendering choice
+	test('a missing value throws rather than reaching PGlite half-filled', () => {
+		expect(() => interpolate('%[1]s.%[2]s AND %[3]s', 'only-one')).toThrow(/only 1 values/);
 	});
 });

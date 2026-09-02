@@ -5,9 +5,9 @@ import { bindingConfigLogTable } from '../table-names';
 
 export const createBindingConfigLogSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT NOT NULL REFERENCES %[1]s.consumer_group_config (id) ON DELETE CASCADE,
 			status TEXT NOT NULL,                            -- 'installed' | 'waiting'
 			patterns TEXT[] NOT NULL,                        -- the full declared set, original NATS-style; empty = whole topic
 			declared_by TEXT NOT NULL,                       -- hostname:pid:<random> of the declaring process, display only

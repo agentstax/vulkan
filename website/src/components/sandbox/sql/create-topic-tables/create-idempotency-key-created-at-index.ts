@@ -5,7 +5,7 @@ import { idempotencyKeyTable } from '../table-names';
 
 export const createIdempotencyKeyCreatedAtIndexSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_created_at ON %s (created_at);
+		CREATE INDEX IF NOT EXISTS %[2]s_created_at ON %[1]s.%[3]s (created_at);
 	`;
 
 export function createIdempotencyKeyCreatedAtIndexSql(topicId: number): string {

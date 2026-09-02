@@ -5,7 +5,7 @@ import { messageLogTable } from '../table-names';
 
 export const createMessageKeyIndexSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_message_key ON %s (message_key, id)
+		CREATE INDEX IF NOT EXISTS %[2]s_message_key ON %[1]s.%[3]s (message_key, id)
 			WHERE message_key IS NOT NULL;
 	`;
 

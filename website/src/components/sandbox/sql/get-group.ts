@@ -3,6 +3,6 @@
 export const getGroupSql = `
 		-- vulkan: consumergroup.getGroup
 		SELECT id, topic_id, name, created_at
-		FROM consumer_group_config
+		FROM %[1]s.consumer_group_config
 		WHERE topic_id = $1 AND name = $2;
 	`;

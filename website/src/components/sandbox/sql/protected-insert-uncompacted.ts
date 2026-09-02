@@ -6,12 +6,12 @@ import { idempotencyKeyTable, messageLogTable } from './table-names';
 export const protectedInsertUncompactedSqlTemplate = `
 			-- vulkan: producer.protectedInsert
 			WITH claim AS (
-				INSERT INTO %s (idempotency_key)
+				INSERT INTO %[1]s.%[2]s (idempotency_key)
 				VALUES ($1)
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key, schema_version, message_key, options)
+			INSERT INTO %[1]s.%[3]s (payload, routing_key, schema_version, message_key, options)
 			SELECT
 				$2,
 				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL

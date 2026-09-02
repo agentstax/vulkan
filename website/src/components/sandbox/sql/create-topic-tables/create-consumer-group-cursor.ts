@@ -5,9 +5,9 @@ import { consumerGroupCursorTable } from '../table-names';
 
 export const createConsumerGroupCursorSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES %[1]s.consumer_group_config (id) ON DELETE CASCADE,
 			claimed BIGINT NOT NULL DEFAULT 0,      -- the read frontier 'inflight' work
 			committed BIGINT NOT NULL DEFAULT 0,    -- every message id > committed is in an end state done / dead
 			-- the snapshot fence: claims stop at settled_head, not the raw MAX(id),

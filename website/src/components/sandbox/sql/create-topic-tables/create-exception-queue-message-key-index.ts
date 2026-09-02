@@ -5,7 +5,7 @@ import { exceptionQueueTable } from '../table-names';
 
 export const createExceptionQueueMessageKeyIndexSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_message_key ON %s (consumer_group_id, message_key, message_id);
+		CREATE INDEX IF NOT EXISTS %[2]s_message_key ON %[1]s.%[3]s (consumer_group_id, message_key, message_id);
 	`;
 
 export function createExceptionQueueMessageKeyIndexSql(topicId: number): string {

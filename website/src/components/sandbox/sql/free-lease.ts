@@ -6,7 +6,7 @@ import { claimLeaseTable } from './table-names';
 
 export const freeLeaseSqlTemplate = `
 		-- vulkan: messageconsumer.commit
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $1
 			AND token = $2;
 	`;

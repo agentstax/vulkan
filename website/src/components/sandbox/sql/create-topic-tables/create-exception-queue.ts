@@ -5,7 +5,7 @@ import { exceptionQueueTable } from '../table-names';
 
 export const createExceptionQueueSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			consumer_group_id BIGINT NOT NULL,                -- PK
 			message_id BIGINT NOT NULL,                       -- PK
 			status TEXT NOT NULL,                             -- 'ready' | 'processing' | 'inflight' | 'deferred' | 'done' | 'dead'

@@ -12,7 +12,7 @@ export const claimCursorSqlTemplate = `
 				settled_head,
 				pending_head,
 				pending_xmax
-			FROM %s
+			FROM %[1]s.%[2]s
 			WHERE consumer_group_id = $1
 			-- must FOR UPDATE, get race if using a basic snapshot read
 			-- two same-group workers racing on one cursor row (claimed=0, head=200, limit=100):
@@ -86,7 +86,7 @@ export const claimCursorSqlTemplate = `
 			FROM old_values o
 		),
 		updated AS (
-			UPDATE %s c
+			UPDATE %[1]s.%[3]s c
 			SET
 				-- advance by up to batchLimit, capped at the proven head.
 				claimed = LEAST(c.claimed + $2, gate.head),

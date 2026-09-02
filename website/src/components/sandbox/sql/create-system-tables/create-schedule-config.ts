@@ -1,10 +1,10 @@
 // verbatim from pkg/system/controller/datastore/tables.go createSystemTables -- drift-checked byte-exact
 export const createScheduleConfigSql = `
 		-- vulkan: system.createSystemTables
-		CREATE TABLE IF NOT EXISTS schedule_config (
+		CREATE TABLE IF NOT EXISTS %[1]s.schedule_config (
 			id BIGSERIAL PRIMARY KEY,
-			system_id BIGINT NOT NULL REFERENCES system_config (id) ON DELETE CASCADE,
-			topic_id BIGINT NOT NULL REFERENCES topic_config (id) ON DELETE CASCADE,  -- the target topic every produce lands on
+			system_id BIGINT NOT NULL REFERENCES %[1]s.system_config (id) ON DELETE CASCADE,
+			topic_id BIGINT NOT NULL REFERENCES %[1]s.topic_config (id) ON DELETE CASCADE,  -- the target topic every produce lands on
 			name TEXT NOT NULL UNIQUE,                       -- also the message key and routing key of every produce
 			expression TEXT NOT NULL,                        -- cron expression; UTC unless it carries TZ=
 			suspended BOOLEAN NOT NULL DEFAULT false,        -- a suspended schedule keeps its expression but never produces

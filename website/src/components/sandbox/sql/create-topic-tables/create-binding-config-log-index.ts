@@ -5,7 +5,7 @@ import { bindingConfigLogTable } from '../table-names';
 
 export const createBindingConfigLogIndexSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_group ON %s (consumer_group_id, status, declared_by, id);
+		CREATE INDEX IF NOT EXISTS %[2]s_group ON %[1]s.%[3]s (consumer_group_id, status, declared_by, id);
 	`;
 
 export function createBindingConfigLogIndexSql(topicId: number): string {

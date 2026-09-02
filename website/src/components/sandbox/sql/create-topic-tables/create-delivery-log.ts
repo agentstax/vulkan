@@ -5,7 +5,7 @@ import { deliveryLogTable } from '../table-names';
 
 export const createDeliveryLogSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL,
 			message_id BIGINT NOT NULL,

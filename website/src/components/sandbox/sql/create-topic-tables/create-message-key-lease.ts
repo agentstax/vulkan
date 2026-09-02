@@ -5,7 +5,7 @@ import { messageKeyLeaseTable } from '../table-names';
 
 export const createMessageKeyLeaseSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s (
 			consumer_group_id BIGINT NOT NULL, -- PK
 			message_key TEXT NOT NULL,         -- PK
 			lease_token UUID NOT NULL,

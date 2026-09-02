@@ -88,11 +88,21 @@ ids are per-installation serials, so the collisions are real:
    builds its qualifier from it. Note `tools/` is its own module reading
    library source as data, so `go test` caches a pass straight across
    library edits — these runs need `-count=1` to mean anything.
-6. **Sandbox mirror re-sync.** sql.test.ts compares ~30 mirrored
-   statements byte-exact against the Go source, so every mirrored
-   literal carries the same `{schema}.` bytes; `interpolate.ts` gains a
-   `{schema}` replacement so PGlite fills a stand-in (the
-   sandboxGroupLockKey pattern).
+6. ~~**Sandbox mirror re-sync.**~~ DONE. All 10 mirror cases failed
+   first, which is the drift test doing its job; 45 templates re-synced
+   byte-exact from the Go source, matched by position through the case
+   list rather than by guessing.
+   `interpolate` now reads indexed verbs and fills `%[1]s` itself with
+   PGlite's own `public`, so no call site passes a schema and all 26 stay
+   unchanged; values fill `[2]` onward. A template whose verbs outrun its
+   values throws instead of reaching PGlite half-filled.
+   `create-system-tables/statements.ts` now follows the topic side's
+   split -- `createSystemTablesTemplates` raw for the drift test,
+   `createSystemTablesStatements()` filled for the runtime -- because the
+   one array was serving both and its raw form is no longer runnable.
+   Four unit tests pin the fill contract; an off-by-one in the value
+   index fails two of them. Playwright's sandbox-boot runs are the
+   end-to-end proof: PGlite creates and queries the tables for real.
 7. **Decision record** superseding the no-qualified-SQL half of [0628],
    linked both ways.
 8. **The labs.** 242 unqualified table references across 45 files under
