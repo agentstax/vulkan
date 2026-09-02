@@ -1,4 +1,8 @@
-// the statement order of createSystemTables -- one entry per Exec in the Go method
+// the statement order of createSystemTables -- one entry per Exec in the Go
+// method. Both lists below walk that order: the templates as the Go source
+// writes them, which the drift test reads, and the statements with the schema
+// filled, which the sandbox runs. Keeping them in one file is what makes a
+// statement added to only one of them visible.
 import { interpolate } from '../interpolate';
 import { createSystemConfigSql } from './create-system-config';
 import { createTopicConfigSql } from './create-topic-config';
@@ -19,7 +23,6 @@ import { createScheduleCursorSql } from './create-schedule-cursor';
 import { createScheduleCursorDueIndexSql } from './create-schedule-cursor-due-index';
 import { createMigrationLogSql } from './create-migration-log';
 
-// the raw literals, byte-exact against the Go source -- what the drift test reads
 export const createSystemTablesTemplates: string[] = [
 	createSystemConfigSql,
 	createTopicConfigSql,

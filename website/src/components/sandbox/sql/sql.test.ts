@@ -1,23 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { createSystemTablesTemplates } from './create-system-tables/statements';
-import { createTableSqlTemplate } from './create-topic-tables/create-table';
-import { createPartitionSqlTemplate } from './create-topic-tables/create-partition';
-import { createMessageKeyIndexSqlTemplate } from './create-topic-tables/create-message-key-index';
-import { createIdempotencyKeySqlTemplate } from './create-topic-tables/create-idempotency-key';
-import { createIdempotencyKeyCreatedAtIndexSqlTemplate } from './create-topic-tables/create-idempotency-key-created-at-index';
-import { createExceptionQueueSqlTemplate } from './create-topic-tables/create-exception-queue';
-import { createExceptionQueueMessageKeyIndexSqlTemplate } from './create-topic-tables/create-exception-queue-message-key-index';
-import { createDeliveryLogSqlTemplate } from './create-topic-tables/create-delivery-log';
-import { createDeliveryLogAttemptIndexSqlTemplate } from './create-topic-tables/create-delivery-log-attempt-index';
-import { createConsumerGroupCursorSqlTemplate } from './create-topic-tables/create-consumer-group-cursor';
-import { createClaimLeaseSqlTemplate } from './create-topic-tables/create-claim-lease';
-import { createMessageKeyLeaseSqlTemplate } from './create-topic-tables/create-message-key-lease';
-import { createCompactionHeadSqlTemplate } from './create-topic-tables/create-compaction-head';
-import { createBindingConfigSqlTemplate } from './create-topic-tables/create-binding-config';
-import { createBindingConfigLogSqlTemplate } from './create-topic-tables/create-binding-config-log';
-import { createBindingConfigLogIndexSqlTemplate } from './create-topic-tables/create-binding-config-log-index';
+import {
+	createSystemTablesStatements,
+	createSystemTablesTemplates,
+} from './create-system-tables/statements';
+import {
+	createTopicTablesStatements,
+	createTopicTablesTemplates,
+} from './create-topic-tables/statements';
 import { protectedInsertCompactedSqlTemplate } from './protected-insert-compacted';
 import { protectedInsertUncompactedSqlTemplate } from './protected-insert-uncompacted';
 import { getGroupSql } from './get-group';
@@ -33,25 +24,6 @@ import { claimLeaseSqlTemplate } from './claim-lease';
 import { readMessagesSqlTemplate } from './read-messages';
 import { freeLeaseSqlTemplate } from './free-lease';
 import { interpolate } from './interpolate';
-
-const createTopicTablesTemplates = [
-	createTableSqlTemplate,
-	createPartitionSqlTemplate,
-	createMessageKeyIndexSqlTemplate,
-	createIdempotencyKeySqlTemplate,
-	createIdempotencyKeyCreatedAtIndexSqlTemplate,
-	createExceptionQueueSqlTemplate,
-	createExceptionQueueMessageKeyIndexSqlTemplate,
-	createDeliveryLogSqlTemplate,
-	createDeliveryLogAttemptIndexSqlTemplate,
-	createConsumerGroupCursorSqlTemplate,
-	createClaimLeaseSqlTemplate,
-	createMessageKeyLeaseSqlTemplate,
-	createCompactionHeadSqlTemplate,
-	createBindingConfigSqlTemplate,
-	createBindingConfigLogSqlTemplate,
-	createBindingConfigLogIndexSqlTemplate,
-];
 
 const protectedInsertTemplates = [
 	protectedInsertCompactedSqlTemplate,
@@ -161,5 +133,18 @@ describe('interpolate fills a template the way fmt.Sprintf does', () => {
 	// a template whose verbs outrun its values is drift, not a rendering choice
 	test('a missing value throws rather than reaching PGlite half-filled', () => {
 		expect(() => interpolate('%[1]s.%[2]s AND %[3]s', 'only-one')).toThrow(/only 1 values/);
+	});
+});
+
+// each statements.ts holds two lists walking one Go method: the raw templates
+// and the filled statements. Co-locating them makes a one-sided edit visible;
+// this is what makes it fail.
+describe('a statements.ts keeps its two lists in step', () => {
+	test('createSystemTables', () => {
+		expect(createSystemTablesStatements()).toHaveLength(createSystemTablesTemplates.length);
+	});
+
+	test('createTopicTables', () => {
+		expect(createTopicTablesStatements(1, 1000)).toHaveLength(createTopicTablesTemplates.length);
 	});
 });

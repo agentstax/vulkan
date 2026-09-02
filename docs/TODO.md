@@ -96,10 +96,15 @@ ids are per-installation serials, so the collisions are real:
    PGlite's own `public`, so no call site passes a schema and all 26 stay
    unchanged; values fill `[2]` onward. A template whose verbs outrun its
    values throws instead of reaching PGlite half-filled.
-   `create-system-tables/statements.ts` now follows the topic side's
-   split -- `createSystemTablesTemplates` raw for the drift test,
-   `createSystemTablesStatements()` filled for the runtime -- because the
-   one array was serving both and its raw form is no longer runnable.
+   Both `statements.ts` files now hold the same two lists side by side --
+   `*Templates` raw for the drift test, `*Statements` filled for the
+   sandbox -- because the system side's one array was serving both roles
+   and its raw form is no longer runnable. The topic side needed the same
+   move in the other direction: its raw list was assembled inside
+   sql.test.ts, so the two orderings of one Go method sat in different
+   files. sql.test.ts drops 16 imports, and a test asserts the two lists
+   in each file are the same length, so a statement added to one of them
+   fails rather than merely being visible.
    Four unit tests pin the fill contract; an off-by-one in the value
    index fails two of them. Playwright's sandbox-boot runs are the
    end-to-end proof: PGlite creates and queries the tables for real.
