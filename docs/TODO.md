@@ -58,13 +58,21 @@ ids are per-installation serials, so the collisions are real:
    out of the kind check and it passed while walking nothing. It now
    trims the `%[1]s.` qualifier first. Sabotaged both ways -- a bogus
    `system_bogus` table passed before the fix and fails after.
-4. **The nine name-as-value sites** — the class a literal walk cannot
-   see, swept by hand: 4x `to_regclass($1)` (drain x2, both partition
-   alerts), `'%s'::regclass` (janitor partition list),
-   `SELECT last_value FROM %s` (heal's sequence read), and 4x
-   `DROP TABLE IF EXISTS %s` (topic delete, drain, janitor drop, system
-   delete). The schema is prepended to the value passed in. This task
-   is the bug fix; the rest is what keeps it fixed.
+4. ~~**The name-as-value sites.**~~ DONE. Four of the nine turned out to
+   be ordinary in-literal forms task 2 had already swept -- the four
+   `DROP TABLE IF EXISTS` and the sequence read -- because `DROP TABLE`
+   and `FROM` are reference keywords the walk knows. The five genuinely
+   value-borne ones: 4x `to_regclass($1)`, where the name rides a bind
+   parameter and is now built qualified in Go, and `'%s'::regclass` in
+   the janitor's partition list, qualified inside the SQL string. Its
+   sibling `REPLACE(c.relname, '%[2]s_', '')` stays BARE on purpose --
+   `pg_class.relname` is unqualified, so the prefix it strips must be too.
+   Proved rather than asserted: schemalab section 3 now stands a whole
+   installation in public, the schema every search_path ends with, and
+   asserts an unregistered schema still reads absence. Sabotaging
+   `topic.get` back to an unqualified `FROM topic_config` leaves both
+   original assertions passing and fails the new one with
+   `got schemalab.orders` -- the cross-installation read, demonstrated.
 5. **tools/conventions.** Extend the diagnose-query table walk to
    production literals — an unqualified table reference is a test
    failure, so a missed `%[1]s.` is loud instead of silently rescued by

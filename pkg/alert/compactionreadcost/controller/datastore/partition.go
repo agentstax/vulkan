@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -22,7 +23,8 @@ func (d *CompactionReadCostDatastore) partitionCount(ctx context.Context, topicI
 		-- vulkan: compactionreadcost.partitionCount
 		SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);
 	`
+	parentTableName := fmt.Sprintf("%s.%s", d.Datastore.Schema, topic.MessageLogTable(topicId))
 	var count int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, topic.MessageLogTable(topicId)).Scan(&count)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, parentTableName).Scan(&count)
 	return count, err
 }

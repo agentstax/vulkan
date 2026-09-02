@@ -15,11 +15,11 @@ import (
 func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64) ([]int64, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.existingPartitions
-		SELECT REPLACE(c.relname, '%s_', '')::bigint AS n
+		SELECT REPLACE(c.relname, '%[2]s_', '')::bigint AS n
 		FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
-		WHERE i.inhparent = '%s'::regclass;
-	`, topic.MessageLogTable(topicId), topic.MessageLogTable(topicId))
+		WHERE i.inhparent = '%[1]s.%[3]s'::regclass;
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId), topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {

@@ -27,7 +27,7 @@ const dropPartitionBatchSize = 100
 // batch at a time so no single transaction holds more than a batch's
 // worth of lock slots, leaving the parent empty for a cheap final DROP.
 func (d *TopicDatastore) drainPartitions(ctx context.Context, topicId int64) error {
-	parentTableName := topic.MessageLogTable(topicId)
+	parentTableName := fmt.Sprintf("%s.%s", d.Datastore.Schema, topic.MessageLogTable(topicId))
 
 	countSql := `
 		-- vulkan: topic.drainPartitions

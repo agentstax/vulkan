@@ -10,7 +10,10 @@
 //     other, and destroying a topic on one leaves the other's standing
 //  3. absence -- a client pointed at a schema nobody registered reads an
 //     absence rather than the neighbouring schema's rows: Get is (nil, nil),
-//     every other verb raises ErrTopicNotFound
+//     every other verb raises ErrTopicNotFound. Holds with a whole
+//     installation standing in public, the schema every search_path ends
+//     with -- vulkan's SQL names its own schema, so there is nothing to
+//     fall through to
 //  4. locks -- a register held up on one schema does not hold up the same
 //     register on the other, and every key carries vulkan's namespace
 package main
@@ -159,6 +162,29 @@ func run() (err error) {
 		die(fmt.Sprintf("every verb but Get should raise absence, got %v", err))
 	}
 	fmt.Println("   ✅ every other verb raises ErrTopicNotFound rather than reading a neighbour")
+
+	// public is the one schema every search_path ends with, so an installation
+	// there is what an unqualified statement falls through to. What keeps the
+	// reads above absences is that vulkan's SQL names its own schema -- not
+	// that public happens to be empty.
+	publicClient, publicDs := openClient(ctx, "public", shared)
+	defer publicDs.Close()
+	must(publicClient.RegisterSystem(ctx, nil))
+	defer func() { must(publicClient.System().Destroy(ctx, &vulkan.DestroyOptions{Force: true})) }()
+	_, err = publicClient.RegisterTopic(ctx, sharedName, nil)
+	must(err)
+
+	found, err = empty.Topic(sharedName).Get(ctx)
+	must(err)
+	if found != nil {
+		die("a full installation in public must not become the empty schema's answer, got " + found.Name)
+	}
+	fmt.Println("   ✅ with a whole installation standing in public, Get is still the absence")
+
+	if _, err := empty.Topic(sharedName).Health(ctx); !errors.Is(err, topic.ErrTopicNotFound) {
+		die(fmt.Sprintf("every verb but Get should still raise absence, got %v", err))
+	}
+	fmt.Println("   ✅ ...and every other verb still raises ErrTopicNotFound")
 
 	fmt.Println("\n=== 4. locks ===")
 
