@@ -59,7 +59,7 @@ the head instead of at 0:
 
 ```sql
 SELECT consumer_group_id, claimed, committed, settled_head
-FROM consumer_group_cursor_1;
+FROM vulkan.consumer_group_cursor_1;
 --  consumer_group_id | claimed | committed | settled_head
 --  7                 | 1204318 | 1204318   | 1204318
 ```
@@ -114,7 +114,7 @@ position column instead of the default `0`:
 ```sql
 INSERT INTO consumer_group_cursor_1 (consumer_group_id, claimed, committed, settled_head)
 SELECT $1, head, head, head
-FROM (SELECT COALESCE(MAX(id), 0) AS head FROM message_log_1) AS log;
+FROM (SELECT COALESCE(MAX(id), 0) AS head FROM vulkan.message_log_1) AS log;
 ```
 
 `settled_head` is the fresh-claim fence's "nothing uncommitted at or

@@ -3,8 +3,8 @@
 // Video transcoding: most jobs finish in a minute, some take an hour. The
 // handler cannot know up front.
 //
-// Concepts held before domain code (11): the consume set from scenario 03,
-// plus MessageOptions.Timeout, MessageMax, the producer-side per-message
+// Concepts held before domain code (12): the 7 from scenario 03, plus
+// MessageOptions.Timeout, MessageMax, the producer-side per-message
 // Timeout request, the lease = Timeout + grace + margins formula, and the
 // ctx.Done() contract inside the handler.
 //

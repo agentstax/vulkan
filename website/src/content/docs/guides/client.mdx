@@ -1,6 +1,6 @@
 ---
 title: The Client
-description: The proposed shape of the whole API — one client over your datastore, resources registered on it or named from it as handles, verbs on the handle they act on.
+description: The shape of the whole API — one client over your datastore, resources registered on it or named from it as handles, verbs on the handle they act on.
 ---
 
 import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
@@ -8,19 +8,12 @@ import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 One client wraps the datastore and holds the ambient config. Every
 resource is either registered on it (`RegisterConsumer`,
 `RegisterTopic`) or named from it as a handle (`client.Topic("orders")`),
-and the verbs live on the thing they act on. Today the same program
-needs `NewConsumer`, `NewProducer`, `NewScheduler`, `NewMessageAdmin`,
-and `NewSystemManager`, each with its own config carrying its own
-`Logger` and `Retry`; this page collapses those into `vulkan.NewClient`.
-
-<ThreadAside label="PROPOSED" title="This page is the spec">
-Nothing on this page is shipped API. Every sample is what the code
-would look like once built; the mapping table near the end says where
-each shipped verb goes. The group-config half of it, what is stored and
-how instances read it back, has its own page:
+and the verbs live on the thing they act on. Before it, the same
+program needed `NewConsumer`, `NewProducer`, `NewScheduler`,
+`NewMessageAdmin`, and `NewSystemManager`, each with its own config
+carrying its own `Logger` and `Retry`. The group-config half of this,
+what is stored and how instances read it back, has its own page:
 [consumer group config](/guides/consumer-group-config/).
-
-</ThreadAside>
 
 ## Two grammars
 
@@ -35,7 +28,6 @@ coming from any of them has nothing new to learn here.
 ## Connect
 
 ```go
-// PROPOSED — not shipped API.
 ctx, stop := vulkan.LifecycleContext(nil)
 defer stop()
 
@@ -60,23 +52,52 @@ The client wraps `ds`, it does not connect. The pool stays yours:
 that opened the pool closes it. `ClientConfig` is the ambient set held
 once: `Logger`, `Retry` (the client's own Postgres retry curve, never a
 message's), and `AllowDestroy`. Every config below inherits them and so
-none of them carries a `Logger` or `Retry` field. That also removes the
-worst trap on today's `ConsumerConfig`: `Retry` next to `Message.Retry`,
+none of them carries a `Logger` or `Retry` field. That removed the
+worst trap on the old `ConsumerConfig`: `Retry` next to `Message.Retry`,
 both `*RetryPolicy`, one for the datastore and one for redelivery.
 
 A first program imports `datastore` and `vulkan`. Every type a user
 spells lives in `vulkan`: `ConsumerConfig`, `ConsumeOptions`,
 `ProducerConfig`, `ProduceOptions`, `ScheduleSpec`, `ScheduleConfig`,
 `TopicConfig`, `DestroyOptions`, `MessageOptions`, `RetryPolicy`, `Tx`,
-`MetaFromContext`, `Terminal`, `Delay`. Today a consumer's first program
-imports `topiccontroller` for `TopicConfig` and `schedulecontroller`
-for `ScheduleConfig`; "controller" is the library's word for its
+`MetaFromContext`, `Terminal`, `Delay`. A consumer's first program used to import
+`topiccontroller` for `TopicConfig` and `schedulecontroller` for
+`ScheduleConfig`; "controller" is the library's word for its
 persistence layer and a user should never have to type it.
+
+## The schema
+
+Vulkan's tables live in one Postgres schema, `vulkan` unless you say
+otherwise:
+
+```go
+ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
+	&datastore.PostgresConnectionConfig{Pass: "example_password", Schema: "payments"})
+```
+
+One schema is one installation. Two clients on two schemas in the same
+database each get their own catalog, their own topics, their own
+sequences, and neither can read the other's rows — `orders` registers
+in both and they are different topics. `RegisterSystem` creates the
+schema if it is missing, which needs CREATE on the database; without
+that you get [VK0064](/errors/VK0064/), and the fix is to create the
+schema yourself and grant the role USAGE and CREATE on it.
+
+The pool sets `search_path` to `<schema>, public`. Vulkan's name leads
+so its own tables win a name collision and `CREATE TABLE` lands there.
+`public` trails for `InTransaction`: your closure runs on vulkan's
+pool, and without `public` on the path your own tables would be
+invisible inside it. Tables anywhere else need qualifying in that
+closure.
+
+The diagnose queries on every error page carry a `{schema}` placeholder
+for the same reason. Paste one into psql with a `public` search_path and
+an unqualified `message_log_4` resolves to nothing, which reads as the
+row being gone rather than the query looking in the wrong place.
 
 ## Consume
 
 ```go
-// PROPOSED — not shipped API.
 payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested",
 	&vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
@@ -104,37 +125,34 @@ changes. Which field goes where, and what happens when two replicas
 disagree, is the
 [group config page](/guides/consumer-group-config/).
 
-## What a declaration reports
+## What a declaration does
 
-Newest-wins on every restart is right for a rolling deploy and wrong
-for two services that both think they own `charge-cards`; they overwrite
-each other forever, visibly in the log, and a log line is not an API.
-So the instance says what its declaration did, the same way bindings
-already report installed / joined / waiting:
+Newest wins, every time. A differing declaration overwrites the stored
+document and logs [VK0059](/errors/VK0059/) naming the change as
+`old -> new`; an identical one writes nothing. `Start` and `Bindings`
+keep their own rules: read once at creation, and install / wait.
 
-```go
-// PROPOSED — not shipped API.
-switch payments.Declaration {
-case vulkan.DeclarationCreated: // first declaration, the row was created
-case vulkan.DeclarationJoined:  // stored document equal, nothing written
-case vulkan.DeclarationUpdated: // stored document differed, overwritten
-}
-```
+That is right for a rolling deploy and wrong for two services that both
+think they own `charge-cards` — they overwrite each other forever, and
+the tell is the same VK0059 line on every restart of either one. One
+declaring service per group is a convention, not a constraint.
 
-There is no strict form. A differing declaration always overwrites,
-and the overwrite is the [VK0059](/errors/VK0059/) warn naming the
-change as `old -> new`. A refusing form was built and reverted: a
+There is no strict form. A refusing one was built and reverted: a
 service that refuses a differing config can never have its config
-changed without redeploying it as accepting first, and nobody wants
-that dance. One declaring service per group is a convention the log
-makes visible, and the same line on every restart is the tell.
-`Start` and `Bindings` keep their own rules: read once at creation,
-and install / wait.
+changed without first redeploying it as accepting, and nobody wants
+that dance.
+
+<ThreadAside label="PROPOSED" title="Reading the outcome back">
+The log makes an overwrite visible and a log line is not an API, so a
+typed instance would say what its own declaration did — created, joined,
+or updated, the way bindings already report installed / joined /
+waiting. Not built.
+
+</ThreadAside>
 
 ## Produce
 
 ```go
-// PROPOSED — not shipped API.
 requests, err := client.RegisterProducer[PaymentRequestedV1](ctx, "payments.requested",
 	&vulkan.ProducerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
@@ -159,7 +177,6 @@ A schedule is a declaration that returns its handle, and the handle is
 what you run, the same three calls as a consumer or a producer.
 
 ```go
-// PROPOSED — not shipped API.
 nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx,
 	vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
 	&ReportRequestedV1{Kind: "nightly"}, &vulkan.ScheduleConfig{
@@ -193,8 +210,8 @@ stops being caught. `name` and `topic` transposed registers a schedule
 named `reports.requested` that produces onto a topic called
 `nightly-report`, with no error at any point until someone asks why
 nothing arrived. Two strings (`group, topic` on the consumer) stay
-positional. `nightly.Declaration` reports created / joined / updated
-like the consumer's.
+positional. A schedule's redeclaration warns
+[VK0062](/errors/VK0062/), the consumer's sibling.
 
 ## Handles
 
@@ -203,10 +220,9 @@ a name plus the client, and every verb on it resolves the name when
 called:
 
 ```go
-// PROPOSED — not shipped API.
 orders := client.Topic("payments.requested")
 data, err := orders.Get(ctx) // *vulkan.TopicData; (nil, nil) when not registered
-err = orders.Rename(ctx, "payments.card-requested")
+renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // vulkan.ErrTopicNotFound if it is gone
 ```
 
@@ -235,7 +251,6 @@ Every block reads the same way: list the collection, name one, read
 it, act on it.
 
 ```go
-// PROPOSED — not shipped API.
 // topics
 topics, err := client.ListTopics(ctx)
 orders := client.Topic("payments.requested")
@@ -250,10 +265,10 @@ if data == nil {
 err = orders.Migrate(ctx, 3)
 health, err := orders.Health(ctx)
 snapshot, err := orders.Metrics(ctx)
-err = orders.Rename(ctx, "payments.card-requested")
+renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // refused unless ClientConfig.AllowDestroy
-current, err := orders.CompactionHead(ctx, "device-7")
-versions, err := orders.ListKeyMessages(ctx, "device-7", 20)
+current, err := orders.CompactionHead[ReadingV1](ctx, "device-7")
+versions, err := orders.ListKeyMessages[ReadingV1](ctx, "device-7", 20)
 
 // groups hang off their topic
 groups, err := orders.ListGroups(ctx)
@@ -291,14 +306,16 @@ at all), and a reader knows the return is a slice before reading the
 signature. A read that returns a report keeps its own name: `Health`,
 `Metrics`, `Status`.
 
-The key read moves onto the topic. Today a compaction head is read
-inside a transaction on the producer instance and outside one on a
-separate `CompactionController` keyed by topic id, two objects for one
-fact; `orders.CompactionHead` and `orders.ListKeyMessages` put the read
-beside the topic that holds the row.
+The key read sits on the topic. It used to be read inside a transaction
+on the producer instance and outside one on a separate
+`CompactionController` keyed by topic id, two objects for one fact;
+`orders.CompactionHead` and `orders.ListKeyMessages` put the read beside
+the topic that holds the row. Both carry the message type, because both
+decode a stored payload.
 
-The system is a singleton today and a handle anyway. The day it gains
-a name the API grows by one parameter: `client.RegisterSystem(ctx,
+The system is a singleton and a handle anyway — one schema is one
+installation, so there is only ever one row to name. The day that
+changes the API grows by one parameter: `client.RegisterSystem(ctx,
 name, cfg)`, `client.System(name)`, topics nesting under it as
 `client.System(name).Topic(name)` the way groups nest under topics, and
 `client.Topic(name)` staying as the default system's shortcut. The
@@ -306,9 +323,9 @@ verbs that span a system's resources (`ListTopics`, `MigrateTopics`,
 `ListBindingDeclarations`, `RunManager`) move with it that day; until then
 they sit on the client.
 
-## Where the shipped verbs go
+## Where the old verbs went
 
-| today (`MessageAdmin`) | proposed |
+| before (`MessageAdmin`) | now |
 | --- | --- |
 | `RegisterTopic` | `client.RegisterTopic`, returns `*vulkan.TopicData` |
 | `GetTopic` | `client.Topic(name).Get(ctx)` |
@@ -337,14 +354,13 @@ they sit on the client.
 ## The manager
 
 ```go
-// PROPOSED — not shipped API.
 return client.RunManager(ctx)
 ```
 
 The client holds the one `SystemManager`, so the refuse-a-second-Run
-permit survives: today every `Schedule` call builds a fresh manager and
-two calls in one process run two rival reconcile loops; under the
-client the second is refused.
+permit holds: a `Schedule` call used to build a fresh manager, and two
+calls in one process ran two rival reconcile loops. Under the client the
+second is refused.
 
 Nothing else on this page runs workers or stops running them. A
 `Consume` already runs the fleet-wide workers beside its group's own
@@ -386,37 +402,47 @@ live and says nothing; a longer gap logs one line and clears itself.
 
 ## Testing your code
 
-Handles are the seam. The package publishes a narrow interface for each
-typed instance a handler or service holds, `vulkan.Producer[T]`
-(`Produce`, `ProduceFunc`, `ProduceInTx`) and `vulkan.Consumer[T]`
-(`Consume`), satisfied by the concrete instances, so a unit test
-injects a fake and never opens a pool. For everything that needs the
-real library, `vulkantest.NewClient(t)` runs it against an ephemeral
-schema on the developer's Postgres and drops it at cleanup. The client
-itself stays concrete; a test that wants to fake the whole client
-defines the subset it uses.
+Handles are the seam. The package publishes one interface per typed
+instance, satisfied by the concrete instance the client returns, so a
+unit test injects a fake and never opens a pool:
+
+- `vulkan.Producer[T]` — `Produce`, `ProduceBatch`, `ProduceFunc`,
+  `ProduceInTx`, `GetCompactionHeadInTx`
+- `vulkan.Consumer[T]` — `Consume`
+
+Each one is the instance's whole public surface, not a curated subset.
+A subset is a second definition of what a producer is, and anyone who
+batches would write their own interface anyway. The client itself stays
+concrete; a test that wants to fake the whole client defines the subset
+it uses.
+
+<ThreadAside label="PROPOSED" title="A test helper">
+A `vulkantest.NewClient(t)` that stands up the real library against an
+ephemeral database and drops it at cleanup. Ephemeral database, not
+schema: advisory locks are database-scoped, so two tests sharing a
+database would serialize on each other. Not built.
+
+</ThreadAside>
 
 ## Names
 
 The handle is the bare noun and the row a user reads takes `Data`:
 `vulkan.Topic` is what you act on, `vulkan.TopicData` is what `Get`
-returns. The read-models rename in one sweep (`topic.Topic` ->
+returns. The read-models renamed in one sweep (`topic.Topic` ->
 `vulkan.TopicData`, `schedule.Schedule` -> `vulkan.ScheduleData`,
 `worker.Worker` -> `vulkan.WorkerData`, `producer.MessageRow[T]` ->
 `vulkan.MessageData[T]`), all or nothing, since a half-sweep leaves two
-grammars. JSON is unaffected; the wire names live in field tags. A
-typed instance exposes the row its declaration resolved as
-`Registered` and its outcome as `Declaration`.
+grammars. JSON is unaffected; the wire names live in field tags.
 
-`Data` is the user's suffix, so the library's own layers give it up.
-Today `*Data` names the table-exact scan structs in every datastore
-package (`datastore.TopicData`, 63 of them); those become `*Row`,
+`Data` is the user's suffix, so the library's own layers gave it up.
+`*Data` used to name the table-exact scan structs in every datastore
+package (`datastore.TopicData`, 63 of them); those are now `*Row`,
 named for the table they scan: `TopicConfigRow`, `WorkerConfigRow`,
-`ScheduleConfigRow`. A scan destination is a row and its name now says
-which table's, and `MessageRow` moving to `MessageData` is what frees
+`ScheduleConfigRow`. A scan destination is a row and its name says
+which table's, and `MessageRow` moving to `MessageData` is what freed
 the suffix. `Info` was the first draft and was dropped: it is
 JetStream's word, and a user reading `TopicData` needs no second
-library to know what it is. The cost is a rename across every
+library to know what it is. The cost was a rename across every
 datastore package for the users' sake, compile-time only.
 
 ## Worked case
@@ -435,8 +461,8 @@ deliberately and the row shows it:
 
 ```sql
 SELECT w.name, w.metadata
-FROM worker_config w
-JOIN consumer_group_config g ON g.id = w.consumer_group_id
+FROM vulkan.worker_config w
+JOIN vulkan.consumer_group_config g ON g.id = w.consumer_group_id
 WHERE g.name = 'charge-cards';
 --  name             | metadata
 --  message_consumer | {"message": {"timeout": "10s", "retry": {"max_retries": 5}}, ...}
@@ -445,7 +471,6 @@ WHERE g.name = 'charge-cards';
 An operator checking the group from a script needs one round trip:
 
 ```go
-// PROPOSED — not shipped API.
 data, err := client.Topic("payments.requested").Group("charge-cards").Get(ctx)
 ```
 
@@ -453,9 +478,6 @@ data, err := client.Topic("payments.requested").Group("charge-cards").Get(ctx)
 
 - `GetSchedule`-style sugar returning a handle with its row, for
   scripts. Left out; see the handles section.
-- The `Data` sweep is compile-time only but touches every read-model
-  reference in the library, labs, and this site's samples, and every
-  datastore scan struct on its way to `*Row`.
-- `vulkan` becomes a large package: every config, options, spec,
-  error, and read-model a user can name. That is the point of it, and
-  also the cost.
+- `vulkan` is a large package: every config, options, spec, error, and
+  read-model a user can name. That is the point of it, and also the
+  cost.

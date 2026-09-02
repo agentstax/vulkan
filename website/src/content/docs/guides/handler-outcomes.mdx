@@ -136,8 +136,8 @@ never inflates the next retry's wait.
 ```sql
 -- what is waiting on the handler's own say-so, and for how long
 SELECT d.message_id, d.attempts, d.delays, d.can_run_after - now() AS runs_in
-FROM exception_queue_1 d
-JOIN consumer_group_config g ON g.id = d.consumer_group_id
+FROM vulkan.exception_queue_1 d
+JOIN vulkan.consumer_group_config g ON g.id = d.consumer_group_id
 WHERE g.name = 'charge-cards' AND d.status = 'ready' AND d.delays > 0
 ORDER BY d.can_run_after;
 ```
@@ -145,7 +145,7 @@ ORDER BY d.can_run_after;
 ```sql
 -- one message's history: failures, delays, and the dead row if any
 SELECT attempt, status, error, attempted_at
-FROM delivery_log_1
+FROM vulkan.delivery_log_1
 WHERE message_id = 44
 ORDER BY attempt;
 ```

@@ -4,9 +4,9 @@
 // produces and the topic it produces to, consume that topic like any
 // other.
 //
-// Concepts held before domain code (7): the consume set from scenario 03,
-// plus Scheduler, its Register and Schedule, ScheduleConfig,
-// vulkan.MetaFromContext for the scheduled time, and the fact that
+// Concepts held before domain code (12): the 7 from scenario 03, plus
+// RegisterSchedule[T], ScheduleSpec, the Schedule handle and its Schedule
+// verb, vulkan.MetaFromContext for the scheduled time, and the fact that
 // Schedule runs the system manager.
 //
 // Traps hit:

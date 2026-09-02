@@ -110,7 +110,7 @@ transaction with the `schedule_cursor` advance:
 
 ```sql
 SELECT id, name, topic_id, expression, payload, schema_version
-FROM schedule_config;
+FROM vulkan.schedule_config;
 --  id | name             | topic_id | expression | payload          | schema_version
 --  3  | invoices.nightly | 4        | 0 2 * * *  | {"region":"eu"}  | 1
 ```
@@ -120,7 +120,7 @@ At `02:00 UTC` the schedule producer claims the row, produces onto
 
 ```sql
 SELECT id, routing_key, message_key, schema_version, payload
-FROM message_log_4
+FROM vulkan.message_log_4
 ORDER BY id DESC LIMIT 1;
 --  id     | routing_key | message_key      | schema_version | payload
 --  88012  |             | invoices.nightly | 1              | {"region":"eu"}

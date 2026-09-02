@@ -113,9 +113,9 @@ payload still joined to the log, the attempt count, and the final error:
 
 ```sql
 SELECT m.payload, d.attempts, d.last_error, d.updated_at
-FROM exception_queue_1 d
-JOIN message_log_1 m ON m.id = d.message_id
-JOIN consumer_group_config g ON g.id = d.consumer_group_id
+FROM vulkan.exception_queue_1 d
+JOIN vulkan.message_log_1 m ON m.id = d.message_id
+JOIN vulkan.consumer_group_config g ON g.id = d.consumer_group_id
 WHERE g.name = 'fraud-screening' AND d.status = 'dead'
 ORDER BY d.updated_at DESC;
 ```

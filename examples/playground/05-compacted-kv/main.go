@@ -4,25 +4,24 @@
 // current value, write a new one, and increment a counter safely under
 // concurrent writers (read-modify-write).
 //
-// Concepts held before domain code (12): the produce set from scenario 01,
-// plus MessageKey, CompactionOptions (+NewCompactionOptions), Rank,
-// InTransaction, GetCompactionHeadInTx, ProduceInTx, MessageData, and for
-// reads outside a transaction the separate CompactionController with a
-// topic id.
+// Concepts held before domain code (13): the 5 from scenario 01, plus
+// MessageKey, CompactionOptions (+NewCompactionOptions), Rank,
+// InTransaction, GetCompactionHeadInTx, ProduceInTx, MessageData, and the
+// Topic handle for reads outside a transaction.
 //
 // Traps hit:
 //   - "Compacted" is a per-message option, not a topic property: every
 //     produce must pass Compaction or the message silently is not one
 //     version of the key -- it is its own message forever.
-//   - Get-by-key outside a transaction is on a different object
-//     (compaction controller, keyed by topic id, not name) from the
-//     producer that writes. Get-by-key inside a transaction is on the
-//     producer. Two homes for one read.
+//   - Get-by-key outside a transaction is on the topic handle
+//     (Topic.CompactionHead) and inside one is on the producer
+//     (GetCompactionHeadInTx). Two homes for one read, though both now
+//     take the topic by name.
 //   - CAS exists only as a pattern: InTransaction + GetCompactionHeadInTx
 //     (FOR UPDATE) + ProduceInTx. Nothing named Update/Put says so.
 //     JetStream KV: Get -> revision; Update(key, value, revision).
-//   - History (the key's prior versions) is ListKeyMessages on the
-//     controller -- a third verb, third name.
+//   - History (the key's prior versions) is Topic.ListKeyMessages -- a
+//     third verb, third name.
 //   - Rank is a commitment, not a hint; the zero value (arrival order) is
 //     what most users want and NewCompactionOptions(0) reads like "no rank".
 package main

@@ -21,15 +21,15 @@ dead-letter queue needs provisioning per consumer.
 ## Triage with the tools you already have
 
 Each topic's tables are named by its id — resolve it once
-(`SELECT id FROM topic_config WHERE name = '...'`; say it returned `1`):
+(`SELECT id FROM vulkan.topic_config WHERE name = '...'`; say it returned `1`):
 
 ```sql
 -- What's dying, and why? Group by error to find the pattern.
 SELECT d.last_error, count(*),
        min(m.created_at) AS first_seen, max(m.created_at) AS last_seen
-FROM exception_queue_1 d
-JOIN message_log_1 m ON m.id = d.message_id
-JOIN consumer_group_config g ON g.id = d.consumer_group_id
+FROM vulkan.exception_queue_1 d
+JOIN vulkan.message_log_1 m ON m.id = d.message_id
+JOIN vulkan.consumer_group_config g ON g.id = d.consumer_group_id
 WHERE g.name = 'fraud-screening' AND d.status = 'dead'
 GROUP BY 1 ORDER BY 2 DESC;
 ```
@@ -38,9 +38,9 @@ GROUP BY 1 ORDER BY 2 DESC;
 -- Inspect one casualty in full, with its per-attempt history.
 SELECT m.payload, d.attempts, d.last_error,
        l.attempt, l.status, l.error, l.attempted_at
-FROM exception_queue_1 d
-JOIN message_log_1 m ON m.id = d.message_id
-LEFT JOIN delivery_log_1 l ON (l.consumer_group_id, l.message_id) = (d.consumer_group_id, d.message_id)
+FROM vulkan.exception_queue_1 d
+JOIN vulkan.message_log_1 m ON m.id = d.message_id
+LEFT JOIN vulkan.delivery_log_1 l ON (l.consumer_group_id, l.message_id) = (d.consumer_group_id, d.message_id)
 WHERE d.status = 'dead'
 ORDER BY d.updated_at DESC, l.attempt;
 ```

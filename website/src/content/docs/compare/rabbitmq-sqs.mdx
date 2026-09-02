@@ -58,9 +58,9 @@ order ord_8431, everywhere?" is a query (tables are named by topic id —
 
 ```sql
 SELECT g.name AS consumer_group, d.status, d.attempts, d.last_error
-FROM message_log_1 m
-JOIN exception_queue_1 d ON d.message_id = m.id
-JOIN consumer_group_config g ON g.id = d.consumer_group_id
+FROM vulkan.message_log_1 m
+JOIN vulkan.exception_queue_1 d ON d.message_id = m.id
+JOIN vulkan.consumer_group_config g ON g.id = d.consumer_group_id
 WHERE m.payload->>'order_id' = 'ord_8431';
 ```
 

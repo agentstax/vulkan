@@ -61,7 +61,7 @@ claimable the same way.
 
 ```sql
 SELECT message_id, message_key, status, attempts, can_run_after
-FROM exception_queue_1
+FROM vulkan.exception_queue_1
 WHERE consumer_group_id = 7 AND message_key = 'acct-42'
 ORDER BY message_id;
 --  message_id | message_key | status   | attempts | can_run_after

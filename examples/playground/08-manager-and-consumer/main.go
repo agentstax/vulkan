@@ -4,18 +4,18 @@
 // consumes and also keeps the system's upkeep running, without a separate
 // `vulkan manager run` process.
 //
-// Concepts held before domain code (9): the consume set from scenario 03,
-// plus SystemManager, its Run, errgroup/goroutine wiring, and the
-// knowledge that a consumer already runs its own topic's upkeep so the
-// manager is for everything else.
+// Concepts held before domain code (10): the 7 from scenario 03, plus
+// client.RunManager, errgroup/goroutine wiring, and the knowledge that a
+// consumer already runs its own topic's upkeep so the manager is for
+// everything else.
 //
 // Traps hit:
 //   - Two long-running Run/Consume calls, two goroutines, one lifecycle
 //     ctx: the composition is on the user (errgroup is the honest answer
 //     and is not in the library's examples).
 //   - What the manager covers versus what the consumer covers is not
-//     discoverable from the API -- the quickstart's CAUTION aside is the
-//     only place it is written.
+//     discoverable from the API -- the quickstart's CAUTION aside and the
+//     client guide's manager section are where it is written.
 //   - The manager needs the control-plane tables to exist but registers
 //     no topic itself -- it assumes some producer's RegisterTopic (or
 //     RegisterSystem) already ran.

@@ -10,7 +10,7 @@
 //   - Start is read once, when Register creates the group's cursor row. A
 //     group that already exists keeps its position; changing Start later
 //     changes nothing and nothing says so. Kafka's auto.offset.reset has
-//     the same rule -- moving an existing group is RewindGroup, PROPOSED.
+//     the same rule -- moving an existing group is Group.Rewind, PROPOSED.
 package main
 
 import (

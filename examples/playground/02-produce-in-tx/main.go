@@ -3,7 +3,7 @@
 // Insert the order row and the OrderPlaced message atomically; then the
 // multi-topic form where the caller owns the transaction.
 //
-// Concepts held before domain code (9): the 6 from scenario 01, plus
+// Concepts held before domain code (8): the 5 from scenario 01, plus
 // ProducerFunc, vulkan.Tx, InTransaction / ProduceInTx.
 //
 // Traps hit:

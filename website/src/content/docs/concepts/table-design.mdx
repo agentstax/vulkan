@@ -3,7 +3,7 @@ title: Table Design
 description: Every Vulkan table on one page — the shared control plane, the per-topic family, and the relationships and deliberate absences between them.
 ---
 
-Every Vulkan table is one of two kinds: shared control-plane schema,
+Every Vulkan table is one of two kinds: a shared control-plane table,
 created once by `RegisterSystem` (the first `RegisterTopic` runs it), or
 a member of one topic's family,
 created by `RegisterTopic` and named by the topic's id. The

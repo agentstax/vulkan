@@ -111,10 +111,10 @@ workaround (send-after-commit hooks, with their own failure window).
    that id; say it returned `1`):
 
    ```sql
-   SELECT id FROM topic_config WHERE name = 'orders.created';
+   SELECT id FROM vulkan.topic_config WHERE name = 'orders.created';
 
    SELECT count(*) FROM orders;        -- 0
-   SELECT count(*) FROM message_log_1; -- 0
+   SELECT count(*) FROM vulkan.message_log_1; -- 0
    ```
 
 3. Run it again returning the payload instead of the error: both rows

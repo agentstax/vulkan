@@ -64,8 +64,8 @@ trails the head of the log:
 
 ```sql
 SELECT g.name AS consumer_group, c.claimed, c.committed,
-       (SELECT max(id) FROM message_log_1) - c.committed AS backlog
-FROM consumer_group_cursor_1 c JOIN consumer_group_config g ON g.id = c.consumer_group_id;
+       (SELECT max(id) FROM vulkan.message_log_1) - c.committed AS backlog
+FROM vulkan.consumer_group_cursor_1 c JOIN vulkan.consumer_group_config g ON g.id = c.consumer_group_id;
 ```
 
 The same numbers ship as metrics — head, claimed, committed, backlog,
@@ -80,7 +80,7 @@ an under-provisioned fleet, a
 Retention is per-topic config, set at registration:
 
 ```go
-registered, err := messageAdmin.RegisterTopic(ctx, "orders",
+registered, err := client.RegisterTopic(ctx, "orders",
 	&vulkan.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
 ```
 

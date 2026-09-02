@@ -100,7 +100,7 @@ translation it matches with sits beside it as `pattern_regex`:
 
 ```sql
 SELECT g.name AS consumer_group, b.pattern
-FROM binding_config_1 b JOIN consumer_group_config g ON g.id = b.consumer_group_id
+FROM vulkan.binding_config_1 b JOIN vulkan.consumer_group_config g ON g.id = b.consumer_group_id
 ORDER BY 1;
 ```
 

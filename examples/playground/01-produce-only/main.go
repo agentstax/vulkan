@@ -8,10 +8,12 @@
 //
 // Traps hit:
 //   - Nothing here runs topic upkeep (partition create-ahead, retention).
-//     A deployment of only this binary silently accumulates until someone
-//     runs `vulkan manager run`. No log line says so.
-//   - RegisterTopic accepts nil cfg (verified) -- the quickstart's
-//     &topiccontroller.TopicConfig{} and its import are unnecessary.
+//     A deployment of only this binary accumulates until someone runs
+//     `vulkan manager run`. RegisterProducer now warns VK0063 naming the
+//     unclaimed topic_janitor, so it is no longer silent -- but the warn
+//     is the only thing that says so, and it is not an error.
+//   - RegisterTopic accepts nil cfg (verified) -- the quickstart passes
+//     &vulkan.TopicConfig{} for nothing.
 package main
 
 import (

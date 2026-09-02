@@ -32,7 +32,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    The CLI is a separate module, so cobra and friends never enter your
    application's dependency graph.
 
-2. **Create the control-plane schema**
+2. **Create the control-plane tables**
 
    ```sh
    export VULKAN_ADMIN_DATABASE_URL='postgres://app_user:secret@localhost:5432/app_db'
@@ -190,13 +190,15 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
 5. **Look inside with psql**
 
-   Everything is rows in your database. Each topic owns its physical
-   tables, named by the topic's id
+   Everything is rows in your database. The tables live in the `vulkan`
+   schema unless you set another one
+   ([the schema](/guides/client/#the-schema)), and each topic owns its
+   physical tables, named by the topic's id
    ([the whole map](/concepts/table-design/)) — resolve it once from
    the catalog:
 
    ```sql
-   SELECT id FROM topic_config WHERE name = 'signup.welcome-email';
+   SELECT id FROM vulkan.topic_config WHERE name = 'signup.welcome-email';
    ```
 
    Say it returned `1`. Then (make your handler return an error and
@@ -205,14 +207,14 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    **Your messages**
 
    ```sql
-   SELECT id, payload, created_at FROM message_log_1 ORDER BY id;
+   SELECT id, payload, created_at FROM vulkan.message_log_1 ORDER BY id;
    ```
 
    **Delivery status**
 
    ```sql
    SELECT g.name AS consumer_group, d.status, count(*), max(d.attempts) AS attempts
-   FROM exception_queue_1 d JOIN consumer_group_config g ON g.id = d.consumer_group_id
+   FROM vulkan.exception_queue_1 d JOIN vulkan.consumer_group_config g ON g.id = d.consumer_group_id
    GROUP BY 1, 2;
    ```
 
@@ -220,7 +222,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    ```sql
    SELECT d.message_id, m.payload, d.attempts, d.last_error
-   FROM exception_queue_1 d JOIN message_log_1 m ON m.id = d.message_id
+   FROM vulkan.exception_queue_1 d JOIN vulkan.message_log_1 m ON m.id = d.message_id
    WHERE d.status = 'dead';
    ```
 
@@ -228,7 +230,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    ```sql
    SELECT message_id, attempt, status, error, attempted_at
-   FROM delivery_log_1 ORDER BY message_id, attempt;
+   FROM vulkan.delivery_log_1 ORDER BY message_id, attempt;
    ```
 
    Watch `attempts` climb and `can_run_after` push into the future with
