@@ -34,7 +34,7 @@ SELECT
 	status,
 	attempts,
 	updated_at
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 ORDER BY updated_at DESC
 LIMIT 20;`),
@@ -45,6 +45,6 @@ SELECT
 	high,
 	expires_at,
 	reclaims
-FROM claim_lease_{topic_id}
+FROM {schema}.claim_lease_{topic_id}
 WHERE consumer_group_id = {group_id};`),
 	)

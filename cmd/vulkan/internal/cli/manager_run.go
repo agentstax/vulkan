@@ -42,7 +42,7 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 			// force-kills instead of being swallowed mid-drain
 			go func() { <-ctx.Done(); stop() }()
 
-			ds, closeDS, err := openDatastore(ctx, g.databaseURL)
+			ds, closeDS, err := openDatastore(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

@@ -34,7 +34,7 @@ field.`,
 			}
 			out := cmd.OutOrStdout()
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

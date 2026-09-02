@@ -6,6 +6,14 @@ package main
 // database it runs against was migrated by the working tree. It drives ONLY
 // the public API: the compatibility surface is the public surface.
 //
+// The schema is the lab's one cross-build hazard: a pinned build predating
+// PostgresConnectionConfig.Schema has no such field and resolves its tables
+// through the connection's own search_path, which is public. So at a release
+// checkpoint the working tree must migrate public too -- see the pin flow in
+// go.mod. requireMigratedSchema is what stops a mismatch from passing: without
+// it the pinned build would create a second, empty set of tables in whatever
+// schema it landed in and round-trip against itself, comparing nothing.
+//
 // -expect states the verdict the working tree's registry declares for this
 // pinned build:
 //   round-trip -> every step past the pinned build is additive; the full
@@ -45,6 +53,23 @@ func main() {
 	}
 }
 
+// requireMigratedSchema fails unless this build's search_path already reaches
+// the schema the working tree migrated. An unmigrated schema is the tell that
+// the two builds resolved to different ones.
+func requireMigratedSchema(ctx context.Context, ds *iDatastore.PostgresDatastore) error {
+	var applied int
+	err := ds.Pool.QueryRow(ctx, `SELECT count(*) FROM migration_log WHERE status = 'success';`).Scan(&applied)
+	if err != nil {
+		return fmt.Errorf("this build's search_path reaches no migrated schema, so it would compare against tables it created itself -- "+
+			"migrate the working tree into the schema this build resolves to (public, for a pinned build predating the schema field): %w", err)
+	}
+	if applied == 0 {
+		return errors.New("this build's search_path reaches a schema with no applied migration steps, so it would compare against tables it created itself -- " +
+			"migrate the working tree into the schema this build resolves to (public, for a pinned build predating the schema field)")
+	}
+	return nil
+}
+
 func run() error {
 	expect := flag.String("expect", "round-trip", `declared verdict: "round-trip" | "refused"`)
 	flag.Parse()
@@ -57,6 +82,10 @@ func run() error {
 		return err
 	}
 	defer ds.Close()
+
+	if err := requireMigratedSchema(ctx, ds); err != nil {
+		return err
+	}
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	if err != nil {
@@ -93,7 +122,7 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 		return problem
 	}
 	for i := 1; i <= messageCount; i++ {
-		if _, err := pInstance.Produce(ctx, &event{Sequence: i}, producer.ProduceOptions{}); err != nil {
+		if _, err := pInstance.Produce(ctx, &event{Sequence: i}, nil); err != nil {
 			return fmt.Errorf("message %d: %w", i, err)
 		}
 	}
@@ -117,7 +146,7 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 			stop()
 		}
 		return nil
-	})
+	}, nil)
 	if problem := check(consumed.Load() == messageCount, fmt.Sprintf("consumed all %d messages", messageCount), err); problem != nil {
 		return problem
 	}
@@ -127,7 +156,7 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 	if problem := check(err == nil && row != nil, "GetTopic returns the row", err); problem != nil {
 		return problem
 	}
-	if err := mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}); err != nil {
+	if err := mAdmin.DestroyTopic(ctx, name, &admin.DestroyOptions{Force: true}); err != nil {
 		return err
 	}
 	fmt.Println("  ✓ topic destroyed")

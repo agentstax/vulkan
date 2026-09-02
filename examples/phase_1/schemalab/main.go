@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -70,9 +71,13 @@ func run() (err error) {
 	leftSchema := fmt.Sprintf("schemalab_left_%d", runId)
 	rightSchema := fmt.Sprintf("schemalab_right_%d", runId)
 
-	left, leftDs := openClient(ctx, leftSchema)
+	// ONE config for both clients: pipeline Args concatenate on merge, so a
+	// client that bound its schema back into the shared config would name both
+	// installations on every line either of them logs
+	shared := &vulkan.ClientConfig{AllowDestroy: true}
+	left, leftDs := openClient(ctx, leftSchema, shared)
 	defer leftDs.Close()
-	right, rightDs := openClient(ctx, rightSchema)
+	right, rightDs := openClient(ctx, rightSchema, shared)
 	defer rightDs.Close()
 	defer dropSchemas(ctx, leftDs, leftSchema, rightSchema)
 
@@ -108,6 +113,12 @@ func run() (err error) {
 	}
 	fmt.Printf("   ✅ each client lists %d topics -- its own, not the other's\n", len(leftTopics))
 
+	leftBound, rightBound := boundSchemas(left.Logger), boundSchemas(right.Logger)
+	if len(leftBound) != 1 || leftBound[0] != leftSchema || len(rightBound) != 1 || rightBound[0] != rightSchema {
+		die(fmt.Sprintf("each client should bind only its own schema, got left %v right %v", leftBound, rightBound))
+	}
+	fmt.Printf("   ✅ every line each client logs names one schema -- %q and %q\n", leftBound[0], rightBound[0])
+
 	fmt.Println("\n=== 2. independence ===")
 
 	leftProducer, err := left.RegisterProducer[labMessage](ctx, sharedName, nil)
@@ -131,7 +142,7 @@ func run() (err error) {
 	fmt.Println("\n=== 3. absence ===")
 
 	emptySchema := fmt.Sprintf("schemalab_empty_%d", runId)
-	empty, emptyDs := openClient(ctx, emptySchema)
+	empty, emptyDs := openClient(ctx, emptySchema, shared)
 	defer emptyDs.Close()
 
 	// the schema does not exist, so search_path falls through to public --
@@ -211,13 +222,31 @@ func run() (err error) {
 // *** HELPERS ***
 // ***************
 
-func openClient(ctx context.Context, schema string) (*vulkan.Client, *iDatastore.PostgresDatastore) {
+func openClient(ctx context.Context, schema string, cfg *vulkan.ClientConfig) (*vulkan.Client, *iDatastore.PostgresDatastore) {
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
 		&iDatastore.PostgresConnectionConfig{Pass: "example_password", Schema: schema})
 	must(err)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ds, cfg)
 	must(err)
 	return client, ds
+}
+
+// boundSchemas lists the schema values a client's logger binds onto every
+// line it writes.
+func boundSchemas(logger logging.Logger) []string {
+	pipeline, ok := logger.(*logging.PipelineLogger)
+	if !ok {
+		die("a client's logger should be a pipeline")
+	}
+
+	found := []string{}
+	args := pipeline.Config.Args
+	for i := 0; i+1 < len(args); i += 2 {
+		if key, keyOk := args[i].(string); keyOk && key == "schema" {
+			found = append(found, fmt.Sprint(args[i+1]))
+		}
+	}
+	return found
 }
 
 func tableCount(ctx context.Context, ds *iDatastore.PostgresDatastore, schema string) int {

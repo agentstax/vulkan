@@ -15,7 +15,10 @@ import (
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
-const databaseURLEnv = "VULKAN_ADMIN_DATABASE_URL"
+const (
+	databaseURLEnv = "VULKAN_ADMIN_DATABASE_URL"
+	schemaEnv      = "VULKAN_ADMIN_SCHEMA"
+)
 
 // connection is parseConnConfig's result: the required values
 // datastore.NewPostgresDatastore takes as params, plus the optional knobs.
@@ -42,7 +45,7 @@ func newConnection(user string, host string, database string, config *datastore.
 // param can produce without reimplementing pgx's own sslmode/cert negotiation
 // -- so sslmode and any other unrecognized param are warned about, not
 // silently dropped.
-func parseConnConfig(raw string) (*connection, error) {
+func parseConnConfig(raw string, schema string) (*connection, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, failUsage("could not parse database URL: %v", err)
@@ -63,7 +66,7 @@ func parseConnConfig(raw string) (*connection, error) {
 		return nil, failUsage("database URL has no user")
 	}
 
-	cfg := &datastore.PostgresConnectionConfig{}
+	cfg := &datastore.PostgresConnectionConfig{Schema: schema}
 	if pass, ok := u.User.Password(); ok {
 		cfg.Pass = pass
 	}
@@ -89,6 +92,9 @@ func parseConnConfig(raw string) (*connection, error) {
 				return nil, failUsage("database URL has a non-numeric connect_timeout %q", vals[0])
 			}
 			cfg.ConnectTimeout = time.Duration(secs) * time.Second
+		case "search_path":
+			// ignoring it would run every command against the wrong schema
+			return nil, failUsage("database URL sets search_path -- pass --schema or set %s instead", schemaEnv)
 		default:
 			fmt.Fprintf(os.Stderr, "warning: database URL parameter %q is not supported yet and was ignored\n", key)
 		}
@@ -109,8 +115,9 @@ func pathDatabase(u *url.URL) string {
 }
 
 // openDatastore resolves the connection (flag then env) and dials Postgres.
+// An empty schema is left to PostgresConnectionConfig.WithDefaults.
 // The returned close func releases the pool; callers defer it.
-func openDatastore(ctx context.Context, databaseURL string) (*datastore.PostgresDatastore, func(), error) {
+func openDatastore(ctx context.Context, databaseURL string, schema string) (*datastore.PostgresDatastore, func(), error) {
 	raw := databaseURL
 	if raw == "" {
 		raw = os.Getenv(databaseURLEnv)
@@ -118,8 +125,11 @@ func openDatastore(ctx context.Context, databaseURL string) (*datastore.Postgres
 	if raw == "" {
 		return nil, nil, failUsage("no database URL -- pass --database-url or set %s", databaseURLEnv)
 	}
+	if schema == "" {
+		schema = os.Getenv(schemaEnv)
+	}
 
-	conn, err := parseConnConfig(raw)
+	conn, err := parseConnConfig(raw, schema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -136,8 +146,8 @@ func openDatastore(ctx context.Context, databaseURL string) (*datastore.Postgres
 // library embedders, not the CLI (ADMIN_CLI.md). The datastore is returned
 // too, so destroy can build a topic controller for the one thing the
 // client doesn't expose (an emptiness probe).
-func openClient(ctx context.Context, databaseURL string) (*vulkan.Client, *datastore.PostgresDatastore, func(), error) {
-	ds, closeDS, err := openDatastore(ctx, databaseURL)
+func openClient(ctx context.Context, databaseURL string, schema string) (*vulkan.Client, *datastore.PostgresDatastore, func(), error) {
+	ds, closeDS, err := openDatastore(ctx, databaseURL, schema)
 	if err != nil {
 		return nil, nil, nil, err
 	}

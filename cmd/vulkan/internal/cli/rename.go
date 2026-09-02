@@ -29,7 +29,7 @@ func newTopicRenameCmd(g *globalFlags) *cobra.Command {
 				return failUsage("new name matches the current name -- nothing to rename")
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

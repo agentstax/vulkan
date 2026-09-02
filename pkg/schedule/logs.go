@@ -31,6 +31,6 @@ SELECT
 	concurrency,
 	timeout_ns,
 	suspended
-FROM schedule_config
+FROM {schema}.schedule_config
 WHERE id = {schedule_id};`),
 	)

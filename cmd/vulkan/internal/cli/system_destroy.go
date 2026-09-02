@@ -44,7 +44,7 @@ messages).`,
 				return failUsage("refusing to destroy the system without confirmation -- pass --yes with --output json")
 			}
 
-			client, ds, closeClient, err := openClient(ctx, g.databaseURL)
+			client, ds, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

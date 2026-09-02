@@ -18,8 +18,8 @@ SELECT
 	worker_instance.token,
 	worker_instance.expires_at,
 	worker_instance.attempts
-FROM worker_instance
-JOIN worker_config ON worker_config.id = worker_instance.worker_id
+FROM {schema}.worker_instance
+JOIN {schema}.worker_config ON worker_config.id = worker_instance.worker_id
 WHERE worker_config.name = '{worker}'
 ORDER BY worker_instance.expires_at DESC;`),
 	)
@@ -39,7 +39,7 @@ SELECT
 	system_id,
 	topic_id,
 	consumer_group_id
-FROM worker_config
+FROM {schema}.worker_config
 WHERE target_instances = 0
 ORDER BY name;`),
 	)
@@ -58,8 +58,8 @@ SELECT
 	worker_config.target_instances,
 	worker_instance.expires_at,
 	worker_instance.attempts
-FROM worker_config
-LEFT JOIN worker_instance ON worker_instance.worker_id = worker_config.id
+FROM {schema}.worker_config
+LEFT JOIN {schema}.worker_instance ON worker_instance.worker_id = worker_config.id
 WHERE worker_config.name = '{worker}'
 ORDER BY worker_instance.attempts DESC;`),
 	)
@@ -83,7 +83,7 @@ SELECT
 	metadata,
 	declared_by,
 	declared_at
-FROM worker_config_log
+FROM {schema}.worker_config_log
 WHERE worker_id = {worker_id}
 ORDER BY id DESC
 LIMIT 10;`),

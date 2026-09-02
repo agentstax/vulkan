@@ -437,20 +437,32 @@ neither needs.
 
 **Task 5 -- the schema reaches the operator.**
 
-- 18 diagnose queries across `pkg/{topic,consumergroup,migrate,common}/
-  errors.go` name a table. Pasted into psql by an operator whose own
-  search_path is `public`, `to_regclass('message_log_{topic_id}')`
+- 37 diagnose queries across `pkg/{common,consumergroup,migrate,topic}/
+  errors.go` and `pkg/{consumergroup,schedule,topic,worker}/logs.go` name
+  a table -- every declared query does. Pasted into psql by an operator
+  whose own search_path is `public`, `to_regclass('message_log_{topic_id}')`
   returns NULL.
-- SETTLED 2026-09-01: the queries take a `{schema}` placeholder AND
-  `schema` is attached at every raise site whose declaration carries one
-  of them. Diagnose queries are exempt from the attachable-at-every-site
-  rule, so an unattached `{schema}` would silently drop the query from
-  the operator's output -- attaching it is what keeps all 18 usable. The
-  datastores already hold the resolved name; the controller and admin
-  raise sites need it plumbed. `schema` joins the CONVENTIONS attribute
-  registry in this task.
+- The raise-site half of the 2026-09-01 settlement is REVERSED 2026-09-01,
+  premise broken: nothing fills a query's placeholders and nothing drops a
+  query. `Error.Fill` runs on the fix only; `renderErrorBlock` and
+  `toErrorDocument` render no SQL at all. Queries surface in exactly two
+  places, both rendering the declaration with placeholders literal --
+  `vulkan explain <code>` and `tools/codeexport` -> codes.json -> the
+  doc-site error pages. So `{schema}` renders the way `{topic_id}` already
+  does, a blank the operator fills, and attaching `schema` at raise sites
+  would change nothing anyone can see. (Filling queries per raise is a real
+  feature and would make the plumbing necessary -- it is not this task.)
+- What replaces it: `{schema}.` qualifies every vulkan table in all 37
+  queries, and `schema` joins the seven start lines. `{topic_id}` is on the
+  operator's log line already; `schema` is on none, so without the start
+  line the placeholder is a blank they cannot fill -- and CONVENTIONS'
+  start line is exactly "the resolved config facts an operator would ask
+  for". `schema` was already added to the attribute registry in task 3.
+- A `tools/conventions` test walks every declared query: a table reference
+  that is not `{schema}`-qualified fails, so query 38 cannot forget.
 - CLI: a `--schema` flag and its env var, threaded to the connection
   config; `vulkan explain` unaffected.
+- `just site-codes` re-syncs codes.json -- the query text changes.
 - Labs interpolate table names inline -- they run on the client's pool so
   search_path covers them, but any lab opening its own connection needs
   the schema.
@@ -461,6 +473,15 @@ neither needs.
 - Done when: `just verify`, the affected labs, `just compat-lab` green
   against the pinned tag.
 - Review: an operator pastes a diagnose query and it runs.
+
+- Carried into task 8's HISTORY entry: task 4 changed the advisory lock key
+  from a constant to a schema-derived one, so across the deploy that ships it
+  an older process and a newer one take different keys and do not serialize
+  on RegisterSystem or migrate up.
+- Carried into task 6: 23 unqualified SQL snippets in guide prose
+  (dead-letters.mdx, lifecycle.mdx, fan-out.mdx and others) have the same
+  paste problem the diagnose queries had -- that is what task 6's schema
+  section is for.
 
 **Task 6 -- the docs lose PROPOSED.**
 

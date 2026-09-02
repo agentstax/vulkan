@@ -42,7 +42,7 @@ func newScheduleRunCmd(g *globalFlags) *cobra.Command {
 				return failUsage("invalid config: %s", err)
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

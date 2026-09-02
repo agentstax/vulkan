@@ -40,7 +40,7 @@ rows are discarded).`,
 				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", groupName)
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

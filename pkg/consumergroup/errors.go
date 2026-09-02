@@ -16,8 +16,8 @@ SELECT
 	consumer_group_config.id,
 	consumer_group_config.name,
 	consumer_group_config.created_at
-FROM consumer_group_config
-JOIN topic_config ON topic_config.id = consumer_group_config.topic_id
+FROM {schema}.consumer_group_config
+JOIN {schema}.topic_config ON topic_config.id = consumer_group_config.topic_id
 WHERE topic_config.name = '{topic}'
 ORDER BY consumer_group_config.name;`),
 		diagnostic.NewQuery("the group row behind an id, if that is what the line carried", `
@@ -26,7 +26,7 @@ SELECT
 	topic_id,
 	name,
 	created_at
-FROM consumer_group_config
+FROM {schema}.consumer_group_config
 WHERE id = {group_id};`),
 	)
 
@@ -44,8 +44,8 @@ SELECT
 	worker_instance.id,
 	worker_instance.expires_at,
 	worker_instance.attempts
-FROM worker_instance
-JOIN worker_config ON worker_config.id = worker_instance.worker_id
+FROM {schema}.worker_instance
+JOIN {schema}.worker_config ON worker_config.id = worker_instance.worker_id
 WHERE worker_config.consumer_group_id = {group_id}
 	AND worker_instance.expires_at > now()
 ORDER BY worker_instance.expires_at;`),
@@ -63,7 +63,7 @@ var ErrGroupDeliveriesPending = diagnostic.NewError("VK0016", diagnostic.Permane
 	Diagnose(
 		diagnostic.NewQuery("what the delivery rows would discard, by status", `
 SELECT status, count(*) AS row_count
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 GROUP BY status;`),
 		diagnostic.NewQuery("the dead ones, whose dead-letter record goes with them", `
@@ -72,7 +72,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY message_id;`),

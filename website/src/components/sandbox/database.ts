@@ -30,6 +30,10 @@ import { registerGroupLockSql } from './sql/register-group-lock';
 
 // the seeded demo topic: id 1, the library's default partition size
 const demoTopicId = 1;
+
+// stands in for the bigint common.NewAdvisoryLockKey derives per schema and
+// group; one PGlite backend never contends the lock, so the value is arbitrary
+const sandboxGroupLockKey = 1;
 const demoPartitionSize = 1_000_000;
 const demoSchemaVersion = 1;
 
@@ -127,12 +131,13 @@ export class VulkanDatabase {
 	// advisory lock, the re-check under it, the group insert and the cursor row,
 	// all in one transaction. The cursor row is why a new group replays -- it
 	// starts at claimed 0. One backend never contends the lock, so the re-check
-	// is here for fidelity, not for a race this page can have.
+	// is here for fidelity, not for a race this page can have, and the lock key
+	// is a stand-in for the one the library derives per schema and group.
 	async registerGroup(name: string): Promise<void> {
 		await this.db.transaction(async (tx) => {
 			if ((await this.getGroup(tx, name)) !== null) return;
 
-			await tx.query(registerGroupLockSql, [demoTopicId, name]);
+			await tx.query(registerGroupLockSql, [sandboxGroupLockKey]);
 			if ((await this.getGroup(tx, name)) !== null) return;
 
 			const inserted = await tx.query<GroupRow>(registerGroupInsertSql, [demoTopicId, name]);

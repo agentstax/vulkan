@@ -75,7 +75,7 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				name = cmdArgs[0]
 			}
 
-			client, ds, closeClient, err := openClient(ctx, g.databaseURL)
+			client, ds, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

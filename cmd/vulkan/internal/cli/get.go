@@ -26,7 +26,7 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 				return failUsage("--quiet and --output json cannot be combined")
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

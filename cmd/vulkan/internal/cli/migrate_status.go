@@ -20,7 +20,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			client, ds, closeClient, err := openClient(ctx, g.databaseURL)
+			client, ds, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

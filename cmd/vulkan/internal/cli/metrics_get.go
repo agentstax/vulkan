@@ -46,7 +46,7 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 				return err
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

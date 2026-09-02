@@ -29,7 +29,7 @@ func newScheduleDestroyCmd(g *globalFlags) *cobra.Command {
 				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", name)
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

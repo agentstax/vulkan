@@ -18,11 +18,11 @@ var ErrTopicNotFound = diagnostic.NewError("VK0005", diagnostic.Permanent,
 	"register it with Client.RegisterTopic first").
 	Diagnose(
 		diagnostic.NewQuery("the topic row under this name", `
-SELECT id, name, created_at FROM topic_config WHERE name = '{topic}';`),
+SELECT id, name, created_at FROM {schema}.topic_config WHERE name = '{topic}';`),
 		diagnostic.NewQuery("the topic row behind an id, if that is what the line carried", `
-SELECT id, name, created_at FROM topic_config WHERE id = {topic_id};`),
+SELECT id, name, created_at FROM {schema}.topic_config WHERE id = {topic_id};`),
 		diagnostic.NewQuery("every registered topic, if the name itself is wrong", `
-SELECT name FROM topic_config ORDER BY name;`),
+SELECT name FROM {schema}.topic_config ORDER BY name;`),
 	)
 
 // ErrTopicNotEmpty means Destroy was called on a topic that still holds
@@ -34,13 +34,13 @@ var ErrTopicNotEmpty = diagnostic.NewError("VK0006", diagnostic.Permanent,
 	"pass DestroyOptions.Force to destroy them with the topic").
 	Diagnose(
 		diagnostic.NewQuery("how many messages the destroy would discard", `
-SELECT count(*) AS message_count FROM message_log_{topic_id};`),
+SELECT count(*) AS message_count FROM {schema}.message_log_{topic_id};`),
 		diagnostic.NewQuery("the newest of them, to judge whether the topic is still in use", `
 SELECT
 	id,
 	routing_key,
 	created_at
-FROM message_log_{topic_id}
+FROM {schema}.message_log_{topic_id}
 ORDER BY id DESC
 LIMIT 20;`),
 	)
@@ -62,10 +62,10 @@ var ErrTopicPartitionsRemain = diagnostic.NewError("VK0020", diagnostic.Permanen
 SELECT partition.relname AS partition
 FROM pg_inherits
 JOIN pg_class AS partition ON partition.oid = pg_inherits.inhrelid
-WHERE pg_inherits.inhparent = to_regclass('message_log_{topic_id}')
+WHERE pg_inherits.inhparent = to_regclass('{schema}.message_log_{topic_id}')
 ORDER BY partition.relname;`),
 		diagnostic.NewQuery("whether a producer is still writing -- run it twice", `
-SELECT max(id) AS head, count(*) AS message_count FROM message_log_{topic_id};`),
+SELECT max(id) AS head, count(*) AS message_count FROM {schema}.message_log_{topic_id};`),
 	)
 
 // ErrTopicDeclarationInterrupted means the topic row was destroyed between

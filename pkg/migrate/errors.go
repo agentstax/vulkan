@@ -25,7 +25,7 @@ SELECT
 	min_compatible_version,
 	status,
 	created_at
-FROM migration_log
+FROM {schema}.migration_log
 ORDER BY id DESC
 LIMIT 20;`),
 	)
@@ -45,7 +45,7 @@ SELECT
 	min_compatible_version,
 	status,
 	created_at
-FROM migration_log
+FROM {schema}.migration_log
 ORDER BY id DESC
 LIMIT 20;`),
 		diagnostic.NewQuery("which step raised the floor past this build", `
@@ -53,7 +53,7 @@ SELECT
 	migration_version,
 	min_compatible_version,
 	created_at
-FROM migration_log
+FROM {schema}.migration_log
 WHERE min_compatible_version > {build_version}
 ORDER BY migration_version;`),
 	)

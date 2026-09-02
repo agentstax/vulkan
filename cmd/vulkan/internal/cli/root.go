@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +34,7 @@ func Execute(ctx context.Context, version string) int {
 // the order they're declared), then the inherited globals, which cobra merges
 // in last. The canonical trailing block is therefore always
 //
-//	... --database-url, --output, --help
+//	... --database-url, --schema, --output, --help
 //
 // (--help last) -- keep it that way by declaring any new global on the ROOT's
 // persistent flags before --help gets merged, and any new per-command flag
@@ -42,6 +43,7 @@ func Execute(ctx context.Context, version string) int {
 // cobra appends after --help; that ordering isn't ours to control.)
 func orderFlags(cmd *cobra.Command) {
 	cmd.Flags().SortFlags = false
+	cmd.PersistentFlags().SortFlags = false
 	for _, sub := range cmd.Commands() {
 		orderFlags(sub)
 	}
@@ -50,6 +52,7 @@ func orderFlags(cmd *cobra.Command) {
 // persisted global flags, read by subcommands off the root.
 type globalFlags struct {
 	databaseURL string
+	schema      string
 	output      string
 }
 
@@ -81,6 +84,8 @@ func newRootCmd() (*cobra.Command, *globalFlags) {
 	pf := root.PersistentFlags()
 	pf.StringVar(&g.databaseURL, "database-url", "",
 		"postgres:// connection URL (or set "+databaseURLEnv+")")
+	pf.StringVar(&g.schema, "schema", "",
+		"postgres schema vulkan's tables live in (or set "+schemaEnv+"; default "+datastore.DefaultSchema+")")
 	pf.StringVar(&g.output, "output", "text",
 		"output format: text or json (one document on stdout, errors as json on stderr)")
 

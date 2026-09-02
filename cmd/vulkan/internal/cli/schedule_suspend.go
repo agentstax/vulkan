@@ -20,7 +20,7 @@ func newScheduleSuspendCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			name := args[0]
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}
@@ -54,7 +54,7 @@ func newScheduleUnsuspendCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			name := args[0]
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL)
+			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
 			if err != nil {
 				return err
 			}

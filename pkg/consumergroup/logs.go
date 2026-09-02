@@ -18,7 +18,7 @@ SELECT
 	high,
 	expires_at,
 	reclaims
-FROM claim_lease_{topic_id}
+FROM {schema}.claim_lease_{topic_id}
 WHERE consumer_group_id = {group_id}
 ORDER BY low;`),
 		diagnostic.NewQuery("what the reclaimed range left behind", `
@@ -27,7 +27,7 @@ SELECT
 	status,
 	attempts,
 	last_error
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id BETWEEN {low} AND {high}
 ORDER BY message_id;`),
@@ -48,7 +48,7 @@ SELECT
 	attempts,
 	can_run_after,
 	last_error
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id BETWEEN {low} AND {high}
 ORDER BY message_id;`),
@@ -57,7 +57,7 @@ SELECT
 	id,
 	routing_key,
 	payload
-FROM message_log_{topic_id}
+FROM {schema}.message_log_{topic_id}
 WHERE id BETWEEN {low} AND {high}
 ORDER BY id;`),
 	)
@@ -76,13 +76,13 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY updated_at DESC;`),
 		diagnostic.NewQuery("which errors account for them", `
 SELECT last_error, count(*) AS dead_count
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 GROUP BY last_error
@@ -102,7 +102,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`),
 		diagnostic.NewQuery("every attempt it made, oldest first", `
@@ -111,7 +111,7 @@ SELECT
 	status,
 	error,
 	attempted_at
-FROM delivery_log_{topic_id}
+FROM {schema}.delivery_log_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id}
 ORDER BY attempt;`),
@@ -121,7 +121,7 @@ SELECT
 	routing_key,
 	payload,
 	created_at
-FROM message_log_{topic_id}
+FROM {schema}.message_log_{topic_id}
 WHERE id = {message_id};`),
 	)
 
@@ -138,7 +138,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`),
 		diagnostic.NewQuery("the attempts that exhausted its budget", `
@@ -147,7 +147,7 @@ SELECT
 	status,
 	error,
 	attempted_at
-FROM delivery_log_{topic_id}
+FROM {schema}.delivery_log_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id}
 ORDER BY attempt;`),
@@ -167,7 +167,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM exception_queue_{topic_id}
+FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY updated_at DESC;`),
@@ -177,7 +177,7 @@ SELECT
 	attempt,
 	status,
 	attempted_at
-FROM delivery_log_{topic_id}
+FROM {schema}.delivery_log_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'expired'
 ORDER BY attempted_at DESC
@@ -204,8 +204,8 @@ var EventGroupConfigNotRefreshed = diagnostic.NewEvent("VK0060",
 	Diagnose(
 		diagnostic.NewQuery("the config document stored on this group's worker rows", `
 SELECT worker_config.name, worker_config.metadata
-FROM worker_config
-JOIN consumer_group_config ON consumer_group_config.id = worker_config.consumer_group_id
+FROM {schema}.worker_config
+JOIN {schema}.consumer_group_config ON consumer_group_config.id = worker_config.consumer_group_id
 WHERE consumer_group_config.name = '{group}'
 ORDER BY worker_config.name;`),
 	)

@@ -47,6 +47,30 @@ func TestDiagnoseQueriesNameTheirColumns(t *testing.T) {
 	}
 }
 
+// A diagnose query is pasted into psql by an operator whose own search_path
+// is public, where an unqualified name resolves to nothing -- or worse, to
+// another installation's table. Every vulkan table a query names carries the
+// {schema} placeholder; pg_catalog's own tables never do.
+func TestDiagnoseQueriesQualifyTheirTables(t *testing.T) {
+	walked := 0
+
+	for code, queries := range declaredQueries() {
+		for _, query := range queries {
+			for _, table := range tablesNamed(query.Sql) {
+				walked++
+				if strings.HasPrefix(table, "{schema}.") || strings.HasPrefix(table, "pg_") {
+					continue
+				}
+				t.Errorf("%s query %q names %s unqualified, write {schema}.%s", code, query.Label, table, table)
+			}
+		}
+	}
+
+	if walked == 0 {
+		t.Fatal("no table reference reached the walk -- check tableReference against the query literals")
+	}
+}
+
 // The parse above silently passes if CONVENTIONS.md is reformatted out from
 // under it, so this pins what a healthy parse looks like.
 func TestRegisteredAttributesParse(t *testing.T) {
@@ -138,4 +162,22 @@ func registeredAttributes(t *testing.T) func(string) bool {
 		}
 		return false
 	}
+}
+
+// tableReference matches what a query reads from: the token after FROM or
+// JOIN, and the name to_regclass resolves.
+var tableReference = regexp.MustCompile(`(?i)\b(?:FROM|JOIN)\s+([a-z_{][^\s;,)]*)|to_regclass\('([^']+)'\)`)
+
+// tablesNamed lists every table one query reads, spelled as the query spells
+// it -- {schema}. prefix included, so the caller can check for it.
+func tablesNamed(sql string) []string {
+	names := []string{}
+	for _, match := range tableReference.FindAllStringSubmatch(sql, -1) {
+		name := match[1]
+		if name == "" {
+			name = match[2]
+		}
+		names = append(names, name)
+	}
+	return names
 }

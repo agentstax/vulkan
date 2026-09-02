@@ -21,7 +21,7 @@ SELECT
 	delivery_log_mode,
 	declared_by,
 	declared_at
-FROM topic_config_log
+FROM {schema}.topic_config_log
 WHERE topic_id = {topic_id}
 ORDER BY id DESC
 LIMIT 10;`),

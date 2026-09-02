@@ -47,9 +47,14 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 		return nil, err
 	}
 
+	// bind logger args with schema
+	// set to local var don't overwrite cfg.Logger otherwise multiple
+	// NewClient calls add multiple schema args
+	logger := logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Args: []any{"schema", ds.Schema}})
+
 	messageAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{
 		AllowDestroy: cfg.AllowDestroy,
-		Logger:       cfg.Logger,
+		Logger:       logger,
 		Retry:        cfg.Retry,
 	})
 	if err != nil {
@@ -57,7 +62,7 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 	}
 
 	messageScheduler, err := scheduler.NewScheduler(ds, &scheduler.SchedulerConfig{
-		Logger: cfg.Logger,
+		Logger: logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
@@ -65,7 +70,7 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 	}
 
 	systemManager, err := systemmanager.NewSystemManager(ds, &systemmanager.SystemManagerConfig{
-		Logger: cfg.Logger,
+		Logger: logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
@@ -73,7 +78,7 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 	}
 
 	groupController, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
-		Logger: cfg.Logger,
+		Logger: logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
@@ -81,7 +86,7 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 	}
 
 	compactionController, err := compactioncontroller.NewCompactionController(ds, &compactioncontroller.ControllerConfig{
-		Logger: cfg.Logger,
+		Logger: logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
@@ -90,7 +95,7 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 
 	return &Client{
 		Config:    cfg,
-		Logger:    cfg.Logger,
+		Logger:    logger,
 		ds:        ds,
 		admin:     messageAdmin,
 		scheduler: messageScheduler,
