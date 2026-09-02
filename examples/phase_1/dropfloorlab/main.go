@@ -176,26 +176,26 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Wor
 // which burns an id per boundary and would shift every id asserted below.
 func createPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, n int64) {
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS message_log_%d_%d
-			PARTITION OF message_log_%d
-			FOR VALUES FROM (%d) TO (%d);
-	`, topicId, n, topicId, n*partitionSize, (n+1)*partitionSize))
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s
+			PARTITION OF %[1]s.%[3]s
+			FOR VALUES FROM (%[4]d) TO (%[5]d);
+	`, ds.Schema, topic.MessageLogPartitionTable(topicId, n), topic.MessageLogTable(topicId), n*partitionSize, (n+1)*partitionSize))
 	must(err)
 }
 
 func reset(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
 	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group, consumergroup.Beginning()))
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ClaimLeaseTable(topicId)), groupId)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ExceptionQueueTable(topicId)), groupId)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=0, committed=0, settled_head=0, pending_head=0, pending_xmax=NULL WHERE consumer_group_id=$1`, topicId), groupId)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET claimed=0, committed=0, settled_head=0, pending_head=0, pending_xmax=NULL WHERE consumer_group_id=$1`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), groupId)
 	must(err)
 }
 
 func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, group string, claimed, committed int64) {
 	_ = group // groups are id-keyed; the name stays in the signature for the call sites' readability
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, topicId), groupId, claimed, committed)
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), groupId, claimed, committed)
 	must(err)
 }
 
@@ -209,7 +209,7 @@ func freshClaim(ctx context.Context, cd *messageconsumergroupcontroller.MessageC
 }
 
 func partitionNumbers(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) []int64 {
-	prefix := fmt.Sprintf("message_log_%d_", topicId)
+	prefix := fmt.Sprintf("%s.%s_", ds.Schema, topic.MessageLogTable(topicId))
 	rows, err := ds.Pool.Query(ctx, `
 		SELECT REPLACE(c.relname, $2, '')::bigint AS n
 		FROM pg_inherits i
@@ -217,7 +217,7 @@ func partitionNumbers(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		WHERE i.inhparent = $1::regclass
 			AND c.relname LIKE $2 || '%'
 		ORDER BY n;
-	`, fmt.Sprintf("message_log_%d", topicId), prefix)
+	`, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId)), prefix)
 	must(err)
 	defer rows.Close()
 

@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"time"
 
@@ -178,7 +179,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Wor
 
 func assertLatestExists(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string, want bool) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM compaction_head_%d WHERE compaction_key=$1;`, topicId), key).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE compaction_key=$1;`, ds.Schema, topic.CompactionHeadTable(topicId)), key).Scan(&count))
 	got := count > 0
 	if got != want {
 		die(fmt.Sprintf("compaction_head[%s] exists=%v, want %v", key, got, want))

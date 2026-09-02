@@ -184,21 +184,21 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Wor
 // the current log head, so a fresh CURSOR claim only ever sees messages this
 // lab itself publishes.
 func reset(ctx context.Context, ds *iDatastore.PostgresDatastore, cd *consumergroupcontroller.ConsumerGroupController, topicId int64, groups ...string) (int64, map[string]int64) {
-	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicId))
+	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId)))
 	gids := map[string]int64{}
 	for _, g := range groups {
 		gID := mustGroupID(cd.RegisterGroup(ctx, topicId, g, consumergroup.Beginning()))
 		gids[g] = gID
-		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id=$1`, topicId), gID)
+		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ClaimLeaseTable(topicId)), gID)
 		must(err)
-		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id=$1`, topicId), gID)
+		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ExceptionQueueTable(topicId)), gID)
 		must(err)
 		_, err = cd.DeclareBindings(ctx, topicId, gID, nil, time.Now())
 		must(err)
 		// settled/pending must ride along -- the claim gate assumes
 		// gate >= settled >= claimed; bumping claimed alone breaks that and a
 		// poll where the fresh pair doesn't prove would regress the cursor
-		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=$2, committed=$2, settled_head=$2, pending_head=$2, pending_xmax=NULL WHERE consumer_group_id=$1`, topicId), gID, head)
+		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET claimed=$2, committed=$2, settled_head=$2, pending_head=$2, pending_xmax=NULL WHERE consumer_group_id=$1`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), gID, head)
 		must(err)
 	}
 	return head, gids

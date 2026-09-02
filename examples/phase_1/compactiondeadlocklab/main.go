@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"time"
@@ -311,14 +312,14 @@ func waitDeadlockCount(ctx context.Context, want int64) {
 func messageCount(ctx context.Context) int64 {
 	var count int64
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE message_key LIKE 'hot-%%';`, topicId)).Scan(&count))
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE message_key LIKE 'hot-%%';`, ds.Schema, topic.MessageLogTable(topicId))).Scan(&count))
 	return count
 }
 
 func keyMessageCount(ctx context.Context, key string) int64 {
 	var count int64
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, topicId), key).Scan(&count))
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE message_key = $1;`, ds.Schema, topic.MessageLogTable(topicId)), key).Scan(&count))
 	return count
 }
 
@@ -331,9 +332,9 @@ func assertHeadIsMaxId(ctx context.Context, key string) {
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT
 			h.head_id,
-			(SELECT MAX(id) FROM message_log_%d WHERE message_key = $1)
-		FROM compaction_head_%d h
-		WHERE h.compaction_key = $1;`, topicId, topicId), key).Scan(&headId, &maxId))
+			(SELECT MAX(id) FROM %s.%s WHERE message_key = $1)
+		FROM %s.%s h
+		WHERE h.compaction_key = $1;`, ds.Schema, topic.MessageLogTable(topicId), ds.Schema, topic.CompactionHeadTable(topicId)), key).Scan(&headId, &maxId))
 	if headId != maxId {
 		die(fmt.Sprintf("head for %q must converge to the max id: got %d, want %d", key, headId, maxId))
 	}

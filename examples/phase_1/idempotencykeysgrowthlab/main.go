@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -102,7 +103,7 @@ func accumulationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
 
-	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
+	idkTable := fmt.Sprintf("%s.%s", ds.Schema, topic.IdempotencyKeyTable(tp.Id))
 
 	checkpoints := []int{500, 2000, 5000}
 	published := 0
@@ -113,7 +114,7 @@ func accumulationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 		idkSize := tableByteSize(ctx, ds, idkTable)
 		// message_log_<id> is a partitioned parent with no storage of its own --
 		// its data lives in message_log_<id>_0 (largePartitionSize never rolls).
-		logSize := tableByteSize(ctx, ds, fmt.Sprintf("message_log_%d_0", tp.Id))
+		logSize := tableByteSize(ctx, ds, fmt.Sprintf("%s.%s_0", ds.Schema, topic.MessageLogTable(tp.Id)))
 		idkRows := tableRowCount(ctx, ds, idkTable)
 
 		fmt.Printf("  %6d msgs: idempotency_key_%d=%-8s (%6d rows)  message_log=%8s  overhead=%.1f%%\n",
@@ -150,7 +151,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 
-	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
+	idkTable := fmt.Sprintf("%s.%s", ds.Schema, topic.IdempotencyKeyTable(tp.Id))
 
 	stop := make(chan struct{})
 	var published atomic.Int64

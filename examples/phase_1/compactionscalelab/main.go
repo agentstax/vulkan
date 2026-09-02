@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"regexp"
 	"strconv"
@@ -147,7 +148,7 @@ func run() (err error) {
 // ---- helpers ----
 
 func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
-	sql := fmt.Sprintf(`INSERT INTO message_log_%d (payload, schema_version, message_key, compaction_rank) VALUES ('{}'::jsonb, 1, 'stale', 0);`, topicId)
+	sql := fmt.Sprintf(`INSERT INTO %s.%s (payload, schema_version, message_key, compaction_rank) VALUES ('{}'::jsonb, 1, 'stale', 0);`, ds.Schema, topic.MessageLogTable(topicId))
 	_, err := ds.Pool.Exec(ctx, sql)
 	must(err)
 }
@@ -159,7 +160,7 @@ func createPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 	if to <= from {
 		return
 	}
-	logTable := fmt.Sprintf("message_log_%d", topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
 	var sql strings.Builder
 	for n := from; n < to; n++ {
 		fmt.Fprintf(&sql, "CREATE TABLE IF NOT EXISTS %s_%d PARTITION OF %s FOR VALUES FROM (%d) TO (%d);\n",
@@ -178,9 +179,9 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		return
 	}
 	sql := fmt.Sprintf(`
-		INSERT INTO message_log_%d (payload, schema_version, message_key)
+		INSERT INTO %s.%s (payload, schema_version, message_key)
 		SELECT '{}'::jsonb, 1, NULL FROM generate_series(1, $1);
-	`, topicId)
+	`, ds.Schema, topic.MessageLogTable(topicId))
 	_, err := ds.Pool.Exec(ctx, sql, count)
 	must(err)
 }
@@ -190,7 +191,7 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 // EXECUTED against (see compactionwidthlab for why mentions alone don't
 // mean touched), plus the plan's own reported wall-clock Execution Time.
 func explainStaleNegative(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) (int, float64, string) {
-	logTable := fmt.Sprintf("message_log_%d", topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 FROM %s m
 		WHERE m.id = 1

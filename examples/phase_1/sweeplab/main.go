@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"time"
 
@@ -128,19 +129,19 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Wor
 }
 
 func head(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM message_log_%d`, topicId))
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId)))
 }
 
 func countInRange(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE id > $1 AND id <= $2`, topicId), low, high)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s WHERE id > $1 AND id <= $2`, ds.Schema, topic.MessageLogTable(topicId)), low, high)
 }
 
 func partitionCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
-		WHERE i.inhparent = 'message_log_%d'::regclass;
-	`, topicId))
+		WHERE i.inhparent = '%s.%s'::regclass;
+	`, ds.Schema, topic.MessageLogTable(topicId)))
 }
 
 func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {

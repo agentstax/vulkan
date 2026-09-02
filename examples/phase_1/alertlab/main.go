@@ -294,9 +294,7 @@ func classifySection(ctx context.Context) {
 	// severity change: publishes immediately (still inside the interval),
 	// silently -- the head's stored severity is doctored by direct SQL,
 	// bypassing the controller
-	exec(ctx, fmt.Sprintf(
-		`UPDATE message_log_%d SET payload = jsonb_set(payload, '{severity}', '"lab-critical"') WHERE id = $1;`,
-		alertsTopic.Id), headId(ctx, key))
+	exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET payload = jsonb_set(payload, '{severity}', '"lab-critical"') WHERE id = $1;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), headId(ctx, key))
 	record(found, alert.RecordOutcomeActive, "severity change")
 	if got := alertMessageCount(ctx, key); got != 3 {
 		die(fmt.Sprintf("severity change: want an immediate republish, got %d messages", got))
@@ -410,16 +408,12 @@ func executorSection(ctx context.Context) {
 	thirdRun, err := client.Schedule(partitioncount.JobName).Run(ctx, nil)
 	must(err)
 	waitDelivered(ctx, thirdRun.Id, "success")
-	if got := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d;`,
-		schedulesTopic.Id, partitionCountGroup, readCostRun.Id)); got != 0 {
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d;`, ds.Schema, topic.DeliveryLogTable(schedulesTopic.Id), partitionCountGroup, readCostRun.Id)); got != 0 {
 		die(fmt.Sprintf("the executor must not claim another job's request, got %d delivery rows", got))
 	}
 	for _, foreignGroup := range []int64{otherGroup, bindinglessGroup} {
-		claimed := scalarInt64(ctx, fmt.Sprintf(
-			`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = %d;`, schedulesTopic.Id, foreignGroup))
-		logged := scalarInt64(ctx, fmt.Sprintf(
-			`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d;`, schedulesTopic.Id, foreignGroup))
+		claimed := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d;`, ds.Schema, topic.ExceptionQueueTable(schedulesTopic.Id), foreignGroup))
+		logged := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d;`, ds.Schema, topic.DeliveryLogTable(schedulesTopic.Id), foreignGroup))
 		if claimed != 0 || logged != 0 {
 			die(fmt.Sprintf("group %d must be untouched by alert runs, got %d claims %d log rows", foreignGroup, claimed, logged))
 		}
@@ -437,10 +431,8 @@ func isolationSection(ctx context.Context) {
 
 	// the head row stays, but its payload no longer unmarshals into an Alert
 	corruptedHead := headId(ctx, labKey)
-	saved := scalarString(ctx, fmt.Sprintf(
-		`SELECT payload::text FROM message_log_%d WHERE id = $1;`, alertsTopic.Id), corruptedHead)
-	exec(ctx, fmt.Sprintf(
-		`UPDATE message_log_%d SET payload = '"corrupt"'::jsonb WHERE id = $1;`, alertsTopic.Id), corruptedHead)
+	saved := scalarString(ctx, fmt.Sprintf(`SELECT payload::text FROM %s.%s WHERE id = $1;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), corruptedHead)
+	exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET payload = '"corrupt"'::jsonb WHERE id = $1;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), corruptedHead)
 
 	declareThreshold(ctx, 0)
 	resolveRun, err := client.Schedule(partitioncount.JobName).Run(ctx, nil)
@@ -470,8 +462,7 @@ func isolationSection(ctx context.Context) {
 	fmt.Println("  ✓ check summary went out on the failed run: exactly 1 topic failed")
 
 	// fixing the head lets the request's retry resolve the last owner
-	exec(ctx, fmt.Sprintf(
-		`UPDATE message_log_%d SET payload = $1::jsonb WHERE id = $2;`, alertsTopic.Id), saved, corruptedHead)
+	exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET payload = $1::jsonb WHERE id = $2;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), saved, corruptedHead)
 	waitDelivered(ctx, resolveRun.Id, "success")
 	if got := headStatus(ctx, labKey); got != string(alert.StatusResolved) {
 		die(fmt.Sprintf("isolation: want the fixed owner resolved on retry, got %q", got))
@@ -553,15 +544,15 @@ func cleanup() {
 	checkKey, err := alert.MessageKey(labCheckName, labTopicOwner)
 	must(err)
 	keys := []string{labKey, checkKey}
-	exec(ctx, fmt.Sprintf(`DELETE FROM compaction_head_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
-	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE message_key = ANY($1);`, alertsTopic.Id), keys)
+	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE compaction_key = ANY($1);`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id)), keys)
+	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE message_key = ANY($1);`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), keys)
 
 	must(client.Topic(labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
-		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),
-		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),
-		fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),
+		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.ExceptionQueueTable(schedulesTopic.Id), prefix),
+		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.DeliveryLogTable(schedulesTopic.Id), prefix),
+		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.ClaimLeaseTable(schedulesTopic.Id), prefix),
 		fmt.Sprintf(`DELETE FROM consumer_group_config WHERE name LIKE '%s.%%';`, prefix),
 	} {
 		exec(ctx, sql)
@@ -664,13 +655,11 @@ func partitionCountKey(owner *common.Owner) string {
 }
 
 func alertMessageCount(ctx context.Context, messageKey string) int64 {
-	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, alertsTopic.Id), messageKey)
+	return scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE message_key = $1;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), messageKey)
 }
 
 func headId(ctx context.Context, messageKey string) int64 {
-	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT head_id FROM compaction_head_%d WHERE compaction_key = $1;`, alertsTopic.Id),
+	return scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key = $1;`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id)),
 		messageKey)
 }
 
@@ -678,10 +667,10 @@ func headId(ctx context.Context, messageKey string) int64 {
 func headStatus(ctx context.Context, messageKey string) string {
 	sql := fmt.Sprintf(`
 		SELECT m.payload->>'status'
-		FROM compaction_head_%d h
-		JOIN message_log_%d m ON m.id = h.head_id
+		FROM %s.%s h
+		JOIN %s.%s m ON m.id = h.head_id
 		WHERE h.compaction_key = $1;
-	`, alertsTopic.Id, alertsTopic.Id)
+	`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id), ds.Schema, topic.MessageLogTable(alertsTopic.Id))
 	var status *string
 	err := ds.Pool.QueryRow(ctx, sql, messageKey).Scan(&status)
 	must(err)
@@ -694,9 +683,7 @@ func headStatus(ctx context.Context, messageKey string) string {
 // waitDelivered returns once the partition_count group's delivery log holds
 // the request at the given status.
 func waitDelivered(ctx context.Context, messageId int64, status string) {
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = '%s';`,
-		schedulesTopic.Id, partitionCountGroup, messageId, status), 1)
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = '%s';`, ds.Schema, topic.DeliveryLogTable(schedulesTopic.Id), partitionCountGroup, messageId, status), 1)
 }
 
 func waitForCount(ctx context.Context, sql string, want int64) {

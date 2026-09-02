@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"strings"
 	"sync"
@@ -204,14 +205,14 @@ type queueRow struct {
 }
 
 func readRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64) queueRow {
-	sql := fmt.Sprintf(`SELECT status, attempts, delays, COALESCE(last_error, ''), can_run_after - now() FROM exception_queue_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT status, attempts, delays, COALESCE(last_error, ''), can_run_after - now() FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.ExceptionQueueTable(topicId))
 	var row queueRow
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&row.status, &row.attempts, &row.delays, &row.lastError, &row.runsIn))
 	return row
 }
 
 func rowStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64) string {
-	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM exception_queue_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.ExceptionQueueTable(topicId))
 	var status string
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&status))
 	return status
@@ -246,7 +247,7 @@ func assertNoRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId 
 }
 
 func assertLogStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, want string) {
-	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3`, topicId)
+	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3`, ds.Schema, topic.DeliveryLogTable(topicId))
 	var status string
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId, attempt).Scan(&status))
 	if status != want {

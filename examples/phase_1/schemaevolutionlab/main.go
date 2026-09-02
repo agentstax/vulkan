@@ -40,6 +40,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -272,7 +273,7 @@ var bridgeConsumeOptions = &vulkan.ConsumeOptions{
 // timer, taken after the commit so the retire verdict below reads a settled
 // cursor.
 func waitForCommitted(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, timeout time.Duration, stop context.CancelFunc) error {
-	lastV1 := scalar(ctx, ds, fmt.Sprintf(`SELECT max(id) FROM message_log_%d WHERE schema_version = 1;`, topicId))
+	lastV1 := scalar(ctx, ds, fmt.Sprintf(`SELECT max(id) FROM %s.%s WHERE schema_version = 1;`, ds.Schema, topic.MessageLogTable(topicId)))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if committed(ctx, ds, topicId) >= lastV1 {
@@ -301,23 +302,22 @@ func versionHealth(all []*vulkan.VersionHealth, version int) *vulkan.VersionHeal
 
 func committed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
-		SELECT c.committed FROM consumer_group_cursor_%d c
+		SELECT c.committed FROM %s.%s c
 		JOIN consumer_group_config g ON g.id = c.consumer_group_id
-		WHERE g.name = $1;`, topicId), group)
+		WHERE g.name = $1;`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), group)
 }
 
 func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicId))
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId)))
 }
 
 func rowCountAtVersion(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, version int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE schema_version = $1`, topicId), version)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s WHERE schema_version = $1`, ds.Schema, topic.MessageLogTable(topicId)), version)
 }
 
 func winner(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string) *V2Order {
 	var payload []byte
-	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(
-		`SELECT m.payload FROM compaction_head_%d ch JOIN message_log_%d m ON m.id = ch.head_id WHERE ch.compaction_key=$1;`, topicId, topicId),
+	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT m.payload FROM %s.%s ch JOIN %s.%s m ON m.id = ch.head_id WHERE ch.compaction_key=$1;`, ds.Schema, topic.CompactionHeadTable(topicId), ds.Schema, topic.MessageLogTable(topicId)),
 		key).Scan(&payload)
 	must(err)
 	var v V2Order

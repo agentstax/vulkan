@@ -362,7 +362,7 @@ func run() (err error) {
 	// exhausted-looking or not, a 'deferred' row is outside the kill
 	// backstop's 'inflight' predicate. Driven directly so no consumer touches
 	// the row mid-check.
-	execSql(ctx, fmt.Sprintf(`UPDATE exception_queue_%d SET attempts = 99, lease_expires_at = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
+	execSql(ctx, fmt.Sprintf(`UPDATE %s.%s SET attempts = 99, lease_expires_at = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.ExceptionQueueTable(topicId)), g8, v7)
 	if _, err := exceptionConsumers.Kill(ctx, tp.Id, g8, 3, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("Kill: %v", err))
 	}
@@ -377,7 +377,7 @@ func run() (err error) {
 	}
 	// the unexpired message_key_lease row alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
-	execSql(ctx, fmt.Sprintf(`UPDATE exception_queue_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
+	execSql(ctx, fmt.Sprintf(`UPDATE %s.%s SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.ExceptionQueueTable(topicId)), g8, v7)
 	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 1, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
@@ -451,7 +451,7 @@ func run() (err error) {
 	step("a crashed holder's expired key lease: redemption takes the key over")
 	g10 := groupId(ctx, cd, "exclusivelab.g10")
 	// a crashed holder's message_key_lease row: unexpired, never released
-	execSql(ctx, fmt.Sprintf(`INSERT INTO message_key_lease_%d (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, topicId), g10)
+	execSql(ctx, fmt.Sprintf(`INSERT INTO %s.%s (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, ds.Schema, topic.MessageKeyLeaseTable(topicId)), g10)
 	publish(ctx, wpInstance, "u:10", 1, common.ConcurrencyExclusive)
 	v10 := messageId(ctx, "u:10", 1)
 	stopCursor10 := startConsumer(ctx, tp.Name, "exclusivelab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
@@ -508,7 +508,7 @@ func run() (err error) {
 	waitFor(func() bool { return deliveryStatus(ctx, g12, uc3) == "deferred" }, "v3's 'deferred' row")
 
 	var headRows12 int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM compaction_head_%d WHERE compaction_key = 'uc:1';`, tp.Id)).Scan(&headRows12))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE compaction_key = 'uc:1';`, ds.Schema, topic.CompactionHeadTable(tp.Id))).Scan(&headRows12))
 	if headRows12 != 0 {
 		die(fmt.Sprintf("an uncompacted produce must not write a compaction head, got %d rows", headRows12))
 	}
@@ -824,14 +824,14 @@ func groupId(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupContr
 
 func messageId(ctx context.Context, key string, version int) int64 {
 	var id int64
-	sql := fmt.Sprintf(`SELECT id FROM message_log_%d WHERE message_key = $1 AND (payload->>'version')::int = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT id FROM %s.%s WHERE message_key = $1 AND (payload->>'version')::int = $2`, ds.Schema, topic.MessageLogTable(topicId))
 	must(ds.Pool.QueryRow(ctx, sql, key, version).Scan(&id))
 	return id
 }
 
 func leaseCount(ctx context.Context, groupId int64) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT COUNT(*) FROM message_key_lease_%d WHERE consumer_group_id = $1`, topicId)
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1`, ds.Schema, topic.MessageKeyLeaseTable(topicId))
 	must(ds.Pool.QueryRow(ctx, sql, groupId).Scan(&n))
 	return n
 }
@@ -839,7 +839,7 @@ func leaseCount(ctx context.Context, groupId int64) int {
 // deliveryCount counts the group's delivery rows; status "" counts them all.
 func deliveryCount(ctx context.Context, groupId int64, status string) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = $1 AND ($2 = '' OR status = $2)`, topicId)
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1 AND ($2 = '' OR status = $2)`, ds.Schema, topic.ExceptionQueueTable(topicId))
 	must(ds.Pool.QueryRow(ctx, sql, groupId, status).Scan(&n))
 	return n
 }
@@ -847,21 +847,21 @@ func deliveryCount(ctx context.Context, groupId int64, status string) int {
 // deliveryStatus returns "" when the message has no delivery row.
 func deliveryStatus(ctx context.Context, groupId int64, messageId int64) string {
 	var s string
-	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM exception_queue_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.ExceptionQueueTable(topicId))
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&s))
 	return s
 }
 
 func deliveryAttempts(ctx context.Context, groupId int64, messageId int64) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT attempts FROM exception_queue_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT attempts FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.ExceptionQueueTable(topicId))
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&n))
 	return n
 }
 
 // logStatuses returns the message's delivery_log statuses keyed by attempt.
 func logStatuses(ctx context.Context, groupId int64, messageId int64) map[int]string {
-	sql := fmt.Sprintf(`SELECT attempt, status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT attempt, status FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.DeliveryLogTable(topicId))
 	rows, err := ds.Pool.Query(ctx, sql, groupId, messageId)
 	must(err)
 	defer rows.Close()
@@ -884,7 +884,7 @@ func execSql(ctx context.Context, sql string, args ...any) {
 
 func logCount(ctx context.Context, groupId int64, messageId int64) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.DeliveryLogTable(topicId))
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&n))
 	return n
 }
@@ -892,7 +892,7 @@ func logCount(ctx context.Context, groupId int64, messageId int64) int {
 // logRow returns the message's single delivery_log row's status and error.
 func logRow(ctx context.Context, groupId int64, messageId int64) (string, string) {
 	var status, logErr string
-	sql := fmt.Sprintf(`SELECT status, error FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT status, error FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.DeliveryLogTable(topicId))
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&status, &logErr))
 	return status, logErr
 }

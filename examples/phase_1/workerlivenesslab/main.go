@@ -275,8 +275,8 @@ func cleanup() {
 	// the check evaluates every topic, so a run leaves a head on each one --
 	// all of them are this lab's, and nothing is left running to resolve them
 	pattern := workerlivenesscontroller.AlertWorkerLiveness + "/%"
-	exec(ctx, fmt.Sprintf(`DELETE FROM compaction_head_%d WHERE compaction_key LIKE $1;`, alertsTopic.Id), pattern)
-	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE message_key LIKE $1;`, alertsTopic.Id), pattern)
+	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE compaction_key LIKE $1;`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id)), pattern)
+	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE message_key LIKE $1;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), pattern)
 
 	must(client.Topic(labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 }
@@ -345,10 +345,10 @@ func alertKey(owner *common.Owner) string {
 func headStatus(ctx context.Context, messageKey string) string {
 	sql := fmt.Sprintf(`
 		SELECT m.payload->>'status'
-		FROM compaction_head_%d h
-		JOIN message_log_%d m ON m.id = h.head_id
+		FROM %s.%s h
+		JOIN %s.%s m ON m.id = h.head_id
 		WHERE h.compaction_key = $1;
-	`, alertsTopic.Id, alertsTopic.Id)
+	`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id), ds.Schema, topic.MessageLogTable(alertsTopic.Id))
 	var status *string
 	err := ds.Pool.QueryRow(ctx, sql, messageKey).Scan(&status)
 	must(err)
@@ -361,9 +361,7 @@ func headStatus(ctx context.Context, messageKey string) string {
 // waitDelivered returns once the job group's delivery log holds the request
 // at the given status.
 func waitDelivered(ctx context.Context, messageId int64, status string) {
-	sql := fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = '%s';`,
-		schedulesTopic.Id, jobGroup, messageId, status)
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = '%s';`, ds.Schema, topic.DeliveryLogTable(schedulesTopic.Id), jobGroup, messageId, status)
 
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {

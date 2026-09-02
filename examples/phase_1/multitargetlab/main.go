@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"time"
 	"uuid"
@@ -159,7 +160,7 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *iDatastore.Post
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
 			return err
 		}
-		betweenCalls++                                                  // stands in for a caller side effect like sendEmailConfirmation
+		betweenCalls++                              // stands in for a caller side effect like sendEmailConfirmation
 		_, err := wpB.ProduceInTx(ctx, tx, fn, nil) // misses its partition, self-heals
 		return err
 	})
@@ -287,9 +288,9 @@ func exec(ctx context.Context, ds *iDatastore.PostgresDatastore, sql string) err
 
 func assertMessageLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, ds.Schema, topic.MessageLogTable(topicId))).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("message_log_%d has %d rows, want %d", topicId, count, want))
+		die(fmt.Sprintf("%s.%s has %d rows, want %d", ds.Schema, topic.MessageLogTable(topicId), count, want))
 	}
 }
 

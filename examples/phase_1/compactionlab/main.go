@@ -280,22 +280,22 @@ func decode(payload json.RawMessage) KeyedRecord {
 // the compaction_head lookup being marked never executed -- proof the OR's left
 // disjunct (compaction_rank IS NULL) short-circuited it for every row.
 func explainNoCompactionSubplan(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64) {
-	logTable := fmt.Sprintf("message_log_%d", topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) SELECT m.id, m.payload, m.created_at FROM %s m
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
-				NOT EXISTS (SELECT 1 FROM binding_config_%d b WHERE b.consumer_group_id = $3)
-				OR EXISTS (SELECT 1 FROM binding_config_%d b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern_regex)
+				NOT EXISTS (SELECT 1 FROM %s.%s b WHERE b.consumer_group_id = $3)
+				OR EXISTS (SELECT 1 FROM %s.%s b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern_regex)
 			)
 			AND (
 				m.compaction_rank IS NULL
-				OR m.id = (SELECT head_id FROM compaction_head_%d
+				OR m.id = (SELECT head_id FROM %s.%s
 					WHERE compaction_key = m.message_key)
 			)
 		ORDER BY m.id;
-	`, logTable, topicId, topicId, topicId)
+	`, logTable, ds.Schema, topic.BindingConfigTable(topicId), ds.Schema, topic.BindingConfigTable(topicId), ds.Schema, topic.CompactionHeadTable(topicId))
 
 	rows, err := ds.Pool.Query(ctx, sql, low, high, cursorGroupID)
 	must(err)
@@ -317,11 +317,11 @@ func explainNoCompactionSubplan(ctx context.Context, ds *iDatastore.PostgresData
 }
 
 func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicId))
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId)))
 }
 
 func rowExists(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, id int64) bool {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE id=$1`, topicId), id) == 1
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s WHERE id=$1`, ds.Schema, topic.MessageLogTable(topicId)), id) == 1
 }
 
 func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {

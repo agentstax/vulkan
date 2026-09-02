@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -180,7 +181,7 @@ func publishConcurrent(ctx context.Context, wpInstance *vulkan.ProducerInstance[
 // detached goroutine, so "before the boundary" is proven by seeing the table
 // while publishes are still below it.
 func waitForPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, n int64) {
-	table := fmt.Sprintf("message_log_%d_%d", topicId, n)
+	table := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogPartitionTable(topicId, n))
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if regclassExists(ctx, ds, table) {
@@ -202,14 +203,14 @@ func assertCreateAheadWon(ctx context.Context, ds *iDatastore.PostgresDatastore,
 	var count int64
 	var maxId int64
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT count(*), COALESCE(max(id), 0) FROM message_log_%d;
-	`, topicId)).Scan(&count, &maxId))
+		SELECT count(*), COALESCE(max(id), 0) FROM %s.%s;
+	`, ds.Schema, topic.MessageLogTable(topicId))).Scan(&count, &maxId))
 	assertInt("every publish landed", count, totalPublishes)
 	assertInt("ids contiguous -- no id burned at the boundary", maxId, totalPublishes)
 
 	// a trigger creates the partition after the trigger id's own, so 105 ids
 	// reach partition 1 only; partition 3 would be a runaway chain.
-	if regclassExists(ctx, ds, fmt.Sprintf("message_log_%d_3", topicId)) {
+	if regclassExists(ctx, ds, fmt.Sprintf("%s.%s_3", ds.Schema, topic.MessageLogTable(topicId))) {
 		die("partition 3 exists -- create-ahead ran away past the trigger's reach")
 	}
 	fmt.Println("  ✓ no runaway creation past the triggers' reach")

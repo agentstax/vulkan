@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"regexp"
 	"sort"
@@ -171,16 +172,16 @@ func publish(ctx context.Context, wp *vulkan.ProducerInstance[Record], key strin
 // picking between the two versions of a twice-published key.
 func keyId(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, messageKey string, aggregate string) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
-		SELECT %s(id) FROM message_log_%d WHERE message_key = $1;
-	`, aggregate, topicId), messageKey)
+		SELECT %s(id) FROM %s.%s WHERE message_key = $1;
+	`, aggregate, ds.Schema, topic.MessageLogTable(topicId)), messageKey)
 }
 
 func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
-		WHERE i.inhparent = 'message_log_%d'::regclass;
-	`, topicId))
+		WHERE i.inhparent = '%s.%s'::regclass;
+	`, ds.Schema, topic.MessageLogTable(topicId)))
 }
 
 // explainCompactionTouches EXPLAIN ANALYZEs just the compaction predicate
@@ -194,7 +195,7 @@ func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 // partition pruning) meant it was never actually opened. Only lines WITHOUT
 // that tag count as a real touch.
 func explainCompactionTouches(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, id int64, label string) (int, string) {
-	logTable := fmt.Sprintf("message_log_%d", topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) SELECT 1 FROM %s m
 		WHERE m.id = $1

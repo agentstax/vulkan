@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -117,11 +118,11 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 		die(fmt.Sprintf("%d of %d calls reported Duplicate, want %d -- exactly 1 winner", duplicateCount.Load(), n, n-1))
 	}
 	fmt.Printf("  ✓ exactly 1 of %d concurrent calls stored the message, %d reported Duplicate\n", n, n-1)
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), 1, fmt.Sprintf("%d concurrent publishes under one shared key landed exactly 1 message", n))
-	assertCount(ctx, ds, fmt.Sprintf("idempotency_key_%d", tp.Id), 1, fmt.Sprintf("%d concurrent publishes under one shared key left exactly 1 claim row", n))
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), 1, fmt.Sprintf("%d concurrent publishes under one shared key landed exactly 1 message", n))
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.IdempotencyKeyTable(tp.Id)), 1, fmt.Sprintf("%d concurrent publishes under one shared key left exactly 1 claim row", n))
 
 	var exists bool
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM idempotency_key_%d WHERE idempotency_key = $1);`, tp.Id), key).Scan(&exists))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM %s.%s WHERE idempotency_key = $1);`, ds.Schema, topic.IdempotencyKeyTable(tp.Id)), key).Scan(&exists))
 	if !exists {
 		die("the one surviving claim row is not keyed to the idempotency key every goroutine shared")
 	}
@@ -160,8 +161,8 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *iDatastore.Postgres
 	}
 	wg.Wait()
 
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), n, fmt.Sprintf("%d concurrent publishes under %d distinct keys all landed", n, n))
-	assertCount(ctx, ds, fmt.Sprintf("idempotency_key_%d", tp.Id), n, fmt.Sprintf("%d concurrent publishes under %d distinct keys left %d distinct claim rows", n, n, n))
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), n, fmt.Sprintf("%d concurrent publishes under %d distinct keys all landed", n, n))
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.IdempotencyKeyTable(tp.Id)), n, fmt.Sprintf("%d concurrent publishes under %d distinct keys left %d distinct claim rows", n, n, n))
 }
 
 // ---- helpers ----

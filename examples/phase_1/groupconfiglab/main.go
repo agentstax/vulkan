@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"time"
@@ -168,7 +169,7 @@ func run() (err error) {
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		var status string
-		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM exception_queue_%d WHERE consumer_group_id = $1;`, registered.Id), groupId).Scan(&status, &attempts)
+		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.ExceptionQueueTable(registered.Id)), groupId).Scan(&status, &attempts)
 		if err == nil && status == "dead" {
 			break
 		}
@@ -222,7 +223,7 @@ func run() (err error) {
 	for {
 		var status string
 		var liveAttempts int
-		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM exception_queue_%d WHERE consumer_group_id = $1;`, registered.Id), liveGroupId).Scan(&status, &liveAttempts)
+		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.ExceptionQueueTable(registered.Id)), liveGroupId).Scan(&status, &liveAttempts)
 		if err == nil && liveAttempts >= 2 && status == "ready" {
 			if liveAttempts > 2 {
 				stopLiveConsumer()
@@ -251,7 +252,7 @@ func run() (err error) {
 	for {
 		var status string
 		var liveAttempts int
-		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM exception_queue_%d WHERE consumer_group_id = $1;`, registered.Id), liveGroupId).Scan(&status, &liveAttempts)
+		err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status, attempts FROM %s.%s WHERE consumer_group_id = $1;`, ds.Schema, topic.ExceptionQueueTable(registered.Id)), liveGroupId).Scan(&status, &liveAttempts)
 		if err == nil && status == "dead" {
 			stopLiveConsumer()
 			// dead at 3 means the refresh never reached the running instance;

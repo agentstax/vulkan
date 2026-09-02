@@ -26,6 +26,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"time"
@@ -111,8 +112,8 @@ func run() (err error) {
 	step("seed: two versions of user:1 -- the newer is the compaction head")
 	publish(ctx, wpInstance, "user:1", 1)
 	publish(ctx, wpInstance, "user:1", 2)
-	staleID := scalarInt64(ctx, fmt.Sprintf(`SELECT MIN(id) FROM message_log_%d WHERE message_key = 'user:1'`, topicId))
-	headID := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = 'user:1'`, topicId))
+	staleID := scalarInt64(ctx, fmt.Sprintf(`SELECT MIN(id) FROM %s.%s WHERE message_key = 'user:1'`, ds.Schema, topic.MessageLogTable(topicId)))
+	headID := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key = 'user:1'`, ds.Schema, topic.CompactionHeadTable(topicId)))
 	if staleID == headID {
 		die("seed broken: stale and head ids match")
 	}
@@ -152,11 +153,11 @@ func run() (err error) {
 	must(err)
 	// mirrors consumerbase.release's SQL (pkg/consumergroup/base/controller/datastore/keylease.go) -- keep in sync
 	tag, err := tx.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM message_key_lease_%d
+		DELETE FROM %s.%s
 		WHERE consumer_group_id = $1
 			AND message_key = $2
 			AND lease_token = $3;
-	`, topicId), groupId, "user:1", held.Token)
+	`, ds.Schema, topic.MessageKeyLeaseTable(topicId)), groupId, "user:1", held.Token)
 	must(err)
 	if tag.RowsAffected() != 1 {
 		die("the in-txn release should have matched the held row")
@@ -243,13 +244,13 @@ func run() (err error) {
 
 	step("old-then-new order: a newer head produced mid-hold waits for the release")
 	publish(ctx, wpInstance, "user:3", 1)
-	old3 := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = 'user:3'`, topicId))
+	old3 := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key = 'user:3'`, ds.Schema, topic.CompactionHeadTable(topicId)))
 	holding := claim(ctx, keyLeases, "user:3", old3, 30*time.Second)
 	if holding.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want acquired on user:3, got %s", holding.Verdict))
 	}
 	publish(ctx, wpInstance, "user:3", 2)
-	new3 := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = 'user:3'`, topicId))
+	new3 := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key = 'user:3'`, ds.Schema, topic.CompactionHeadTable(topicId)))
 	if c := claim(ctx, keyLeases, "user:3", new3, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy for the new head while the old holds the key, got %s", c.Verdict))
 	}
@@ -274,7 +275,7 @@ func run() (err error) {
 
 	step("janitor sweep removes expired rows, leaves live ones")
 	publish(ctx, wpInstance, "user:2", 1)
-	head2 := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = 'user:2'`, topicId))
+	head2 := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key = 'user:2'`, ds.Schema, topic.CompactionHeadTable(topicId)))
 	expired := claim(ctx, keyLeases, "user:1", headID, 50*time.Millisecond)
 	if expired.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("sweep setup: want acquired, got %s", expired.Verdict))
@@ -288,7 +289,7 @@ func run() (err error) {
 	if n := leaseCount(ctx); n != 1 {
 		die(fmt.Sprintf("want only the live row to survive the sweep, count=%d", n))
 	}
-	survivor := scalarString(ctx, fmt.Sprintf(`SELECT message_key FROM message_key_lease_%d WHERE consumer_group_id = $1`, topicId), groupId)
+	survivor := scalarString(ctx, fmt.Sprintf(`SELECT message_key FROM %s.%s WHERE consumer_group_id = $1`, ds.Schema, topic.MessageKeyLeaseTable(topicId)), groupId)
 	if survivor != "user:2" {
 		die(fmt.Sprintf("sweep removed the wrong row, survivor=%s", survivor))
 	}
@@ -297,7 +298,7 @@ func run() (err error) {
 	step("destroying the topic drops its message_key_lease table")
 	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	var keyLeaseTable *string
-	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("message_key_lease_%d", topicId)).Scan(&keyLeaseTable))
+	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageKeyLeaseTable(topicId))).Scan(&keyLeaseTable))
 	if keyLeaseTable != nil {
 		die("destroy left the message_key_lease table behind")
 	}
@@ -324,7 +325,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key 
 
 func leaseCount(ctx context.Context) int {
 	var n int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_key_lease_%d WHERE consumer_group_id = $1`, topicId), groupId).Scan(&n))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1`, ds.Schema, topic.MessageKeyLeaseTable(topicId)), groupId).Scan(&n))
 	return n
 }
 

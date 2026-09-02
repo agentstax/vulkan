@@ -157,15 +157,15 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[RankedReco
 }
 
 func headID(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key=$1;`, topicId), key)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key=$1;`, ds.Schema, topic.CompactionHeadTable(topicId)), key)
 }
 
 func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicId))
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId)))
 }
 
 func rowExists(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, id int64) bool {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE id=$1`, topicId), id) == 1
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s WHERE id=$1`, ds.Schema, topic.MessageLogTable(topicId)), id) == 1
 }
 
 func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {

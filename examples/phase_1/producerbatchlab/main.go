@@ -30,6 +30,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"strings"
 	"sync"
@@ -117,16 +118,16 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 	})
 
 	total := producers * msgs
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total, fmt.Sprintf("%d concurrent batched publishes all landed", total))
-	assertCount(ctx, ds, fmt.Sprintf("idempotency_key_%d", tp.Id), total, "every batched publish wrote its own claim row")
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), total, fmt.Sprintf("%d concurrent batched publishes all landed", total))
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.IdempotencyKeyTable(tp.Id)), total, "every batched publish wrote its own claim row")
 
 	// rows committed by one txn share xmin -- any multi-row xmin proves grouping
 	var sharedTxns, largestBatch int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT count(*), COALESCE(max(c), 0) FROM (
-			SELECT count(*) AS c FROM message_log_%d GROUP BY xmin HAVING count(*) > 1
+			SELECT count(*) AS c FROM %s.%s GROUP BY xmin HAVING count(*) > 1
 		) shared;
-	`, tp.Id)).Scan(&sharedTxns, &largestBatch))
+	`, ds.Schema, topic.MessageLogTable(tp.Id))).Scan(&sharedTxns, &largestBatch))
 	if sharedTxns == 0 {
 		die("no shared transactions observed -- 50 concurrent callers never grouped into a batch")
 	}
@@ -140,7 +141,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 		_, err = wpInstance.Produce(ctx, work, &vulkan.ProduceOptions{IdempotencyKey: key})
 		must(err)
 	}
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total+1, "a caller-keyed Produce routed per-call and deduped its retry")
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), total+1, "a caller-keyed Produce routed per-call and deduped its retry")
 }
 
 // produceBatchScenario: the explicit batch verb -- unlike the batcher's
@@ -174,11 +175,10 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 		}
 	}
 	fmt.Println("  ✓ ids strictly ascending in argument order")
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total, "every item landed")
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), total, "every item landed")
 
 	var txns int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(
-		`SELECT count(DISTINCT xmin::text) FROM message_log_%d;`, tp.Id)).Scan(&txns))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT count(DISTINCT xmin::text) FROM %s.%s;`, ds.Schema, topic.MessageLogTable(tp.Id))).Scan(&txns))
 	if txns != 1 {
 		die(fmt.Sprintf("batch spread across %d transactions, want 1", txns))
 	}
@@ -203,7 +203,7 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	if !strings.Contains(err.Error(), "item 2") {
 		die(fmt.Sprintf("batch error must name the failed item, got: %v", err))
 	}
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total, "the poisoned batch rolled back whole -- nothing landed")
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), total, "the poisoned batch rolled back whole -- nothing landed")
 
 	// caller keys are single-Produce-only; an empty batch is a usage error
 	keyedPayload := rawPayload(`{"seq": 0}`)
@@ -260,7 +260,7 @@ func faultIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 		}
 	}
 	fmt.Println("  ✓ both bad payloads errored, all good payloads did not")
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total-2, "every good payload landed despite sharing batches with the bad ones")
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), total-2, "every good payload landed despite sharing batches with the bad ones")
 }
 
 // hotCompactedKeysScenario: 20 goroutines x 20 keyed produces across only 3
@@ -293,16 +293,16 @@ func hotCompactedKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 	})
 
 	total := producers * msgs
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total, fmt.Sprintf("%d hot-keyed publishes all landed, none deadlocked", total))
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), total, fmt.Sprintf("%d hot-keyed publishes all landed, none deadlocked", total))
 
 	var stale int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT count(*) FROM compaction_head_%d lk
+		SELECT count(*) FROM %s.%s lk
 		JOIN (
-			SELECT message_key, max(id) AS max_id FROM message_log_%d GROUP BY message_key
+			SELECT message_key, max(id) AS max_id FROM %s.%s GROUP BY message_key
 		) m ON m.message_key = lk.compaction_key
 		WHERE lk.head_id <> m.max_id;
-	`, tp.Id, tp.Id)).Scan(&stale))
+	`, ds.Schema, topic.CompactionHeadTable(tp.Id), ds.Schema, topic.MessageLogTable(tp.Id))).Scan(&stale))
 	if stale != 0 {
 		die(fmt.Sprintf("%d compaction_head rows not pointing at their key's max id", stale))
 	}
@@ -337,7 +337,7 @@ func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 		return err
 	})
 
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), 55, "all 55 publishes landed across self-healed partitions")
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), 55, "all 55 publishes landed across self-healed partitions")
 }
 
 // throughputScenario: the same workload down both paths -- how much the
@@ -409,7 +409,7 @@ func timeArm(ctx context.Context, ds *iDatastore.PostgresDatastore, label string
 	})
 	elapsed := time.Since(start)
 
-	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), warm+producers*msgs, label+" arm landed every publish exactly once")
+	assertCount(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), warm+producers*msgs, label+" arm landed every publish exactly once")
 	return elapsed
 }
 

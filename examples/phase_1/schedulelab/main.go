@@ -409,18 +409,13 @@ func deferSection(ctx context.Context) {
 
 	backdate(ctx, job.Id, time.Now().UTC().Add(-9*time.Second))
 	waitAdvanced(ctx, job.Id)
-	deferred := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, target.Id),
+	deferred := scalarInt64(ctx, fmt.Sprintf(`SELECT MAX(id) FROM %s.%s WHERE message_key = $1;`, ds.Schema, topic.MessageLogTable(target.Id)),
 		job.Name)
 
 	// the 'deferred' row lands while the first request is still running
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`,
-		target.Id, group, deferred), 1)
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, deferred), 1)
 	close(release)
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		target.Id, group, deferred), 1)
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, deferred), 1)
 	fmt.Println("  ✓ scheduler request deferred behind the running one, then ran to success")
 }
 
@@ -454,20 +449,15 @@ func runNowOverrideSection(ctx context.Context) {
 	backdate(ctx, job.Id, time.Now().UTC().Add(-2*time.Hour))
 	waitAdvanced(ctx, job.Id)
 	<-started
-	blocker := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, target.Id),
+	blocker := scalarInt64(ctx, fmt.Sprintf(`SELECT MAX(id) FROM %s.%s WHERE message_key = $1;`, ds.Schema, topic.MessageLogTable(target.Id)),
 		job.Name)
 
 	// were the second request stamped with the job's 'exclusive', it would wait
 	// until the first finishes -- the default 'parallel' runs it now
 	override, err := client.Schedule(prefix+".runnow").Run(ctx, nil)
 	must(err)
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		target.Id, group, override.Id), 1)
-	if got := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		target.Id, group, blocker)); got != 0 {
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, override.Id), 1)
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, blocker)); got != 0 {
 		die("the first request finished before the override ran -- the mid-run window was missed")
 	}
 	fmt.Println("  ✓ default run-now succeeded while the first was still running")
@@ -476,18 +466,12 @@ func runNowOverrideSection(ctx context.Context) {
 	// request waits for the running one instead of running beside it
 	deferred, err := client.Schedule(prefix+".runnow").Run(ctx, &vulkan.RunScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`,
-		target.Id, group, deferred.Id), 1)
-	if got := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		target.Id, group, deferred.Id)); got != 0 {
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, deferred.Id), 1)
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, deferred.Id)); got != 0 {
 		die("an exclusive run-now must not run while a previous request is still running")
 	}
 	close(release)
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND status = 'success';`,
-		target.Id, group), 3)
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group), 3)
 	fmt.Println("  ✓ exclusive run-now waited for the running request, then ran")
 }
 
@@ -511,7 +495,7 @@ func supersedeSection(ctx context.Context) {
 	head, err := client.Schedule(prefix+".supersede").Run(ctx, nil)
 	must(err)
 
-	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = $1;`, target.Id),
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key = $1;`, ds.Schema, topic.CompactionHeadTable(target.Id)),
 		job.Name); got != head.Id {
 		die(fmt.Sprintf("the second run-now must take the compaction head, got %d want %d", got, head.Id))
 	}
@@ -526,12 +510,8 @@ func supersedeSection(ctx context.Context) {
 	})
 	defer stop()
 
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		target.Id, group, head.Id), 1)
-	if got := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d;`,
-		target.Id, group, pending.Id)); got != 0 {
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, head.Id), 1)
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d;`, ds.Schema, topic.DeliveryLogTable(target.Id), group, pending.Id)); got != 0 {
 		die(fmt.Sprintf("the superseded request must leave no delivery rows, got %d", got))
 	}
 	mu.Lock()
@@ -612,20 +592,14 @@ func statusSection(ctx context.Context) {
 	// run-now can't supersede the first while it sits unclaimed
 	first, err := client.Schedule(jobName).Run(ctx, nil)
 	must(err)
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		target.Id, bound, first.Id), 1)
-	if got := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`,
-		target.Id, bound, first.Id)); got < 1 {
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), bound, first.Id), 1)
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`, ds.Schema, topic.DeliveryLogTable(target.Id), bound, first.Id)); got < 1 {
 		die("the first request must record its failed attempt before succeeding")
 	}
 
 	second, err := client.Schedule(jobName).Run(ctx, nil)
 	must(err)
-	waitForCount(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`,
-		target.Id, bound, second.Id), 1)
+	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`, ds.Schema, topic.DeliveryLogTable(target.Id), bound, second.Id), 1)
 
 	statuses, err := client.Schedule(jobName).Status(ctx)
 	must(err)
@@ -796,13 +770,11 @@ func waitAdvanced(ctx context.Context, jobId int64) {
 }
 
 func messageCount(ctx context.Context, messageKey string) int64 {
-	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, target.Id), messageKey)
+	return scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE message_key = $1;`, ds.Schema, topic.MessageLogTable(target.Id)), messageKey)
 }
 
 func producedScheduledTimes(ctx context.Context, messageKey string) []time.Time {
-	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(
-		`SELECT options->>'scheduled_at' FROM message_log_%d WHERE message_key = $1 ORDER BY id;`, target.Id), messageKey)
+	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT options->>'scheduled_at' FROM %s.%s WHERE message_key = $1 ORDER BY id;`, ds.Schema, topic.MessageLogTable(target.Id)), messageKey)
 	must(err)
 	defer rows.Close()
 

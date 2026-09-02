@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"regexp"
 	"sort"
@@ -116,7 +117,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Wor
 }
 
 func waitForPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, n int64) {
-	table := fmt.Sprintf("message_log_%d_%d", topicId, n)
+	table := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogPartitionTable(topicId, n))
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		var exists bool
@@ -133,16 +134,16 @@ func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
-		WHERE i.inhparent = 'message_log_%d'::regclass;
-	`, topicId))
+		WHERE i.inhparent = '%s.%s'::regclass;
+	`, ds.Schema, topic.MessageLogTable(topicId)))
 }
 
 // explainReadMessages EXPLAINs the exact query readMessages runs on a claim
 // (WHERE m.id > low AND m.id <= high) and counts distinct message_log_<id>_N
 // partitions named anywhere in the plan -- pruned partitions never appear.
 func explainReadMessages(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64, want int) {
-	logTable := fmt.Sprintf("message_log_%d", topicId)
-	bindingTable := fmt.Sprintf("binding_config_%d", topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
+	bindingTable := fmt.Sprintf("%s.%s", ds.Schema, topic.BindingConfigTable(topicId))
 	sql := fmt.Sprintf(`
 		EXPLAIN SELECT m.id, m.payload, m.created_at FROM %s m
 		WHERE m.id > $1

@@ -101,7 +101,7 @@ func run() (err error) {
 		}, nil)
 		must(err)
 	}
-	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, tp.Id))
+	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM %s.%s`, ds.Schema, topic.MessageLogTable(tp.Id)))
 	fmt.Printf("topic=%q id=%d message_log head = %d, group = %q\n", topicName, tp.Id, head, group)
 
 	const lease = 5 * time.Second
@@ -191,13 +191,13 @@ func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatasto
 }
 
 func committedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT committed FROM consumer_group_cursor_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT committed FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), groupId)
 }
 func claimedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT claimed FROM consumer_group_cursor_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT claimed FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), groupId)
 }
 func deliveries(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM exception_queue_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ExceptionQueueTable(topicId)), groupId)
 }
 
 func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {

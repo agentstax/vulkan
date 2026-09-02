@@ -23,6 +23,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"regexp"
 	"strconv"
@@ -116,8 +117,8 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	wg.Wait()
 
 	var trueMax, compactionHeadValue int64
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT MAX(id) FROM message_log_%d WHERE message_key='hot-key';`, tp.Id)).Scan(&trueMax))
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key='hot-key';`, tp.Id)).Scan(&compactionHeadValue))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT MAX(id) FROM %s.%s WHERE message_key='hot-key';`, ds.Schema, topic.MessageLogTable(tp.Id))).Scan(&trueMax))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key='hot-key';`, ds.Schema, topic.CompactionHeadTable(tp.Id))).Scan(&compactionHeadValue))
 
 	assertInt64(fmt.Sprintf("compaction_head converged to the true max id across %d concurrent publishes", n), compactionHeadValue, trueMax)
 }
@@ -174,9 +175,9 @@ func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // seeding, this cares about query cost at scale, not seeding realism) so
 // its own compaction_head row is set directly alongside it.
 func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, schema_version, message_key, compaction_rank) VALUES ('{}'::jsonb, 1, 'stale', 0);`, topicId))
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.%s (payload, schema_version, message_key, compaction_rank) VALUES ('{}'::jsonb, 1, 'stale', 0);`, ds.Schema, topic.MessageLogTable(topicId)))
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO compaction_head_%d (compaction_key, head_id, schema_version) VALUES ('stale', 1, 1);`, topicId))
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.%s (compaction_key, head_id, schema_version) VALUES ('stale', 1, 1);`, ds.Schema, topic.CompactionHeadTable(topicId)))
 	must(err)
 }
 
@@ -187,7 +188,7 @@ func createPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 	if to <= from {
 		return
 	}
-	logTable := fmt.Sprintf("message_log_%d", topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
 	var sql strings.Builder
 	for n := from; n < to; n++ {
 		fmt.Fprintf(&sql, "CREATE TABLE IF NOT EXISTS %s_%d PARTITION OF %s FOR VALUES FROM (%d) TO (%d);\n",
@@ -206,9 +207,9 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		return
 	}
 	sql := fmt.Sprintf(`
-		INSERT INTO message_log_%d (payload, schema_version, message_key)
+		INSERT INTO %s.%s (payload, schema_version, message_key)
 		SELECT '{}'::jsonb, 1, NULL FROM generate_series(1, $1);
-	`, topicId)
+	`, ds.Schema, topic.MessageLogTable(topicId))
 	_, err := ds.Pool.Exec(ctx, sql, count)
 	must(err)
 }
@@ -217,16 +218,16 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 // counting only message_log partitions the Append node ACTUALLY EXECUTED
 // against (mentions alone don't mean touched, see compactionwidthlab).
 func explainCompactionHeadLookup(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) (int, float64) {
-	logTable := fmt.Sprintf("message_log_%d", topicId)
+	logTable := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId))
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 FROM %s m
 		WHERE m.id = 1
 			AND (
 				m.compaction_rank IS NULL
-				OR m.id = (SELECT head_id FROM compaction_head_%d
+				OR m.id = (SELECT head_id FROM %s.%s
 					WHERE compaction_key = m.message_key)
 			);
-	`, logTable, topicId)
+	`, logTable, ds.Schema, topic.CompactionHeadTable(topicId))
 
 	rows, err := ds.Pool.Query(ctx, sql)
 	must(err)

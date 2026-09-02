@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync/atomic"
 	"time"
@@ -160,17 +161,17 @@ func metricsRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 	// the session counters flush to the same topic -- only the
 	// abandoned-routine events are this lab's subject
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE routing_key LIKE 'abandoned_routine.%%'`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE routing_key LIKE 'abandoned_routine.%%'`, ds.Schema, topic.MessageLogTable(topicId))).Scan(&count))
 	return count
 }
 
 func metricsRowsSince(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, sinceCount int) []metricsRow {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`
-		SELECT id, routing_key, payload FROM message_log_%d
+		SELECT id, routing_key, payload FROM %s.%s
 		WHERE routing_key LIKE 'abandoned_routine.%%'
 		ORDER BY id
 		OFFSET %d
-	`, topicId, sinceCount))
+	`, ds.Schema, topic.MessageLogTable(topicId), sinceCount))
 	must(err)
 	defer rows.Close()
 

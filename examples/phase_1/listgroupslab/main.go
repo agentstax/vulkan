@@ -12,11 +12,11 @@ import (
 	"os"
 	"time"
 
-	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
+	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
 func main() {

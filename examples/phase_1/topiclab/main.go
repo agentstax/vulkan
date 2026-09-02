@@ -244,18 +244,18 @@ func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatasto
 }
 
 func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, topicId), groupId, claimed, committed)
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), groupId, claimed, committed)
 	must(err)
 }
 
 func head(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	var v int64
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM message_log_%d`, topicId)).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId))).Scan(&v))
 	return v
 }
 
 func allIds(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) []int64 {
-	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT id FROM message_log_%d ORDER BY id`, topicId))
+	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT id FROM %s.%s ORDER BY id`, ds.Schema, topic.MessageLogTable(topicId)))
 	must(err)
 	defer rows.Close()
 
@@ -293,7 +293,7 @@ func waitForPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 }
 
 func partitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) []int64 {
-	prefix := fmt.Sprintf("message_log_%d_", topicId)
+	prefix := fmt.Sprintf("%s.%s_", ds.Schema, topic.MessageLogTable(topicId))
 	rows, err := ds.Pool.Query(ctx, `
 		SELECT REPLACE(c.relname, $2, '')::bigint AS n
 		FROM pg_inherits i
@@ -301,7 +301,7 @@ func partitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId i
 		WHERE i.inhparent = $1::regclass
 			AND c.relname LIKE $2 || '%'
 		ORDER BY n;
-	`, fmt.Sprintf("message_log_%d", topicId), prefix)
+	`, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(topicId)), prefix)
 	must(err)
 	defer rows.Close()
 

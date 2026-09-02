@@ -187,7 +187,7 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 	// registration creates delivery_log_<id> regardless of the flag -- the
 	// flag gates the writes, so re-enabling later needs no DDL
-	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), true)
+	assertTableExists(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.DeliveryLogTable(tp.Id)), true)
 
 	seed(ctx, wp, 1)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 1, 3, 5*time.Second, tp.DeliveryLogMode)
@@ -325,10 +325,10 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 
 	// a keyed message with its first-delivery 'deferred' row, as the cursor path writes it
 	var messageId int64
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (message_key, schema_version, payload) VALUES ('k', 1, '{}') RETURNING id`, tp.Id)).Scan(&messageId))
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status, concurrency, attempts) VALUES ($1, $2, 'deferred', 'exclusive', 0)`, tp.Id), groupId, messageId)
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO %s.%s (message_key, schema_version, payload) VALUES ('k', 1, '{}') RETURNING id`, ds.Schema, topic.MessageLogTable(tp.Id))).Scan(&messageId))
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.%s (consumer_group_id, message_id, status, concurrency, attempts) VALUES ($1, $2, 'deferred', 'exclusive', 0)`, ds.Schema, topic.ExceptionQueueTable(tp.Id)), groupId, messageId)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_log_%d (consumer_group_id, message_id, attempt, status, error) VALUES ($1, $2, 0, 'deferred', '')`, tp.Id), groupId, messageId)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.%s (consumer_group_id, message_id, attempt, status, error) VALUES ($1, $2, 0, 'deferred', '')`, ds.Schema, topic.DeliveryLogTable(tp.Id)), groupId, messageId)
 	must(err)
 
 	claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 1, 10, 3, 5*time.Second, tp.DeliveryLogMode)
@@ -396,13 +396,13 @@ func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageCons
 
 func assertDeliveryLogRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, wantErr string, wantExists bool) {
 	var gotErr string
-	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT error FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3;`, topicId), groupId, messageId, attempt).Scan(&gotErr)
+	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT error FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3;`, ds.Schema, topic.DeliveryLogTable(topicId)), groupId, messageId, attempt).Scan(&gotErr)
 	exists := err == nil
 	if exists != wantExists {
-		die(fmt.Sprintf("delivery_log_%d[group=%d message=%d attempt=%d] exists=%v, want %v (err=%v)", topicId, groupId, messageId, attempt, exists, wantExists, err))
+		die(fmt.Sprintf("%s.%s[group=%d message=%d attempt=%d] exists=%v, want %v (err=%v)", ds.Schema, topic.DeliveryLogTable(topicId), groupId, messageId, attempt, exists, wantExists, err))
 	}
 	if wantExists && gotErr != wantErr {
-		die(fmt.Sprintf("delivery_log_%d[message=%d attempt=%d] error=%q, want %q", topicId, messageId, attempt, gotErr, wantErr))
+		die(fmt.Sprintf("%s.%s[message=%d attempt=%d] error=%q, want %q", ds.Schema, topic.DeliveryLogTable(topicId), messageId, attempt, gotErr, wantErr))
 	}
 	fmt.Printf("  ✓ delivery_log_%d[message=%d attempt=%d] exists=%v%s\n", topicId, messageId, attempt, exists, errSuffix(wantExists, gotErr))
 }
@@ -416,9 +416,9 @@ func errSuffix(wantExists bool, gotErr string) string {
 
 func assertDeliveryLogStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, wantStatus string) {
 	var gotStatus string
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3;`, topicId), groupId, messageId, attempt).Scan(&gotStatus))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3;`, ds.Schema, topic.DeliveryLogTable(topicId)), groupId, messageId, attempt).Scan(&gotStatus))
 	if gotStatus != wantStatus {
-		die(fmt.Sprintf("delivery_log_%d[message=%d attempt=%d] status=%q, want %q", topicId, messageId, attempt, gotStatus, wantStatus))
+		die(fmt.Sprintf("%s.%s[message=%d attempt=%d] status=%q, want %q", ds.Schema, topic.DeliveryLogTable(topicId), messageId, attempt, gotStatus, wantStatus))
 	}
 	fmt.Printf("  ✓ delivery_log_%d[message=%d attempt=%d] status=%q\n", topicId, messageId, attempt, gotStatus)
 }
@@ -426,7 +426,7 @@ func assertDeliveryLogStatus(ctx context.Context, ds *iDatastore.PostgresDatasto
 // assertDeliveryLogStatusesAt checks every event logged under one attempt, in
 // insertion order.
 func assertDeliveryLogStatusesAt(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, want []string) {
-	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3 ORDER BY id;`, topicId), groupId, messageId, attempt)
+	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT status FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3 ORDER BY id;`, ds.Schema, topic.DeliveryLogTable(topicId)), groupId, messageId, attempt)
 	must(err)
 	defer rows.Close()
 	var got []string
@@ -436,25 +436,25 @@ func assertDeliveryLogStatusesAt(ctx context.Context, ds *iDatastore.PostgresDat
 		got = append(got, status)
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
-		die(fmt.Sprintf("delivery_log_%d[message=%d attempt=%d] statuses=%v, want %v", topicId, messageId, attempt, got, want))
+		die(fmt.Sprintf("%s.%s[message=%d attempt=%d] statuses=%v, want %v", ds.Schema, topic.DeliveryLogTable(topicId), messageId, attempt, got, want))
 	}
 	fmt.Printf("  ✓ delivery_log_%d[message=%d attempt=%d] statuses=%v\n", topicId, messageId, attempt, got)
 }
 
 func assertDeliveryLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2;`, topicId), groupId, messageId).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2;`, ds.Schema, topic.DeliveryLogTable(topicId)), groupId, messageId).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("delivery_log_%d[message=%d] has %d rows, want %d", topicId, messageId, count, want))
+		die(fmt.Sprintf("%s.%s[message=%d] has %d rows, want %d", ds.Schema, topic.DeliveryLogTable(topicId), messageId, count, want))
 	}
 	fmt.Printf("  ✓ delivery_log_%d[message=%d] has %d row(s)\n", topicId, messageId, count)
 }
 
 func assertDeliveryRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, ds.Schema, topic.ExceptionQueueTable(topicId))).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("exception_queue_%d has %d rows, want %d", topicId, count, want))
+		die(fmt.Sprintf("%s.%s has %d rows, want %d", ds.Schema, topic.ExceptionQueueTable(topicId), count, want))
 	}
 	fmt.Printf("  ✓ exception_queue_%d has %d row(s)\n", topicId, count)
 }

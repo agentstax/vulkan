@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"time"
 
@@ -134,7 +135,7 @@ func run() (err error) {
 	for _, table := range controlPlaneTables {
 		assertTableExists(ctx, table, false)
 	}
-	assertTableExists(ctx, fmt.Sprintf("message_log_%d", alertsTopicId), false)
+	assertTableExists(ctx, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(alertsTopicId)), false)
 
 	step("a second destroy is a no-op, not an error")
 	must(client.System().Destroy(ctx, nil))

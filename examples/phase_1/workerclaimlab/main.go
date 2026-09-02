@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"time"
 
@@ -90,7 +91,7 @@ func run() (err error) {
 		}, nil)
 		must(err)
 	}
-	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, tp.Id))
+	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM %s.%s`, ds.Schema, topic.MessageLogTable(tp.Id)))
 	fmt.Printf("topic=%q id=%d seeded head=%d, instance ttl=%s, %d consumers\n", topicName, tp.Id, head, instanceTTL, consumers)
 
 	running := make([]*runningConsumer, 0, consumers)
@@ -135,7 +136,7 @@ func run() (err error) {
 
 	// ===== the workers actually did their jobs =====
 	step("END STATE: the coordinated workers did real work")
-	assertInt("committed reached head", scalar(ctx, ds, fmt.Sprintf(`SELECT c.committed FROM consumer_group_cursor_%d c JOIN consumer_group_config g ON g.id = c.consumer_group_id WHERE g.name=$1`, tp.Id), group), head)
+	assertInt("committed reached head", scalar(ctx, ds, fmt.Sprintf(`SELECT c.committed FROM %s.%s c JOIN consumer_group_config g ON g.id = c.consumer_group_id WHERE g.name=$1`, ds.Schema, topic.ConsumerGroupCursorTable(tp.Id)), group), head)
 
 	fmt.Println("\n✅ WORKER CLAIM LAB PASSED")
 	fmt.Println("   3 consumers -> one live instance per target-1 worker row, failover to the")

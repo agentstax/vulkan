@@ -396,7 +396,7 @@ func seed(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work],
 
 func committedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, groupId int64, topicId int64) int64 {
 	var v int64
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT committed FROM consumer_group_cursor_%d WHERE consumer_group_id=$1`, topicId), groupId).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT committed FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ConsumerGroupCursorTable(topicId)), groupId).Scan(&v))
 	return v
 }
 

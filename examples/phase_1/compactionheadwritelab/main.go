@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"time"
@@ -215,7 +216,7 @@ type tableStats struct {
 func compactionHeadTable(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string) string {
 	var id int64
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = $1;`, topicName).Scan(&id))
-	return fmt.Sprintf("compaction_head_%d", id)
+	return fmt.Sprintf("%s.%s", ds.Schema, topic.CompactionHeadTable(id))
 }
 
 func dumpTableStats(ctx context.Context, ds *iDatastore.PostgresDatastore, table string) tableStats {

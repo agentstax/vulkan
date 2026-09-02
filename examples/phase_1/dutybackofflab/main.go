@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"time"
 
@@ -100,7 +101,7 @@ func run() (err error) {
 	done := make(chan error, 1)
 	go func() { done <- execution.Run(runCtx) }()
 
-	table := fmt.Sprintf("message_log_%d", tp.Id)
+	table := fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id))
 	hidden := table + "_hidden"
 
 	step("breaking the janitor: renaming its message_log table away")

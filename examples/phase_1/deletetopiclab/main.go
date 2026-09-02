@@ -122,11 +122,11 @@ func run() (err error) {
 		assertGroupRowCount(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), groupId, 1, "before Destroy")
 	}
 	assertCompactionHeadCount(ctx, ds, tp.Id, 1, "before Destroy")
-	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), true)
+	assertTableExists(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), true)
 	assertDeliveryRowCount(ctx, ds, tp.Id, 1, "before Destroy")
-	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), true)
+	assertTableExists(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.DeliveryLogTable(tp.Id)), true)
 	assertDeliveryLogRowCount(ctx, ds, tp.Id, 1, "before Destroy")
-	assertTableExists(ctx, ds, fmt.Sprintf("idempotency_key_%d", tp.Id), true)
+	assertTableExists(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.IdempotencyKeyTable(tp.Id)), true)
 	assertIdempotencyKeyRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
@@ -160,7 +160,7 @@ func assertGroupRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, 
 
 func assertCompactionHeadCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM compaction_head_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, ds.Schema, topic.CompactionHeadTable(topicId))).Scan(&count))
 	if count != want {
 		die(fmt.Sprintf("compaction_head[topic %d] has %d rows %s, want %d", topicId, count, when, want))
 	}
@@ -182,9 +182,9 @@ func assertGroupGone(ctx context.Context, ds *iDatastore.PostgresDatastore, grou
 // in the table name), so it can't go through assertRowCount's generic form.
 func assertDeliveryRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, ds.Schema, topic.ExceptionQueueTable(topicId))).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("exception_queue_%d has %d rows %s, want %d", topicId, count, when, want))
+		die(fmt.Sprintf("%s.%s has %d rows %s, want %d", ds.Schema, topic.ExceptionQueueTable(topicId), count, when, want))
 	}
 	fmt.Printf("  ✓ exception_queue_%d has %d row(s) %s\n", topicId, count, when)
 }
@@ -193,9 +193,9 @@ func assertDeliveryRowCount(ctx context.Context, ds *iDatastore.PostgresDatastor
 // same no-topic_id-column reason as assertDeliveryRowCount.
 func assertDeliveryLogRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, ds.Schema, topic.DeliveryLogTable(topicId))).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("delivery_log_%d has %d rows %s, want %d", topicId, count, when, want))
+		die(fmt.Sprintf("%s.%s has %d rows %s, want %d", ds.Schema, topic.DeliveryLogTable(topicId), count, when, want))
 	}
 	fmt.Printf("  ✓ delivery_log_%d has %d row(s) %s\n", topicId, count, when)
 }
@@ -204,9 +204,9 @@ func assertDeliveryLogRowCount(ctx context.Context, ds *iDatastore.PostgresDatas
 // directly -- same no-topic_id-column reason as assertDeliveryRowCount.
 func assertIdempotencyKeyRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM idempotency_key_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, ds.Schema, topic.IdempotencyKeyTable(topicId))).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("idempotency_key_%d has %d rows %s, want %d", topicId, count, when, want))
+		die(fmt.Sprintf("%s.%s has %d rows %s, want %d", ds.Schema, topic.IdempotencyKeyTable(topicId), count, when, want))
 	}
 	fmt.Printf("  ✓ idempotency_key_%d has %d row(s) %s\n", topicId, count, when)
 }

@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"time"
@@ -206,7 +207,7 @@ func run() (err error) {
 }
 
 func rowStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64) string {
-	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM exception_queue_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2`, ds.Schema, topic.ExceptionQueueTable(topicId))
 	var status string
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&status))
 	return status
@@ -246,7 +247,7 @@ func waitForGone(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId 
 }
 
 func assertLogStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, want string) {
-	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3`, topicId)
+	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM %s.%s WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3`, ds.Schema, topic.DeliveryLogTable(topicId))
 	var status string
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId, attempt).Scan(&status))
 	if status != want {
@@ -258,9 +259,9 @@ func assertLogStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 func deferredLogRows(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, key string) int {
 	sql := fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM delivery_log_%[1]d l JOIN message_log_%[1]d m ON m.id = l.message_id
+		FROM %[1]s.%[2]s l JOIN %[1]s.%[3]s m ON m.id = l.message_id
 		WHERE l.consumer_group_id = $1 AND m.message_key = $2 AND l.status = 'deferred'
-	`, topicId)
+	`, ds.Schema, topic.DeliveryLogTable(topicId), topic.MessageLogTable(topicId))
 	var count int
 	must(ds.Pool.QueryRow(ctx, sql, groupId, key).Scan(&count))
 	return count
