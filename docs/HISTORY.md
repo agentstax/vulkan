@@ -5,6 +5,123 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-01 — seams, the schema, and per-installation locks [0628]-[0630]
+
+Chunk 15, the last of the one-client queue. `vulkan.Producer[Message]`
+and `vulkan.Consumer[Message]` publish each typed instance's WHOLE public
+surface -- five methods and one -- so a service can hold the interface and
+a test can supply its own; a curated subset would be a second definition
+of what a producer is. The compile-time assertions live in
+`tools/conventions`, not in the user-facing package.
+
+`internal/topic/tables.go` became `pkg/topic/tables.go` and the
+table-name funcs are public API [0628], superseding [0371]: its premise
+("zero example programs call them") had already failed for labs, which
+cannot import `internal/`, and fails again for an operator pasting a
+diagnose query. The repo-root `internal/` is gone.
+
+"Schema" had three senses and was about to gain a fourth, so the migration
+one moved [0629]: `migrate status` reports `system` as an object beside a
+`topics` array in both output modes, the result documents dropped `scope`,
+and VK0017 became "system not registered". That fixed a real ambiguity --
+only the `__system.` PREFIX is reserved, so a topic named `system` printed
+two indistinguishable rows. "Schema version" for a MIGRATION version is
+deliberately left alone, parked in ROADMAP with the rule for taking it up.
+
+A Postgres schema is now one Vulkan installation [0630].
+`PostgresConnectionConfig.Schema` (default `vulkan`) sets the pool's
+`search_path` to `"<schema>, public"` -- `public` trails so a caller's own
+tables stay visible inside `InTransaction` -- and no SQL is qualified,
+which would have turned 207 literals into Sprintf calls. `RegisterSystem`
+runs `CREATE SCHEMA IF NOT EXISTS` first; 42501 raises VK0064.
+`DestroySystem` leaves the schema standing. This makes `system_config`'s
+singleton row correct permanently, answering [0625]'s open question.
+
+All six advisory lock keys took the schema. `common.AdvisoryLock`, one
+constant shared by system register, system delete, and migrate, became
+`common.NewAdvisoryLockKey(kind, schema, parts...)` -- vulkan's namespace
+(ASCII "VULK") in the high 32 bits, a crc32 of the name in the low 32,
+with `Value`/`ClassId`/`ObjId` giving the halves `pg_locks` files it
+under. Three `hashtext` expressions and `advisoryLockKey`'s bit-packer
+went with it, and so did that packer's 2^20 partitions-per-topic ceiling.
+None of it was a correctness fix -- `search_path` already isolates the
+tables -- but two installations no longer serialize on locks neither
+needs. The keys are derived, so across the deploy that ships this an older
+process and a newer one take different keys and do not serialize on
+RegisterSystem or migrate up.
+
+The schema reached the operator. All 37 declared diagnose queries qualify
+every table they name with `{schema}`, enforced by a `tools/conventions`
+walk; the client binds `schema` once onto its logger so every line names
+the installation the reader must substitute. The CLI took `--schema` and
+`VULKAN_ADMIN_SCHEMA`, and a `search_path` in the database URL is now a
+usage error rather than a silently ignored parameter. Two latent bugs
+surfaced on the way: `orderFlags` never cleared `SortFlags` on
+`PersistentFlags`, which nothing had caught because two globals sorted
+alphabetically into definition order; and `tools/compat` had not compiled
+against the working tree since the [0625] API changes, so `just compat-lab`
+was failing before it could test anything. It now refuses to run unless its
+`search_path` already reaches a migrated schema -- otherwise a pinned build
+creates its own empty tables and round-trips against itself.
+
+The site lost PROPOSED. guides/client.mdx and guides/consumer-group-config.mdx
+document shipped API; what is still unbuilt (the `Declaration` outcome,
+`vulkantest`) is an aside, and every sample was re-checked against
+`go doc ./pkg/vulkan`. A schema section landed on the client guide, 43 SQL
+references across 14 pages took the `vulkan.` prefix, and the playground
+headers were re-scored -- five had drifted to renamed API and four had
+arithmetic that never added up.
+
+Green on a fresh database: 47/47 labs, `just verify`, `just compat-lab`,
+`npm run verify` (vale 0 errors across 94 files, vitest 107, Playwright
+18).
+
+## 2026-09-01 — one client over the datastore [0625][0626][0627]
+
+`vulkan.NewClient(ds, cfg)` is the API. It holds the ambient config once
+-- `Logger`, `Retry`, `AllowDestroy` -- so nothing below it carries a
+`Logger` or `Retry` field, which removed the worst trap on the old
+`ConsumerConfig`: `Retry` beside `Message.Retry`, both `*RetryPolicy`, one
+for the datastore and one for redelivery. `NewConsumer`, `NewProducer`,
+`NewScheduler`, `NewMessageAdmin`, and `NewSystemManager` became its
+assemblers.
+
+Two grammars. The client names the noun (`RegisterConsumer[T]`,
+`RegisterTopic`, `ListTopics`, `Topic(name)`); a handle uses the bare verb
+(`orders.Rename`, `nightly.Suspend`). Handles cost no I/O and cannot fail,
+`Get(ctx)` is the one comma-ok read, and every other verb returns the
+not-found error itself. `List<Child>` on every parent added
+`Topic.ListGroups` and `Group.ListWorkers`. The key reads moved onto the
+topic (`Topic.CompactionHead[T]`, `Topic.ListKeyMessages[T]`), replacing a
+separate `CompactionController` keyed by topic id -- two objects for one
+fact.
+
+Read-models took `<Noun>Data` and the 63 datastore scan structs became
+`<Table>Row`, named for the table they scan. `ScheduleSpec` replaced three
+adjacent strings, where a `name`/`topic` swap registered a schedule nobody
+would notice was wrong. Every options struct became nil-able.
+
+The group's config split in two: `ConsumerConfig` at `RegisterConsumer` is
+what the group means and is stored on its `worker_config` rows;
+`ConsumeOptions` at `Consume` is how one process runs. Instances read the
+declared document back on a refresh interval instead of each process
+writing in its own copy.
+
+Newest wins and nothing refuses [0626]. `RequireMatch` was built and
+reverted in full, the stale-build gate was cut before code -- both are a
+lock with no key, blocking a config change or a rollback with no verb that
+unlocks it. What stands is the differing-overwrite warn, promoted to
+declared events: VK0059 (worker), VK0061 (topic), VK0062 (schedule).
+
+The producer-liveness gap became the third built-in alert rather than a
+bespoke check [0627]: `pkg/alert/workerliveness`, hourly, over the
+`metrics.WorkerUnclaimed` classification the fleet already computes, with
+its controller owning no SQL. No threshold -- the manager deletes expired
+instance rows every tick, so an unclaimed duration is unreadable, and
+`live < target` is wrong for `NoInstanceTarget` group consumers. Its
+register-time line is VK0063 for all three built-ins, and an alert's own
+clause moved from `message` to `alert_message` at every site.
+
 ## 2026-08-30 — the first RegisterTopic stands up the system [0624]
 
 Public `RegisterTopic` now checks for the system row and runs

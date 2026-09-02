@@ -21,25 +21,15 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **One-client API shape [0625]** — `vulkan.NewClient` over the
-  datastore, handles with bare verbs, `<Noun>Data` rows, group config
-  stored at `RegisterConsumer` with a `Declaration` outcome and
-  `RequireMatch`. Spec: website guides/client.mdx +
-  guides/consumer-group-config.mdx. Expanded in docs/TODO.md as 15
-  chunks, each reviewed before the next starts. Absorbs from the items
-  below: the Retry / Message.Retry confusion, the
-  `topiccontroller.TopicConfig` import, and produce-only upkeep silence
-  (DefaultProducer/DefaultConsumer's friction list); the internal/ moves
-  of the public-surface trim; the compaction key read's home
-  (`Topic.CompactionHead`, the KV handle's Get).
-  - After (or at) the chunk-7 cut-over: consider making the `vulkan`
-    package the real home of every user-spelled type instead of
-    alias.go's aliases -- the declarations, their doc comments, and
-    their constructors move into the one package and internal code
-    imports them from there. An alias is an indirection every
-    find-references and every doc-comment edit has to hop through;
-    chunk 3 used aliases only so the old packages could keep compiling
-    beside the client.
+- **`vulkan` as the real home of every user-spelled type**, instead of
+  alias.go's aliases — the declarations, their doc comments, and their
+  constructors move into the one package and internal code imports them
+  from there. An alias is an indirection every find-references and every
+  doc-comment edit has to hop through; [0625] chunk 3 used aliases only
+  so the old packages could keep compiling beside the new client, and
+  the chunk-7 cut-over that was the trigger for reconsidering has
+  shipped. Left over from the one-client shape, which is otherwise
+  closed out (HISTORY 2026-09-01).
 - **Step 3 -- the public-API review**, resumed where the playground
   gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
   HISTORY). The catalog (`examples/playground/`) is the measuring
@@ -53,14 +43,18 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     UNBLOCKED: this was sequenced behind the quickstart rewrite so the
     Default constructors would be built against observed friction rather
     than guessed, and that rewrite shipped in [0581].
-    - The friction it observed: a consumer needs a MessageAdmin and
-      RegisterSystem just to GetTopic; Consume's cancellable-ctx
-      requirement is a context.Background() trap; ConsumerConfig.Retry and
-      Message.Retry are confusable; produce-only deployments silently get
-      no upkeep unless someone runs `vulkan manager run`; RegisterTopic
-      wants an `&topiccontroller.TopicConfig{}` (an import plus an empty
-      struct for the common case — whether nil works is unverified);
-      pkg/common and pkg/topic invite aliasing in user code.
+    - The friction it observed, mostly closed by the one-client shape
+      (HISTORY 2026-09-01): a consumer needing a MessageAdmin and
+      RegisterSystem just to GetTopic ([0624] + `client.Topic(name)`),
+      ConsumerConfig.Retry beside Message.Retry (ambient config is held
+      once on the client), produce-only deployments getting no upkeep
+      silently (VK0063, [0627]), `&topiccontroller.TopicConfig{}` for the
+      common case (it is `vulkan.TopicConfig` and nil is verified —
+      playground 01), and pkg/common and pkg/topic inviting aliasing in
+      user code (every user-spelled type is in `vulkan`). What is left:
+      Consume's cancellable-ctx requirement is still a
+      context.Background() trap, VK0002, discoverable only by hitting
+      it.
   - Go doc comments on the public API — the surfaces the worker and schedule
     rounds finalized never got a doc-comment pass. [0581] fixed
     RoutingKey's in passing; the rest are unreviewed.
