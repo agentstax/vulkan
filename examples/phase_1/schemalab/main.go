@@ -81,9 +81,9 @@ func run() (err error) {
 	// installations on every line either of them logs
 	shared := &vulkan.ClientConfig{AllowDestroy: true}
 	left, leftDs := openClient(ctx, leftSchema, shared)
-	defer leftDs.Close()
+	defer leftDs.Pool.Close()
 	right, rightDs := openClient(ctx, rightSchema, shared)
-	defer rightDs.Close()
+	defer rightDs.Pool.Close()
 	defer dropSchemas(ctx, leftDs, leftSchema, rightSchema)
 
 	must(left.RegisterSystem(ctx, nil))
@@ -168,7 +168,7 @@ func run() (err error) {
 
 	emptySchema := fmt.Sprintf("schemalab_empty_%d", runId)
 	empty, emptyDs := openClient(ctx, emptySchema, shared)
-	defer emptyDs.Close()
+	defer emptyDs.Pool.Close()
 
 	// the schema does not exist, and every vulkan statement names it [0631],
 	// so the catalog read raises undefined_table -- which the catalog reads
@@ -190,7 +190,7 @@ func run() (err error) {
 	// reads above absences is that vulkan's SQL names its own schema -- not
 	// that public happens to be empty.
 	publicClient, publicDs := openClient(ctx, "public", shared)
-	defer publicDs.Close()
+	defer publicDs.Pool.Close()
 	must(publicClient.RegisterSystem(ctx, nil))
 	defer func() { must(publicClient.System().Destroy(ctx, &vulkan.DestroyOptions{Force: true})) }()
 	_, err = publicClient.RegisterTopic(ctx, sharedName, nil)
@@ -271,8 +271,10 @@ func run() (err error) {
 // ***************
 
 func openClient(ctx context.Context, schema string, cfg *vulkan.ClientConfig) (*vulkan.Client, *iDatastore.PostgresDatastore) {
-	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
-		&iDatastore.PostgresConnectionConfig{Pass: "example_password", Schema: schema})
+	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
+	must(err)
+
+	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, &iDatastore.PostgresDatastoreConfig{Schema: schema})
 	must(err)
 	client, err := vulkan.NewClient(ds, cfg)
 	must(err)

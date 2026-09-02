@@ -53,9 +53,12 @@ func run() (err error) {
 	}()
 	ctx := context.Background()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &datastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	must(err)
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+	must(err)
 
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)

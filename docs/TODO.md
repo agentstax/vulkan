@@ -20,45 +20,66 @@ is the reviewed spec for everything below.
 
 ### Tasks
 
-1. **The two constructors.** `NewPostgresDatastore` takes
-   `pool *pgxpool.Pool` and a new `PostgresDatastoreConfig` holding
-   `Schema` alone; it keeps its `ctx` and its single `Ping`, so a bad
-   address still fails at construction. `NewPostgresPool` takes the
-   exploded DSN in URL order with `password` inline (`""` = none) and
-   keeps `PostgresConnectionConfig` trimmed to `Port`, `MaxConns`,
-   `ConnectTimeout`, `TLSConfig` -- pure assembly over
-   `pgxpool.NewWithConfig`, no ping. `PostgresDatastore.Close` is
-   deleted (`pkg/datastore/datastore.go:81`).
-2. **The CLI's URL parser goes.** `cmd/vulkan/internal/cli/conn.go`
-   hand-parses `postgres://` URLs only because "pkg/datastore has no URL
-   constructor today" -- `parseConnConfig`, the `connection` struct, and
-   `pathDatabase` all delete in favour of `pgxpool.New(ctx, raw)`. The
-   CLI gets strictly more capable: it warns today that it cannot honour
-   `sslmode`, and pgx parses it natively along with `pool_max_conns` and
-   `connect_timeout`. Two things to preserve: usage errors stay usage
-   errors (a malformed URL is `failUsage`, a dial failure is `failOp`),
-   and `VULKAN_ADMIN_SCHEMA` moves onto the datastore config.
-3. **Call-site sweep.** 75 `NewPostgresDatastore` calls -- 58
-   `examples/phase_1`, 13 `examples/playground`, and one each in
-   `cmd/vulkan`, `tools/compat`, `bench/fillfactor`, `bench/compaction`
-   -- plus 74 `ds.Close()` becoming `defer pool.Close()` and 85
-   `PostgresConnectionConfig` references. `tools/compat` pins a prior release, so its pin flow in
-   go.mod needs re-reading before it is touched.
-4. **The manager's start line reports the pool's max.** `MaxConns`
-   carries the only warning that pgx's default pool is `max(4, numCPU)`
-   and quietly caps a high worker count; nothing can enforce that
-   against a pool Vulkan did not build, so the fact moves to the start
-   line as a config attribute an operator can read.
-5. **Docs.** Flip the client guide's Connect section and `## The schema`
-   sample onto the new form and drop the Proposed heading; rewrite the
-   quickstart's samples (both carry the constructor, and while every
-   sample there is being touched, drop the banned `must()` helper).
-   `errors/VK0064.md` names the constructor too. While in the site:
-   grep for other [0630]-[0632] stragglers -- two were already found and
-   fixed 2026-09-02 (the client guide claimed the pool sets a
-   `search_path` that [0632] removed, and the quickstart claimed tables
-   land in the database's default schema rather than `vulkan`), so the
-   sweep is not hypothetical.
-6. **Verify.** Build plus `go test -race` on touched packages and the
-   directly-affected labs per change; the full fresh-DB lab suite at the
-   review-ready checkpoint, since the sweep touches all 58 phase_1 labs.
+1. ~~**The two constructors.**~~ DONE. `NewPostgresDatastore(ctx, pool,
+   *PostgresDatastoreConfig)` keeps the ping and no longer closes what it
+   did not open; `NewPostgresPool(ctx, user, password, host, database,
+   *PostgresConnectionConfig)` is pure assembly. `Close` deleted, the
+   config split across `datastore_config.go` (Schema) and
+   `connection_config.go` (Port, MaxConns, ConnectTimeout, TLSConfig).
+   Fixed on the way past, since the DSN was being rebuilt anyway: the old
+   `fmt.Sprintf("postgres://%s:%s@%s:%s/%s", ...)` corrupted any password
+   holding `@`, `:`, `/`, or `#` and produced a broken authority for an
+   IPv6 host. It now builds through `net/url` + `net.JoinHostPort`, with
+   `datastore_test.go` round-tripping four cases back through
+   `pgxpool.ParseConfig`.
+2. ~~**The CLI's URL parser goes.**~~ DONE. `parseConnConfig`, the
+   `connection` struct, `newConnection`, and `pathDatabase` deleted, ~90
+   lines, in favour of `pgxpool.ParseConfig` + `NewWithConfig`. Confirmed
+   empirically before deleting: pgx reads `pool_max_conns`,
+   `connect_timeout`, and `sslmode` (which the old code warned it could
+   not honour) natively, accepts the keyword/value DSN form, and defaults
+   the user from the environment the way libpq does. Classification
+   preserved -- a parse failure is `failUsage`, dialing is `failOp`, and
+   the schema is defaulted and validated before the pool is built so a bad
+   `--schema` stays a usage error. The `search_path` guard survives,
+   reading `ConnConfig.RuntimeParams` instead of re-parsing the URL, with
+   its reason updated: a DSN's path selects nothing now that every
+   statement names its own schema.
+3. ~~**Call-site sweep.**~~ DONE. 75 constructor calls, 74 `defer
+   ds.Close()` -> `defer pool.Close()`. Mostly scripted; four things the
+   script could not do: the two bench drivers build their arguments from
+   `envOr(...)` rather than literals, `invariantlab` and `schemagatelab`
+   already held a `pool := ds.Pool` alias that became a redeclaration
+   (deleted -- it was always redundant), and `schemalab` closes four
+   named datastores from a helper that returns no pool, so those go
+   through the exported `Pool` field. All seven modules build and vet.
+4. ~~**The manager's start line reports the pool's max.**~~ DONE.
+   `ManagerProvisioner` reads `ds.Pool.Config().MaxConns` once at
+   construction and `ManagerInstance` prints it as `pool_max_conns`.
+   Registry row added to CONVENTIONS ## Logging in the same change.
+5. ~~**Docs.**~~ DONE. The client guide's Proposed section became
+   `## Building the pool` and its two samples take the pool; the
+   quickstart's two programs were rewritten onto `main` -> `run() error`,
+   which retired the banned `must()` helper there, and both were extracted
+   and compiled against the working tree. `VK0064` moved to
+   `PostgresDatastoreConfig`. The straggler grep found one more
+   [0632] leftover: VK0064 still said the schema name "reaches CREATE
+   SCHEMA and the connection's search_path", now the statement qualifier.
+6. ~~**Verify.**~~ DONE. `just verify` green across all seven modules;
+   fresh-DB lab suite 47/47. The CLI's rewritten connection path was
+   driven by hand for the cases no lab covers: a basic URL lists topics,
+   a wrong scheme and a DSN carrying `search_path` still fail as usage
+   errors, and `sslmode=disable` plus the keyword/value DSN form now work
+   where the old parser warned or could not parse. Task 4 confirmed in a
+   real run rather than by reading -- metrics-collector-lab's log carries
+   `manager instance starting ... rate=1s pool_max_conns=10`.
+
+Ready for closeout: HISTORY.md entry, then these lines and the ROADMAP
+round-1 pointer come out.
+
+Worth knowing at the next release checkpoint: `tools/compat` drives the
+PINNED release's API, and its go.mod currently replaces vulkan with the
+working tree, which is why it compiles today. The moment it pins a real
+tag from before this change, `main.go` will not build against it -- the
+constructor it calls does not exist there. That is the compat lab
+working, not breaking: [0633] is a breaking API change, taken pre-v1.

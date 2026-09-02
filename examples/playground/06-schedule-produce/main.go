@@ -4,7 +4,7 @@
 // produces and the topic it produces to, consume that topic like any
 // other.
 //
-// Concepts held before domain code (12): the 7 from scenario 03, plus
+// Concepts held before domain code (13): the 8 from scenario 03, plus
 // RegisterSchedule[T], ScheduleSpec, the Schedule handle and its Schedule
 // verb, vulkan.MetaFromContext for the scheduled time, and the fact that
 // Schedule runs the system manager.
@@ -46,12 +46,16 @@ func run() error {
 	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
-		&datastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	if err != nil {
 		return err
 	}
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+	if err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {

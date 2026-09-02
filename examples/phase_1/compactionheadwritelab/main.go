@@ -63,12 +63,14 @@ func run() (err error) {
 	}()
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
-		Pass:     "example_password",
+	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
 		MaxConns: 60, // headroom above the hot-key scenario's 50 concurrent goroutines
 	})
 	must(err)
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	must(err)
 
 	fixedCostScenario(ctx, ds)
 	hotKeyContentionScenario(ctx, ds)

@@ -695,6 +695,8 @@ the code is the line's breadcrumb to its own explanation.
                     cap spells its config field, max_retries)
       delay         backoff delay
       rate          worker poll rate
+      pool_max_conns  the connection pool's own ceiling -- the caller builds
+                    the pool [0633], so vulkan reports it rather than sets it
       duration      elapsed wall time of the operation the line reports
       threshold     the configured duration ceiling the line compares
                     against

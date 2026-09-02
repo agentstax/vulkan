@@ -3,7 +3,8 @@ package datastore
 import (
 	"context"
 	"errors"
-	"fmt"
+	"net"
+	"net/url"
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,12 +17,35 @@ type PostgresDatastore struct {
 	Schema string
 }
 
-// NewPostgresDatastore opens a connection pool to the named database and
-// pings it once, so a wrong address or credential fails here instead of at
-// the first query. The caller owns the pool: defer Close after a nil error.
+// NewPostgresDatastore wraps a pool you built and pings it once, so a wrong
+// address or credential fails here instead of at the first query.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset (port 5432, schema "vulkan"), Validate rejects what's out of range.
-func NewPostgresDatastore(ctx context.Context, user string, host string, database string, cfg *PostgresConnectionConfig) (*PostgresDatastore, error) {
+// unset (schema "vulkan"), Validate rejects what's out of range.
+func NewPostgresDatastore(ctx context.Context, pool *pgxpool.Pool, cfg *PostgresDatastoreConfig) (*PostgresDatastore, error) {
+	if pool == nil {
+		return nil, errors.New("pool must not be nil")
+	}
+
+	if cfg == nil {
+		cfg = &PostgresDatastoreConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		return nil, err
+	}
+
+	return &PostgresDatastore{
+		Pool:   pool,
+		Schema: cfg.Schema,
+	}, nil
+}
+
+// NewPostgresPool builds a pool from the parts of a Postgres URL
+func NewPostgresPool(ctx context.Context, user string, password string, host string, database string, cfg *PostgresConnectionConfig) (*pgxpool.Pool, error) {
 	if user == "" {
 		return nil, errors.New("user is required")
 	}
@@ -40,11 +64,7 @@ func NewPostgresDatastore(ctx context.Context, user string, host string, databas
 		return nil, err
 	}
 
-	connectionString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
-		user, cfg.Pass, host, strconv.Itoa(cfg.Port), database,
-	)
-
-	poolConfig, err := pgxpool.ParseConfig(connectionString)
+	poolConfig, err := pgxpool.ParseConfig(connectionString(user, password, host, database, cfg.Port))
 	if err != nil {
 		return nil, err
 	}
@@ -59,25 +79,26 @@ func NewPostgresDatastore(ctx context.Context, user string, host string, databas
 		poolConfig.ConnConfig.TLSConfig = cfg.TLSConfig
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	// Sanity check
-	if err = pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, err
-	}
-
-	return &PostgresDatastore{
-		Pool:   pool,
-		Schema: cfg.Schema,
-	}, nil
+	return pgxpool.NewWithConfig(ctx, poolConfig)
 }
 
-// Close releases the pool. The app that constructed the datastore closes it
-// -- producers and consumers borrow it and never do.
-func (d *PostgresDatastore) Close() {
-	d.Pool.Close()
+// ***************
+// *** HELPERS ***
+// ***************
+
+// connectionString builds the DSN through net/url so a password holding @ or
+// #, and an IPv6 host, survive into it.
+func connectionString(user string, password string, host string, database string, port int) string {
+	userInfo := url.User(user)
+	if password != "" {
+		userInfo = url.UserPassword(user, password)
+	}
+
+	dsn := url.URL{
+		Scheme: "postgres",
+		User:   userInfo,
+		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
+		Path:   "/" + database,
+	}
+	return dsn.String()
 }

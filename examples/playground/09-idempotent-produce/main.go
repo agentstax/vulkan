@@ -3,7 +3,7 @@
 // A webhook receiver: the upstream retries on any non-2xx, so the same
 // event arrives more than once and must be stored once.
 //
-// Concepts held before domain code (7): the produce set from scenario 01,
+// Concepts held before domain code (8): the produce set from scenario 01,
 // plus IdempotencyKey as an opaque string and ProduceResult.Duplicate.
 //
 // Traps hit:
@@ -42,12 +42,16 @@ func main() {
 func run() error {
 	ctx := context.Background()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
-		&datastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	if err != nil {
 		return err
 	}
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+	if err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {

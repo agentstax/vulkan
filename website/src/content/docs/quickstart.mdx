@@ -10,9 +10,9 @@ infrastructure. This page takes you from an empty database to producing,
 consuming, and inspecting messages, ending with the headline: producing a
 message in the same transaction as your own writes.
 
-You write two constructors: the connection pool and the client over it.
-The pool stays yours to close; topics, producing, and consuming are calls
-on the client. Nothing on this page is pseudocode; every sample compiles
+You write three constructors: the connection pool, the datastore over
+it, and the client over that. The pool stays yours to close; topics,
+producing, and consuming are calls on the client. Nothing on this page is pseudocode; every sample compiles
 against the shipped library.
 
 <ThreadAside label="NOTE" title="Prerequisites">
@@ -64,6 +64,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    	"github.com/agentstax/vulkan/pkg/datastore"
    	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+   	"github.com/jackc/pgx/v5/pgxpool"
    )
 
    type WelcomeEmail struct {
@@ -73,33 +74,47 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    func (WelcomeEmail) SchemaVersion() int { return 1 }
 
    func main() {
-   	ctx := context.Background()
-
-   	ds, err := datastore.NewPostgresDatastore(ctx, "app_user", "localhost", "app_db",
-   		&datastore.PostgresConnectionConfig{Pass: os.Getenv("PGPASSWORD")})
-   	must(err)
-   	defer ds.Close()
-
-   	client, err := vulkan.NewClient(ds, nil)
-   	must(err)
-
-   	registered, err := client.RegisterTopic(ctx, "signup.welcome-email",
-   		&vulkan.TopicConfig{})
-   	must(err)
-
-   	instance, err := client.RegisterProducer[WelcomeEmail](ctx, registered.Name, nil)
-   	must(err)
-
-   	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, nil)
-   	must(err)
-   	fmt.Printf("produced message id=%d\n", produced.Id)
-   }
-
-   func must(err error) {
-   	if err != nil {
+   	if err := run(); err != nil {
    		fmt.Println(err.Error())
    		os.Exit(1)
    	}
+   }
+
+   func run() error {
+   	ctx := context.Background()
+
+   	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+   	if err != nil {
+   		return err
+   	}
+   	defer pool.Close()
+
+   	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+   	if err != nil {
+   		return err
+   	}
+
+   	client, err := vulkan.NewClient(ds, nil)
+   	if err != nil {
+   		return err
+   	}
+
+   	registered, err := client.RegisterTopic(ctx, "signup.welcome-email", nil)
+   	if err != nil {
+   		return err
+   	}
+
+   	instance, err := client.RegisterProducer[WelcomeEmail](ctx, registered.Name, nil)
+   	if err != nil {
+   		return err
+   	}
+
+   	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, nil)
+   	if err != nil {
+   		return err
+   	}
+   	fmt.Printf("produced message id=%d\n", produced.Id)
+   	return nil
    }
    ```
 
@@ -122,12 +137,14 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    import (
    	"context"
+   	"errors"
    	"fmt"
    	"os"
    	"time"
 
    	"github.com/agentstax/vulkan/pkg/datastore"
    	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+   	"github.com/jackc/pgx/v5/pgxpool"
    )
 
    type WelcomeEmail struct {
@@ -137,22 +154,38 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    func (WelcomeEmail) SchemaVersion() int { return 1 }
 
    func main() {
+   	if err := run(); err != nil {
+   		fmt.Println(err.Error())
+   		os.Exit(1)
+   	}
+   }
+
+   func run() error {
    	ctx, stop := vulkan.LifecycleContext(nil)
    	defer stop()
 
-   	ds, err := datastore.NewPostgresDatastore(ctx, "app_user", "localhost", "app_db",
-   		&datastore.PostgresConnectionConfig{Pass: os.Getenv("PGPASSWORD")})
-   	must(err)
-   	defer ds.Close()
+   	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+   	if err != nil {
+   		return err
+   	}
+   	defer pool.Close()
+
+   	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+   	if err != nil {
+   		return err
+   	}
 
    	client, err := vulkan.NewClient(ds, nil)
-   	must(err)
+   	if err != nil {
+   		return err
+   	}
 
    	registered, err := client.Topic("signup.welcome-email").Get(ctx)
-   	must(err)
+   	if err != nil {
+   		return err
+   	}
    	if registered == nil {
-   		fmt.Println("topic not registered -- run the producer first")
-   		os.Exit(1)
+   		return errors.New("topic not registered -- run the producer first")
    	}
 
    	instance, err := client.RegisterConsumer[WelcomeEmail](ctx, "email-sender", registered.Name,
@@ -162,19 +195,14 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    				Retry:   &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: time.Second},
    			},
    		})
-   	must(err)
+   	if err != nil {
+   		return err
+   	}
 
-   	must(instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
+   	return instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
    		fmt.Printf("sending welcome email to %s\n", email.UserId)
    		return nil
-   	}, nil))
-   }
-
-   func must(err error) {
-   	if err != nil {
-   		fmt.Println(err.Error())
-   		os.Exit(1)
-   	}
+   	}, nil)
    }
    ```
 

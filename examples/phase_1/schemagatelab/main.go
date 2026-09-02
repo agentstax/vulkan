@@ -64,10 +64,12 @@ func run() (err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	must(err)
-	defer ds.Close()
-	pool := ds.Pool
+	defer pool.Close()
+
+	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	must(err)
 
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)

@@ -54,13 +54,16 @@ func run() error {
 	defer stop()
 	time.AfterFunc(180*time.Second, stop) // watchdog
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
-		Pass: "example_password", MaxConns: 20,
-	})
+	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{MaxConns: 20})
 	if err != nil {
 		return err
 	}
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	if err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	if err != nil {

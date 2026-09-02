@@ -108,13 +108,15 @@ func main() {
 	if maxConns > 180 {
 		maxConns = 180
 	}
-	ds, err := iDatastore.NewPostgresDatastore(ctx, envOr("PGUSER", "bench"), envOr("PGHOST", "localhost"), envOr("PGDATABASE", "bench"), &iDatastore.PostgresConnectionConfig{
-		Pass:     envOr("PGPASSWORD", "bench"),
+	pool, err := iDatastore.NewPostgresPool(ctx, envOr("PGUSER", "bench"), envOr("PGPASSWORD", "bench"), envOr("PGHOST", "localhost"), envOr("PGDATABASE", "bench"), &iDatastore.PostgresConnectionConfig{
 		Port:     envInt("PGPORT", 5433),
 		MaxConns: maxConns,
 	})
 	must(err)
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	must(err)
 
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)

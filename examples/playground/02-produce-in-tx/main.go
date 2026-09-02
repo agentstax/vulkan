@@ -3,7 +3,7 @@
 // Insert the order row and the OrderPlaced message atomically; then the
 // multi-topic form where the caller owns the transaction.
 //
-// Concepts held before domain code (8): the 5 from scenario 01, plus
+// Concepts held before domain code (9): the 6 from scenario 01, plus
 // ProducerFunc, vulkan.Tx, InTransaction / ProduceInTx.
 //
 // Traps hit:
@@ -49,12 +49,16 @@ func run() error {
 	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
-		&datastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	if err != nil {
 		return err
 	}
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+	if err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {

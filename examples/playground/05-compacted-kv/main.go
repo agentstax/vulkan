@@ -4,7 +4,7 @@
 // current value, write a new one, and increment a counter safely under
 // concurrent writers (read-modify-write).
 //
-// Concepts held before domain code (13): the 5 from scenario 01, plus
+// Concepts held before domain code (14): the 6 from scenario 01, plus
 // MessageKey, CompactionOptions (+NewCompactionOptions), Rank,
 // InTransaction, GetCompactionHeadInTx, ProduceInTx, MessageData, and the
 // Topic handle for reads outside a transaction.
@@ -54,12 +54,16 @@ func main() {
 func run() error {
 	ctx := context.Background()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
-		&datastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	if err != nil {
 		return err
 	}
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+	if err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {

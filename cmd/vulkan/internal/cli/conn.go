@@ -2,17 +2,14 @@ package cli
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
-	"strconv"
-	"time"
+	"strings"
 
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -20,102 +17,11 @@ const (
 	schemaEnv      = "VULKAN_ADMIN_SCHEMA"
 )
 
-// connection is parseConnConfig's result: the required values
-// datastore.NewPostgresDatastore takes as params, plus the optional knobs.
-type connection struct {
-	User     string
-	Host     string
-	Database string
-	Config   *datastore.PostgresConnectionConfig
-}
-
-func newConnection(user string, host string, database string, config *datastore.PostgresConnectionConfig) (*connection, error) {
-	if config == nil {
-		return nil, errors.New("config must not be nil")
-	}
-	return &connection{User: user, Host: host, Database: database, Config: config}, nil
-}
-
-// parseConnConfig turns a postgres:// URL into what pkg/datastore takes.
-// pkg/datastore has no URL constructor today, so the CLI owns the parse -- see
-// ADMIN_CLI.md's connection-wiring caveat. pool_max_conns and connect_timeout
-// map onto MaxConns/ConnectTimeout -- plain scalars, safe to parse here.
-// TLSConfig has no such mapping: it's a real *tls.Config for embedders
-// building one in code (mirroring pgconn.Config), not something a URL query
-// param can produce without reimplementing pgx's own sslmode/cert negotiation
-// -- so sslmode and any other unrecognized param are warned about, not
-// silently dropped.
-func parseConnConfig(raw string, schema string) (*connection, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return nil, failUsage("could not parse database URL: %v", err)
-	}
-	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
-		return nil, failUsage("database URL must start with postgres:// or postgresql:// (got %q)", u.Scheme)
-	}
-
-	// the URL is user input, so missing required parts are usage errors here,
-	// not dial-time errors from the constructor
-	if u.Hostname() == "" {
-		return nil, failUsage("database URL has no host")
-	}
-	if pathDatabase(u) == "" {
-		return nil, failUsage("database URL has no database name")
-	}
-	if u.User == nil || u.User.Username() == "" {
-		return nil, failUsage("database URL has no user")
-	}
-
-	cfg := &datastore.PostgresConnectionConfig{Schema: schema}
-	if pass, ok := u.User.Password(); ok {
-		cfg.Pass = pass
-	}
-	if p := u.Port(); p != "" {
-		port, err := strconv.Atoi(p)
-		if err != nil {
-			return nil, failUsage("database URL has a non-numeric port %q", p)
-		}
-		cfg.Port = port
-	}
-
-	for key, vals := range u.Query() {
-		switch key {
-		case "pool_max_conns":
-			maxConns, err := strconv.Atoi(vals[0])
-			if err != nil {
-				return nil, failUsage("database URL has a non-numeric pool_max_conns %q", vals[0])
-			}
-			cfg.MaxConns = maxConns
-		case "connect_timeout":
-			secs, err := strconv.Atoi(vals[0])
-			if err != nil {
-				return nil, failUsage("database URL has a non-numeric connect_timeout %q", vals[0])
-			}
-			cfg.ConnectTimeout = time.Duration(secs) * time.Second
-		case "search_path":
-			// ignoring it would run every command against the wrong schema
-			return nil, failUsage("database URL sets search_path -- pass --schema or set %s instead", schemaEnv)
-		default:
-			fmt.Fprintf(os.Stderr, "warning: database URL parameter %q is not supported yet and was ignored\n", key)
-		}
-	}
-
-	cfg.WithDefaults()
-	if err := cfg.Validate(); err != nil {
-		return nil, failUsage("%s", err.Error())
-	}
-	return newConnection(u.User.Username(), u.Hostname(), pathDatabase(u), cfg)
-}
-
-func pathDatabase(u *url.URL) string {
-	if len(u.Path) > 0 && u.Path[0] == '/' {
-		return u.Path[1:]
-	}
-	return u.Path
-}
-
 // openDatastore resolves the connection (flag then env) and dials Postgres.
-// An empty schema is left to PostgresConnectionConfig.WithDefaults.
+// pgx owns the DSN, so sslmode, pool_max_conns, connect_timeout, the
+// keyword/value form, and the libpq PG* environment variables all work
+// without this package parsing any of them.
+// An empty schema is left to PostgresDatastoreConfig.WithDefaults.
 // The returned close func releases the pool; callers defer it.
 func openDatastore(ctx context.Context, databaseURL string, schema string) (*datastore.PostgresDatastore, func(), error) {
 	raw := databaseURL
@@ -129,16 +35,43 @@ func openDatastore(ctx context.Context, databaseURL string, schema string) (*dat
 		schema = os.Getenv(schemaEnv)
 	}
 
-	conn, err := parseConnConfig(raw, schema)
-	if err != nil {
-		return nil, nil, err
+	datastoreConfig := &datastore.PostgresDatastoreConfig{Schema: schema}
+	datastoreConfig.WithDefaults()
+	if err := datastoreConfig.Validate(); err != nil {
+		return nil, nil, failUsage("%s", err.Error())
 	}
 
-	ds, err := datastore.NewPostgresDatastore(ctx, conn.User, conn.Host, conn.Database, conn.Config)
+	// the wrong scheme is the common paste error and deserves a better message
+	// than pgx's; a keyword/value DSN (host=... user=...) carries no scheme and
+	// goes straight through
+	if scheme, _, found := strings.Cut(raw, "://"); found && scheme != "postgres" && scheme != "postgresql" {
+		return nil, nil, failUsage("database URL must start with postgres:// or postgresql:// (got %q)", scheme)
+	}
+
+	// the DSN is user input, so failing to parse it is a usage error --
+	// everything past this point is the database being unreachable
+	poolConfig, err := pgxpool.ParseConfig(raw)
+	if err != nil {
+		return nil, nil, failUsage("could not parse database URL: %v", err)
+	}
+
+	// search_path selects nothing: every vulkan statement names its own
+	// schema, so a DSN carrying one silently reads the default installation
+	if _, ok := poolConfig.ConnConfig.RuntimeParams["search_path"]; ok {
+		return nil, nil, failUsage("database URL sets search_path -- pass --schema or set %s instead", schemaEnv)
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, nil, failOp("could not connect to database: %v", err)
 	}
-	return ds, func() { ds.Close() }, nil
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, datastoreConfig)
+	if err != nil {
+		pool.Close()
+		return nil, nil, failOp("could not connect to database: %v", err)
+	}
+	return ds, func() { pool.Close() }, nil
 }
 
 // openClient is openDatastore plus a Client. AllowDestroy is set here

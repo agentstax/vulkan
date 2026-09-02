@@ -77,13 +77,15 @@ func main() {
 	flag.Parse()
 
 	ctx := context.Background()
-	ds, err := iDatastore.NewPostgresDatastore(ctx, envOr("PGUSER", "bench"), envOr("PGHOST", "localhost"), envOr("PGDATABASE", "bench"), &iDatastore.PostgresConnectionConfig{
-		Pass:     envOr("PGPASSWORD", "bench"),
+	pool, err := iDatastore.NewPostgresPool(ctx, envOr("PGUSER", "bench"), envOr("PGPASSWORD", "bench"), envOr("PGHOST", "localhost"), envOr("PGDATABASE", "bench"), &iDatastore.PostgresConnectionConfig{
 		Port:     envInt("PGPORT", 5433),
 		MaxConns: *producers*4 + 8,
 	})
 	must(err)
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	must(err)
 
 	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)

@@ -3,9 +3,10 @@
 // A service that only handles OrderPlaced. It owns no topic and needs no
 // admin verbs -- RegisterConsumer resolves the topic by name itself.
 //
-// Concepts held before domain code (7): datastore, LifecycleContext,
-// the Message type's SchemaVersion, Client, RegisterConsumer[T], consumer
-// group name, the nil group config (whole topic, defaults).
+// Concepts held before domain code (8): connection pool, datastore,
+// LifecycleContext, the Message type's SchemaVersion, Client,
+// RegisterConsumer[T], consumer group name, the nil group config (whole
+// topic, defaults).
 //
 // Traps hit:
 //   - context.Background() into Consume fails with VK0002; the fix is a
@@ -44,12 +45,16 @@ func run() error {
 	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
-		&datastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	if err != nil {
 		return err
 	}
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+	if err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {

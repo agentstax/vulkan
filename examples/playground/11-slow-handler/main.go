@@ -3,7 +3,7 @@
 // Video transcoding: most jobs finish in a minute, some take an hour. The
 // handler cannot know up front.
 //
-// Concepts held before domain code (12): the 7 from scenario 03, plus
+// Concepts held before domain code (13): the 8 from scenario 03, plus
 // MessageOptions.Timeout, MessageMax, the producer-side per-message
 // Timeout request, the lease = Timeout + grace + margins formula, and the
 // ctx.Done() contract inside the handler.
@@ -51,12 +51,16 @@ func run() error {
 	ctx, stop := vulkan.LifecycleContext(nil)
 	defer stop()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
-		&datastore.PostgresConnectionConfig{Pass: "example_password"})
+	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	if err != nil {
 		return err
 	}
-	defer ds.Close()
+	defer pool.Close()
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+	if err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ds, nil)
 	if err != nil {
