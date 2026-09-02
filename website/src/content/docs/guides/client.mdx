@@ -453,7 +453,7 @@ instance, satisfied by the concrete instance the client returns, so a
 unit test injects a fake and never opens a pool:
 
 - `vulkan.Producer[T]` — `Produce`, `ProduceBatch`, `ProduceFunc`,
-  `ProduceInTx`, `GetCompactionHeadInTx`
+  `ProduceInTx`, `ProduceFuncInTx`, `GetCompactionHeadInTx`
 - `vulkan.Consumer[T]` — `Consume`
 
 Each one is the instance's whole public surface, not a curated subset.

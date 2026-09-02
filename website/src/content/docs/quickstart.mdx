@@ -264,7 +264,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    ```go
    produced, err := instance.ProduceFunc(ctx,
-   	func(ctx context.Context, tx vulkan.Tx, _ string) (*WelcomeEmail, error) {
+   	func(ctx context.Context, tx vulkan.Tx) (*WelcomeEmail, error) {
    		if _, err := tx.Exec(ctx, `INSERT INTO users (id) VALUES ($1)`, "user-123"); err != nil {
    			return nil, err
    		}

@@ -1,21 +1,11 @@
 ---
 title: Transactional Produce
-description: Produce a message in the same transaction as your business write. The dual-write problem, solved by refusing to have two systems — and the four verbs that produce into a transaction.
+description: Produce a message in the same transaction as your business write. The dual-write problem, solved by refusing to have two systems — every sample compiles against the shipped library.
 ---
 
 import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 This is Vulkan's headline feature, so let's earn it properly.
-
-<ThreadAside label="PROPOSED" title="Four verbs, three of them shipped">
-Three of the four ship today: `Produce`, `ProduceFunc`, and a
-`ProduceInTx` that takes a closure. The proposal is to make
-`ProduceInTx` value-taking, rename today's closure form
-`ProduceFuncInTx`, and drop the closure's third `idempotencyKey`
-argument so a `ProducerFunc` is `func(ctx, tx) (*Message, error)`.
-Every sample below is written against that shape. Not built.
-
-</ThreadAside>
 
 ## The bug you've definitely shipped
 

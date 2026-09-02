@@ -19,11 +19,15 @@ import (
 	"os"
 
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type OrderPlacedV1 struct {
 	OrderId string `json:"order_id"`
 }
+
+// increment on breaking changes
+func (OrderPlacedV1) SchemaVersion() int { return 1 }
 
 type InventoryReservedV1 struct {
 	OrderId string `json:"order_id"`
@@ -49,6 +53,10 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+
+	if err := createOrdersTable(ctx, pool); err != nil {
+		return err
+	}
 
 	client, err := vulkan.NewClient(ctx, pool, nil)
 	if err != nil {
@@ -102,5 +110,9 @@ func run() error {
 	return nil
 }
 
-// increment on breaking changes
-func (OrderPlacedV1) SchemaVersion() int { return 1 }
+// createOrdersTable stands in for a business table an application would
+// already have -- without it the scenario cannot run against a fresh database.
+func createOrdersTable(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS playground_orders (id text PRIMARY KEY)`)
+	return err
+}

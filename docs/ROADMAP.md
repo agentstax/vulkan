@@ -38,14 +38,14 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   parking lot -- promote on its merit. Everything below is that review,
   in the order it was already sequenced.
   - Round 1 settled 2026-09-02, four records. [0633] the datastore
-    takes the caller's pool and [0636] the client takes the pool both
-    SHIPPED the same day (HISTORY) -- setup is `pool -> NewClient` and
-    the datastore is off the doc site. Still to build: [0634]
-    value-taking `ProduceInTx` with `ProducerFunc` down to `(ctx, tx)`,
-    and [0635] `Consume` running the system manager so a deployment
-    stops needing to know the concept. Both need their doc-site pages
-    first, the way [0633]'s page was written and reviewed before its
-    build.
+    takes the caller's pool, [0636] the client takes the pool, and
+    [0634] the value-taking `ProduceInTx` all SHIPPED the same day
+    (HISTORY) -- setup is `pool -> NewClient`, the datastore is off the
+    doc site, and the produce surface is four verbs. Still to build:
+    [0635] `Consume` running the system manager so a deployment stops
+    needing to know the concept. It needs its doc-site page first, the
+    way [0633]'s and [0634]'s were written and reviewed before their
+    builds.
     - Closed 2026-09-02 by [0637]: the pool builder moved to
       `pkg/vulkan`, so `datastore` is off the doc site entirely and a
       first program imports one package of ours.
@@ -103,9 +103,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     payload-arg + context MessageMeta — the typed row moved to pkg/common
     2026-08-13, so both sides could share it; the consumer's raw internal
     row (payload + options columns) stays its own struct either way.
-- **`ProduceInTx` value-taking form** ([0581] ergonomics gap) — a static
-  payload inside a caller-owned transaction costs an inline three-arg
-  closure per topic. Decide whether it earns surface.
 - **Public surface trim** (decisions settled 2026-08-01, recorded in
   _public-surface.md; build pending — deliberately late so the decisions get
   re-confirmed after living with the surface through the passes above):

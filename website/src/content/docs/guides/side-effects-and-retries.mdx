@@ -30,10 +30,7 @@ err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 
 	sendEmailConfirmation("jamie@example.com") // fires NOW, mid-transaction
 
-	_, err := receipts.ProduceInTx(ctx, tx,
-		func(context.Context, vulkan.Tx, string) (*ReceiptRequested, error) {
-			return &ReceiptRequested{OrderId: orderId}, nil
-		}, nil)
+	_, err := receipts.ProduceInTx(ctx, tx, &ReceiptRequested{OrderId: orderId}, nil)
 	return err
 })
 ```
@@ -70,9 +67,7 @@ Make the email a message:
 
 ```go
 _, err := emails.ProduceInTx(ctx, tx,
-	func(context.Context, vulkan.Tx, string) (*EmailRequested, error) {
-		return &EmailRequested{To: "jamie@example.com", Template: "payment-received"}, nil
-	}, nil)
+	&EmailRequested{To: "jamie@example.com", Template: "payment-received"}, nil)
 ```
 
 An `email-sender` consumer group calls `sendEmailConfirmation()` in
