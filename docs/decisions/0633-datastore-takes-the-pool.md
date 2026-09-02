@@ -1,0 +1,13 @@
+---
+status: accepted
+date: 2026-09-02
+phase: "pre-v1"
+---
+
+# 0633 — The datastore takes the caller's pool
+
+**Context.** `NewPostgresDatastore(ctx, user, host, database, cfg)` built the pool itself, splitting the credential pair — user inline, password in `PostgresConnectionConfig` — and duplicating pgx's own connection knobs (Port, MaxConns, ConnectTimeout, TLSConfig) one field at a time. An application already running pgx could not hand Vulkan the pool it has, and a `DATABASE_URL` deployment had no path at all. River's `riverpgxv5.New(pool)` is the pattern: the pool is the seam, and the library never referees connection configuration against the driver that owns it. Vulkan is unusually well placed for it — [0632] removed the search_path assumption, and `PostgresDatastore` is literally `Pool` + `Schema`.
+
+**Decision.** One datastore entry point: `NewPostgresDatastore(ctx context.Context, pool *pgxpool.Pool, cfg *PostgresDatastoreConfig)`, the config holding `Schema` alone (default `vulkan`). The constructor keeps its single `Ping`, so a wrong address or credential fails at construction on every path — `pgxpool.New` itself never dials. Whoever builds the pool closes it: `Close` leaves `PostgresDatastore` and call sites `defer pool.Close()`. The guided path becomes a pool builder: `NewPostgresPool(ctx, user, password, host, database, cfg *PostgresConnectionConfig)` — pure assembly over `pgxpool.NewWithConfig`, no ping. Its params read as the exploded DSN, `postgres://user:password@host:port/database`, so the two paths teach each other; password is inline with `""` meaning no password (trust/peer auth), legal as absence-by-zero because an empty string can never be a working password. `PostgresConnectionConfig` keeps only genuinely optional tuning: Port, MaxConns, ConnectTimeout, TLSConfig.
+
+**Consequences.** Every example, lab, and doc-site sample gains the two-line shape — build the pool, wrap it — and a `pgxpool` import; the quickstart teaches pool ≠ datastore, the model every other pgx-based library shows. `MaxConns`'s warning that pgx's default pool caps high worker counts loses its captive audience: the manager's start line reports the pool's max as a config fact instead. **Rejected:** a DSN constructor — `pgxpool.New(ctx, dsn)` is one caller-owned line, and Vulkan never referees DSN-vs-config conflicts over knobs pgx already parses; a second datastore entry point (`...FromPool` beside the param form) — one seam, one constructor; password staying in the config — the credential pair travels together everywhere else in the ecosystem, the DSN included.

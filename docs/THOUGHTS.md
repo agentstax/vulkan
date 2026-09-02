@@ -1,23 +1,17 @@
 # Public API
 
-01 reconsider this postgres per param layout and having password in optional config
-   and / or have a connection string option
-   (research lead: accepting the caller's existing *pgxpool.Pool, River-style)
+01 SETTLED [0633]: NewPostgresDatastore(ctx, pool, cfg) + NewPostgresPool
+   convenience builder -- not yet built
 
-02 produce-in-tx is nasty it really needs to be cleaned up
-- value-taking ProduceInTx (River InsertTx shape) kills the closure-per-topic
-- idempotency key via ctx (KeyFromContext, mirror of MetaFromContext) drops
-  ProducerFunc to (ctx, tx)
+02 SETTLED [0634]: value-taking ProduceInTx, closure renamed ProduceFuncInTx,
+   ProducerFunc drops to (ctx, tx) -- not yet built
 
 05 ignoring this for now
 
 07 looks pretty good
 
-08 Need to rethink if Consumer should auto run system manager not just manager
-- System manager is a good concept for eventual helm chart deploys but needing to know about that concept now is strange
-  and we want things to just 'work'
-- research lead: River runs maintenance on every client behind leader
-  election; RunManager's manager-row claim already IS leader election
+08 SETTLED [0635]: Consume auto-runs the system manager,
+   ClientConfig.DisableManager opts out -- not yet built
 
 11 gonna ignore this one for now, we just don't have a good solution yet but have it on roadmap
 
