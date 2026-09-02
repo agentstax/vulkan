@@ -1,6 +1,6 @@
 package vulkan
 
-// Package vulkan is the one client over a datastore: the assemblers built
+// Package vulkan is the one client over a Postgres pool: the assemblers built
 // once, the ambient config held once, every verb delegating to the package
 // that owns it.
 

@@ -63,7 +63,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	"os"
 
    	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
-   	"github.com/jackc/pgx/v5/pgxpool"
    )
 
    type WelcomeEmail struct {
@@ -82,7 +81,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    func run() error {
    	ctx := context.Background()
 
-   	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+   	pool, err := vulkan.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"), "localhost", "app_db", nil)
    	if err != nil {
    		return err
    	}
@@ -137,7 +136,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	"time"
 
    	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
-   	"github.com/jackc/pgx/v5/pgxpool"
    )
 
    type WelcomeEmail struct {
@@ -157,7 +155,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	ctx, stop := vulkan.LifecycleContext(nil)
    	defer stop()
 
-   	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+   	pool, err := vulkan.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"), "localhost", "app_db", nil)
    	if err != nil {
    		return err
    	}

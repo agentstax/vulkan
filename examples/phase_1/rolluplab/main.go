@@ -71,7 +71,7 @@ func run() (err error) {
 	}()
 	ctx := context.Background()
 
-	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
+	pool, err := vulkan.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", &vulkan.PostgresConnectionConfig{
 		MaxConns: 40, // headroom above the contention scenario's 20 concurrent goroutines
 	})
 	must(err)

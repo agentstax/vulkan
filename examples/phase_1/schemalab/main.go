@@ -272,7 +272,7 @@ func run() (err error) {
 // ***************
 
 func openClient(ctx context.Context, schema string, cfg *vulkan.ClientConfig) (*vulkan.Client, *iDatastore.PostgresDatastore) {
-	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
+	pool, err := vulkan.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	must(err)
 
 	clientConfig := *cfg

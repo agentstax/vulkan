@@ -46,14 +46,9 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     stops needing to know the concept. Both need their doc-site pages
     first, the way [0633]'s page was written and reviewed before its
     build.
-    - OPEN from [0636]: `NewPostgresPool` and
-      `PostgresConnectionConfig` still live in `pkg/datastore`, so the
-      client guide's "Building the pool" section names that package
-      once for the guided builder. The quickstart does not -- it uses
-      `pgxpool.New` -- so the concept is gone from a first program
-      either way. Moving them into `pkg/vulkan` would take the package
-      name off the doc site entirely, at the cost of a 75-file sweep
-      and a decision about what an API package may own.
+    - Closed 2026-09-02 by [0637]: the pool builder moved to
+      `pkg/vulkan`, so `datastore` is off the doc site entirely and a
+      first program imports one package of ours.
   - Also round 1: the playground gained scenarios 12 (reading
     `__system.metrics`) and 13 (consuming `__system.alerts` as a pager
     feed), which is the metric/alert coverage the catalog was missing,

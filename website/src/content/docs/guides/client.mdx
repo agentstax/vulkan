@@ -31,7 +31,7 @@ coming from any of them has nothing new to learn here.
 ctx, stop := vulkan.LifecycleContext(nil)
 defer stop()
 
-pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+pool, err := vulkan.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"), "localhost", "app_db", nil)
 if err != nil {
 	return err
 }
@@ -57,7 +57,7 @@ That removed the worst trap on the old `ConsumerConfig`: `Retry` next
 to `Message.Retry`, both `*RetryPolicy`, one for the Postgres calls and
 one for redelivery.
 
-A first program imports `pgxpool` and `vulkan`. Every type a user
+A first program imports `vulkan` and nothing else of ours. Every type a user
 spells lives in `vulkan`: `ConsumerConfig`, `ConsumeOptions`,
 `ProducerConfig`, `ProduceOptions`, `ScheduleSpec`, `ScheduleConfig`,
 `TopicConfig`, `DestroyOptions`, `MessageOptions`, `RetryPolicy`, `Tx`,
@@ -68,21 +68,28 @@ persistence layer and a user should never have to type it.
 
 ## Building the pool
 
-Anyone holding a DSN passes `pgxpool.New(ctx, dsn)` as above, which is
-what the quickstart does. For callers who would rather not write one,
-the guided builder takes the DSN exploded in the order the URL writes
-it, `postgres://user:password@host:port/database`:
+`NewPostgresPool` takes the DSN exploded in the order the URL writes
+it, `postgres://user:password@host:port/database`, and the config holds
+what is optional after that:
 
 ```go
-pool, err := datastore.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"), "localhost", "app_db",
-	&datastore.PostgresConnectionConfig{MaxConns: 20})
+pool, err := vulkan.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"), "localhost", "app_db",
+	&vulkan.PostgresConnectionConfig{MaxConns: 20})
 ```
 
 The password goes inline, `""` meaning no password, which is real on a
-trust or peer auth setup. `PostgresConnectionConfig` holds what is
-optional after that: `Port`, `MaxConns`, `ConnectTimeout`, `TLSConfig`.
-`Schema` is not among them, since it was never a connection fact — it
-sits on `ClientConfig`.
+trust or peer auth setup. `PostgresConnectionConfig` carries `Port`,
+`MaxConns`, `ConnectTimeout`, `TLSConfig`. `Schema` is not among them,
+since it was never a connection fact — it sits on `ClientConfig`.
+
+It builds the pool and does not dial; `NewClient` is what pings it. So
+a wrong password surfaces at `NewClient`, not here.
+
+A caller who already holds a DSN skips it entirely —
+`pgxpool.New(ctx, dsn)` and hand the result to `NewClient`, which takes
+any `*pgxpool.Pool`. That is the path for a `DATABASE_URL` deployment,
+and for an application whose pool already exists before Vulkan enters
+it.
 
 Whichever way the pool is built, you close it. Vulkan never does, and
 the client has no `Close` — `defer pool.Close()` is the only shutdown

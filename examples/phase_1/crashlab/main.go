@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
@@ -64,7 +63,7 @@ func run() error {
 	defer stop()
 	time.AfterFunc(180*time.Second, stop) // watchdog
 
-	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{MaxConns: *maxConnsPtr})
+	pool, err := vulkan.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", &vulkan.PostgresConnectionConfig{MaxConns: *maxConnsPtr})
 	if err != nil {
 		return err
 	}

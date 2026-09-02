@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -44,7 +43,7 @@ func run() (err error) {
 	topicId := run // no real topic needs to exist -- the events just carry this id as data
 	group := fmt.Sprintf("abandonedroutinesnapshotlab.%d", run)
 
-	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
+	pool, err := vulkan.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	must(err)
 	defer pool.Close()
 

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
@@ -42,7 +41,7 @@ func main() {
 func run() error {
 	ctx := context.Background()
 
-	pool, err := datastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
+	pool, err := vulkan.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	if err != nil {
 		return err
 	}

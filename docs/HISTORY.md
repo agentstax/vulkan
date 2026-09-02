@@ -5,6 +5,32 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-02 — the pool builder is client-package API [0637]
+
+`NewPostgresPool` and `PostgresConnectionConfig` moved from
+`pkg/datastore` to `pkg/vulkan`. The signature did not change and neither
+did the division of labour -- the builder assembles, `NewClient` pings --
+but the quickstart's first program now imports `vulkan` and nothing else
+of ours.
+
+[0636] took the datastore concept off the doc site; it did not take the
+package name. The builder makes a `*pgxpool.Pool` out of five strings and
+never touches a datastore, so a program using it imported `datastore` for
+a function that had nothing to do with one, and the samples that avoided
+it imported `pgxpool` instead. Two packages to get one pool, either way.
+
+The doc site leads with `NewPostgresPool` now. `pgxpool.New(ctx, dsn)` is
+one paragraph down as the path for a `DATABASE_URL` deployment and for an
+application whose pool predates Vulkan -- `NewClient` takes any
+`*pgxpool.Pool`, so nothing about that path changed.
+
+31 of the 77 programs in the repo dropped the `datastore` import outright,
+the thirteen playground scenarios among them. The 46 that keep it hold a
+`*PostgresDatastore` to drive controllers directly, which is what the
+package is for. `pkg/datastore` keeps `PostgresDatastore`,
+`PostgresDatastoreConfig`, and `Querier` -- the seam every domain imports,
+and no longer something a user's import block names.
+
 ## 2026-09-02 — the client takes the pool [0636]
 
 `vulkan.NewClient(ctx, pool, cfg)` builds the datastore itself. Setting
