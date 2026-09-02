@@ -685,6 +685,8 @@ the code is the line's breadcrumb to its own explanation.
       worker_id     worker row id
       metadata      a worker row's stored config document; a replace
                     logs "old -> new"
+      target_instances  the worker row's live-instance cap -- 0 is
+                    suspended, -1 is no cap
       message_id    message id
       schedule      schedule name
       schedule_id   schedule id

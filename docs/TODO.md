@@ -49,35 +49,66 @@ Settled in design discussion (2026-09-02):
   explicit RunManager" is superseded; needs decision record 0638 (next
   after current max 0637) linked both ways.
 
-### Chunk 1 -- worker layer: expose the target, fix the decline inference
+### Chunk 1 -- worker layer: expose the target, fix the decline inference -- DONE
 
-- `pkg/worker/worker.go`: add `TargetInstances int` to `WorkerData`
-  with json tag `target_instances` (public read-model field rule). The
-  queries already select the column (`ListWorkersRow` embeds
-  `WorkerConfigRow`; `getWorker` selects it) -- only the adapters drop
-  it: fill it in `toWorkerData` and `toOwnedWorker`
-  (`pkg/worker/controller/adapter.go`).
-- `pkg/worker/manager/runner.go`: `Run` currently calls a `claim`
-  helper that hides the row; restructure so `Run` holds the row
-  (`GetWorker`, then `Provision`) and can branch on a declined claim:
-  - `TargetInstances == 0` -> Warn VK0035 `EventManagerRowSuspended`,
-    exactly today's behavior.
-  - `TargetInstances > 0` -> Debug (another process holds the claim;
-    keep waiting). Static message per the grammar, e.g. "manager
-    instances at target -- waiting to claim". Debug never declares.
-  - `-1` cannot decline; if it somehow does, treat as the Debug arm.
-  Keep the one-value-plus-error rule in mind: prefer inlining over a
-  three-value helper.
-- `RetryDelay` (default 30s, jittered) is now also the waiting
-  process's claim retry interval -- update its doc comment in
-  `runner_config.go`.
-- Re-examine and reword the `Runner` doc comment "Safe only for
-  manager rows: a target-gated worker re-claiming itself would take
-  back an instance another claim just won." Verified this session:
-  `renewInstance` requires `expires_at > now()`, so a lost claim's row
-  is expired or gone and the re-claim goes back through the count gate
-  (which counts only unexpired rows) -- no take-back. Confirm with a
-  test before deleting the caveat.
+Built 2026-09-02. Main module, cmd/vulkan, otelvulkan, examples, bench all
+build; `go vet ./...` clean; `go test -race ./...` 120 passed / 78 packages;
+tools 34 passed. No DB labs run yet (chunk 5 owns those).
+
+- `worker.WorkerData` carries `TargetInstances int`
+  `json:"target_instances"` with `// 0 = suspended; NoInstanceTarget = no
+  cap`; both adapters (`toWorkerData`, `toOwnedWorker`) fill it. Both
+  queries already selected the column -- only the adapters dropped it.
+- `manager.Runner.claim` now classifies instead of the run loop guessing:
+  target 0 warns VK0035 and skips the claim attempt outright (it could
+  only decline); a decline under any other target logs Debug "manager row
+  declined an instance -- retrying the claim" with `owner` and
+  `target_instances`. `Run`'s switch has three arms, the middle one empty
+  with the caption "nothing to run this life -- claim logged which case it
+  was".
+- Side effect of skipping the claim on target 0: a suspended row with
+  unparseable metadata now idles quietly instead of returning
+  `Provision`'s parse error, which pre-first-claim was fatal. Suspended
+  rows should not crash the loop, so this is wanted -- but it is a real
+  behavior change, not a no-op.
+- `RunnerConfig.RetryDelay` doc comment now says it also paces attempts
+  while the target is filled, so takeover lands within InstanceTTL +
+  RetryDelay of the holder's exit, and scopes the >= InstanceTTL rule to
+  unbound rows (a gated row's re-claim is refused by the gate).
+- CONVENTIONS ## Logging registry gained the `target_instances` row.
+- The `Runner` doc comment's caveat ("Safe only for manager rows: a
+  target-gated worker re-claiming itself would take back an instance
+  another claim just won") was REPLACED, not kept. It does not hold:
+  `ErrInstanceLost` means the row is already gone or expired
+  (`renewInstance` requires `expires_at > now()`), and the re-claim goes
+  back through `claimInstance`'s count of unexpired rows. What is actually
+  manager-specific is that no other manager spawns the manager -- the
+  comment now says that. A gated-row takeover lab in chunk 5 is the
+  empirical backstop.
+- VK0035's docs page already says "target_instances 0" specifically, so
+  the code now matches the page; no page edit needed for this chunk.
+
+Verified during chunk 1, clearing chunk 2/5 items:
+
+- `metrics/controller/adapter.go classifyWorker` is
+  target 0 -> suspended / live > 0 -> claimed / else unclaimed, with no
+  -1 special case, so a manager row at target 1 classifies exactly as it
+  does at -1. The workerliveness risk is CLEARED (nothing to change).
+- Nothing in labs, playground, bench, or the CLI reads or asserts
+  `target_instances`; the only doc mentions are VK0035's page and
+  schedules.mdx.
+- schedules.mdx already reads "If a manager already runs in the fleet,
+  `Schedule` is one more instance of it, and the worker's
+  `target_instances` decides which one holds it" -- true only AFTER chunk
+  2. The page is written for the gated world; today it is wrong.
+- `manager run`'s CLI help ("Safe to run N-way: replicas coordinate
+  through worker claims, so each worker's instance target holds") stays
+  accurate and gets more so; chunk 4 still reviews it for the deleted
+  refusal.
+- `WorkerData` is publicly aliased (`vulkan.WorkerData`, returned by
+  `Group.ListWorkers`), so the new field widens that read-model's json.
+  Additive; the CLI's `group config get` reads only `Metadata`.
+- No SQL literal moved, so the sandbox SQL mirror needs no re-sync.
 
 ### Chunk 2 -- gate the system manager row
 
@@ -103,11 +134,13 @@ Settled in design discussion (2026-09-02):
   INSERT value.
 - `pkg/worker/definition.go` / `worker_config.go` comment touch-ups
   where they describe the manager as the -1 case.
-- Check `pkg/alert/workerliveness` classification against a gated
-  manager row: with target 1 and no live instance the row is
-  "unclaimed" -- same as -1 with no live instance today, but verify
-  the alert's query/classify path doesn't special-case -1 before
-  assuming no behavior change.
+- workerliveness: CLEARED in chunk 1, no change needed
+  (`classifyWorker` has no -1 case). Separately noted, pre-existing and
+  NOT this work's job: the alert filters on `snapshot.Owner.TopicId`,
+  so the SYSTEM manager row is outside every topic's check -- "nobody
+  runs system upkeep" is unalertable from inside, since the check runs
+  under the manager it would report on. VK0063 at register time stays
+  the answer.
 
 ### Chunk 3 -- SystemManager shared run
 

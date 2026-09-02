@@ -9,7 +9,7 @@ import (
 )
 
 type RunnerConfig struct {
-	// RetryDelay is the pause between claim lives. Keep it >= the provisioner's
+	// RetryDelay is the pause between claim attempt. Keep it >= the provisioner's
 	// InstanceTTL -- anything shorter re-claims a row whose live instances
 	// haven't expired yet.
 	// Default: 30s, matching ManagerConfig.InstanceTTL's default.

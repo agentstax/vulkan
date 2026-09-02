@@ -10,8 +10,9 @@ const NoInstanceTarget = -1
 
 // WorkerData is one row of the worker_config table.
 type WorkerData struct {
-	Id       int64         `json:"id"`
-	Name     string        `json:"worker"`
-	Owner    *common.Owner `json:"owner"`
-	Metadata any           `json:"metadata"` // JSONB; each caller owns its shape
+	Id              int64         `json:"id"`
+	Name            string        `json:"worker"`
+	Owner           *common.Owner `json:"owner"`
+	Metadata        any           `json:"metadata"`         // JSONB; each caller owns its shape
+	TargetInstances int           `json:"target_instances"` // 0 = suspended; NoInstanceTarget = no cap
 }

@@ -23,10 +23,11 @@ func toWorkerData(data datastore.ListWorkersRow) (*worker.WorkerData, error) {
 	}
 
 	return &worker.WorkerData{
-		Id:       data.Id,
-		Name:     data.Name,
-		Owner:    owner,
-		Metadata: data.Metadata,
+		Id:              data.Id,
+		Name:            data.Name,
+		Owner:           owner,
+		Metadata:        data.Metadata,
+		TargetInstances: data.TargetInstances,
 	}, nil
 }
 
@@ -34,10 +35,11 @@ func toWorkerData(data datastore.ListWorkersRow) (*worker.WorkerData, error) {
 // columns to resolve it from
 func toOwnedWorker(data *datastore.WorkerConfigRow, owner *common.Owner) *worker.WorkerData {
 	return &worker.WorkerData{
-		Id:       data.Id,
-		Name:     data.Name,
-		Owner:    owner,
-		Metadata: data.Metadata,
+		Id:              data.Id,
+		Name:            data.Name,
+		Owner:           owner,
+		Metadata:        data.Metadata,
+		TargetInstances: data.TargetInstances,
 	}
 }
 

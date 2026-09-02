@@ -13,8 +13,9 @@ import (
 
 // Runner keeps a claimed manager instance running for an owner across lives
 // -- the self-heal a manager gives the workers it spawns, given to the manager
-// itself. Safe only for manager rows: a target-gated worker re-claiming itself
-// would take back an instance another claim just won.
+// itself, since no manager spawns the manager. A declined claim is not a
+// failure: the row may be suspended, or its instances already at target in
+// another process, so the loop waits out RetryDelay and tries again.
 type Runner struct {
 	Owner  *common.Owner
 	Config *RunnerConfig
@@ -63,8 +64,8 @@ func (r *Runner) Run(ctx context.Context) error {
 				return err
 			}
 			r.Logger.WarnContext(ctx, "could not re-claim manager row -- retrying", "owner", r.Owner.Name, "error", err)
+		// nothing to run this life -- claim logged which case it was
 		case execution == nil:
-			r.Logger.WarnContext(ctx, worker.EventManagerRowSuspended.Message, "code", worker.EventManagerRowSuspended.Code, "owner", r.Owner.Name)
 		default:
 			claimed = true
 			if err := execution.Run(ctx); !errors.Is(err, worker.ErrInstanceLost) {
@@ -85,12 +86,27 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 }
 
-// claim re-reads the row every life, so a metadata edit lands on the next
-// one. nil = suspended.
+// claim re-reads the row every life, so an edit to its metadata or
+// target_instances lands on the next one. nil = nothing to run this life.
 func (r *Runner) claim(ctx context.Context) (worker.Execution, error) {
 	row, err := r.provisioner.workers.GetWorker(ctx, WorkerManager, r.Owner)
 	if err != nil {
 		return nil, err
 	}
-	return r.provisioner.Provision(ctx, row)
+
+	// target_instances 0 declines every claim, so the operator hears why
+	// instead of the attempt being made
+	if row.TargetInstances == 0 {
+		r.Logger.WarnContext(ctx, worker.EventManagerRowSuspended.Message, "code", worker.EventManagerRowSuspended.Code, "owner", r.Owner.Name)
+		return nil, nil
+	}
+
+	execution, err := r.provisioner.Provision(ctx, row)
+	if err != nil {
+		return nil, err
+	}
+	if execution == nil {
+		r.Logger.DebugContext(ctx, "manager row declined an instance -- retrying the claim", "owner", r.Owner.Name, "target_instances", row.TargetInstances)
+	}
+	return execution, nil
 }
