@@ -33,12 +33,19 @@ Pre-v1: both signature changes edit call sites in place.
 
 ### 2. ProducerFunc drops idempotencyKey
 
-- [ ] pkg/producer/controller/datastore/insert.go: `ProduceFunc` type loses
+- [x] pkg/producer/controller/datastore/insert.go: `ProduceFunc` type loses
       the idempotencyKey param; `runInsert` / `runInsertSavepoint` stop
       passing `data.IdempotencyKey.String()`; trim the type's key-dedup
       doc sentence.
-- [ ] Aliases follow unchanged in shape: controller/append.go,
-      pkg/producer/producer.go (`ProducerFunc`), pkg/vulkan/alias.go.
+- [x] Aliases needed no edit -- all three are pure type aliases whose doc
+      comments already point at the datastore for the shape.
+- [x] The two pkg/ passthrough closures dropped the param with it, so the
+      root module builds: producer_instance.go:80 (chunk 4's first item,
+      done early because the type change forces it) and
+      schedule/producer/instance.go:138 (chunk 4 still deletes it whole).
+      Root `go build ./...` green, `go test -race` 41 pass across
+      pkg/producer, pkg/schedule, pkg/vulkan; tools/conventions 24 pass.
+      examples/ is its own module and stays broken until chunk 5.
 
 ### 3. The verb rename + the value form
 

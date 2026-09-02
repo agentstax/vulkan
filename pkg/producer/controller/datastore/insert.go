@@ -17,14 +17,12 @@ const produceInTxSavepoint = "sp_produce_in_tx"
 
 // ProduceFunc runs inside the append's transaction and returns the payload to
 // store -- its writes commit or roll back with the message.
-// idempotencyKey is the resolved key for this produce; supplying that string
-// on a later call dedups against this one.
-type ProduceFunc[Message topic.Versioned] func(ctx context.Context, tx Tx, idempotencyKey string) (*Message, error)
+type ProduceFunc[Message topic.Versioned] func(ctx context.Context, tx Tx) (*Message, error)
 
 // runInsert runs produceFunc + the claim-protected message insert against an
 // already-open tx.
 func (d *ProducerDatastore) runInsert[Message topic.Versioned](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *Append[Message]) (*Appended[Message], error) {
-	payload, err := produceFunc(ctx, tx, data.IdempotencyKey.String())
+	payload, err := produceFunc(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +42,7 @@ func (d *ProducerDatastore) runInsertSavepoint[Message topic.Versioned](ctx cont
 		return nil, err
 	}
 
-	payload, err := produceFunc(ctx, tx, data.IdempotencyKey.String())
+	payload, err := produceFunc(ctx, tx)
 	if err != nil {
 		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
 		return nil, err

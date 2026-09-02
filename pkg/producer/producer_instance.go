@@ -77,7 +77,7 @@ func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Messag
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
 	if resolved.IdempotencyKey != "" {
-		passthrough := func(context.Context, Tx, string) (*Message, error) { return message, nil }
+		passthrough := func(context.Context, Tx) (*Message, error) { return message, nil }
 		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, resolved)
 		if err != nil {
 			return nil, err
