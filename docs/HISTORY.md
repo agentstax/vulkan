@@ -5,6 +5,56 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-02 — the datastore takes the caller's pool [0633]
+
+`NewPostgresDatastore(ctx, pool, cfg)` wraps a `*pgxpool.Pool` you built
+and pings it once; it no longer assembles one from user/host/database
+parts. `NewPostgresPool(ctx, user, password, host, database, cfg)` is the
+guided builder beside it, its parameters the DSN exploded in the order the
+URL writes them, and anyone holding a DSN calls `pgxpool.New` directly.
+`PostgresDatastore.Close` is gone -- whoever built the pool closes it, so
+75 call sites became `defer pool.Close()`. The config split in two:
+`PostgresDatastoreConfig` holds `Schema` alone, and
+`PostgresConnectionConfig` keeps only what a connection actually needs
+(`Port`, `MaxConns`, `ConnectTimeout`, `TLSConfig`).
+
+The old signature split the credential pair -- `user` inline, `Pass` in
+the config, reading as though a password were optional tuning next to
+`MaxConns` -- and re-spelled four knobs pgx already parses. What it could
+not do at all was accept the pool an application already runs, which is
+most applications, and a `DATABASE_URL` deployment had no path.
+
+Rebuilding the DSN turned up a real bug in the old one:
+`fmt.Sprintf("postgres://%s:%s@%s:%s/%s", ...)` silently corrupts any
+password holding `@`, `:`, `/`, or `#`, and produces a broken authority
+for an IPv6 host. It goes through `net/url` and `net.JoinHostPort` now,
+with a table test round-tripping four cases back through
+`pgxpool.ParseConfig`.
+
+The CLI shrank by ~90 lines. `parseConnConfig` and its helpers existed
+only because "pkg/datastore has no URL constructor today", and handing the
+DSN to pgx made the command strictly more capable: `sslmode` works, where
+the old parser printed a warning saying it could not honour it, and so do
+keyword/value DSNs and the libpq `PG*` environment variables. The
+usage-versus-operational split survives -- a parse failure is a usage
+error, dialing is not, and `--schema` is validated before the pool is
+built -- as does the `search_path` guard, now reading pgx's own
+`RuntimeParams` rather than re-parsing the URL.
+
+Two things moved that the record did not anticipate. Every playground
+scenario header gained a concept, since the pool is one more thing held
+before domain code: the two base scorecards went 5 -> 6 and 7 -> 8 and the
+eleven derived counts followed. And reporting a caller-built pool's
+ceiling on the manager's start line, which [0633] listed as the home for
+the `MaxConns` warning, was built and then dropped -- threading the value
+through the provisioner into the instance to print one attribute was not
+worth it, so the warning stays on the config field.
+
+Verified fresh-DB 47/47 with `just verify` green across all seven modules.
+The CLI's rewritten connection path was driven by hand for what no lab
+covers: a wrong scheme and a DSN carrying `search_path` still fail as
+usage errors, while `sslmode=disable` and the keyword/value form now work.
+
 ## 2026-09-01 — every SQL literal names its schema [0631][0632]
 
 `search_path` is gone. Every table reference in production SQL is

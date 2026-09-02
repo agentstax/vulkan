@@ -37,13 +37,13 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   (scenario 11) is designed as *Lease heartbeat/renewal (9b)* in the
   parking lot -- promote on its merit. Everything below is that review,
   in the order it was already sequenced.
-  - Round 1 settled 2026-09-02 -- three records, none built yet:
-    [0633] the datastore takes the caller's pool, [0634] value-taking
-    `ProduceInTx` with `ProducerFunc` down to `(ctx, tx)`, and [0635]
-    `Consume` running the system manager so a deployment stops needing
-    to know the concept. [0633] is expanded in TODO.md and its doc page
-    is written (`guides/client.mdx`, marked Proposed); [0634] and [0635]
-    need their pages before they are picked up, docs-first.
+  - Round 1 settled 2026-09-02, three records. [0633] the datastore
+    takes the caller's pool SHIPPED the same day (HISTORY). Still to
+    build: [0634] value-taking `ProduceInTx` with `ProducerFunc` down to
+    `(ctx, tx)`, and [0635] `Consume` running the system manager so a
+    deployment stops needing to know the concept. Both need their
+    doc-site pages first, the way [0633]'s page was written and reviewed
+    before its build.
   - Also round 1: the playground gained scenarios 12 (reading
     `__system.metrics`) and 13 (consuming `__system.alerts` as a pager
     feed), which is the metric/alert coverage the catalog was missing,
