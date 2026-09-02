@@ -169,7 +169,7 @@ func sweepKeepUpScenario(ctx context.Context, pool *pgxpool.Pool) {
 				case <-stop:
 					return
 				default:
-					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 						return common.NewWork(30, "admin@example.com")
 					}, nil)
 					must(err)
@@ -253,7 +253,7 @@ func publishConcurrent(ctx context.Context, wpInstance *vulkan.ProducerInstance[
 		}
 		wg.Go(func() {
 			for range count {
-				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, nil)
 				must(err)

@@ -240,7 +240,7 @@ func drainTimed(ctx context.Context, client *vulkan.Client, topicName, group str
 
 func seedSleep(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], sleepMsList []int) {
 	for _, ms := range sleepMsList {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 			work, err := common.NewWork(30, "admin@example.com")
 			if err != nil {
 				return nil, err

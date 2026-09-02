@@ -7,10 +7,6 @@
 // ProducerFunc, vulkan.Tx, InTransaction / ProduceInTx.
 //
 // Traps hit:
-//   - ProduceFunc's closure takes three params (ctx, tx, idempotencyKey);
-//     the key is unused in the common case and is spelled `_` every time.
-//   - A static payload inside InTransaction still costs a closure per
-//     topic -- ProduceInTx has no value-taking form (ROADMAP gap).
 //   - The order of statements matters (produce last: it holds a lock on
 //     consumer progress until commit) and nothing in the types says so.
 //   - InTransaction does not retry; the caller must know that and own the
@@ -78,7 +74,7 @@ func run() error {
 
 	// one topic: the message's own transaction carries the business write
 	produced, err := orders.ProduceFunc(ctx,
-		func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderPlacedV1, error) {
+		func(ctx context.Context, tx vulkan.Tx) (*OrderPlacedV1, error) {
 			if _, err := tx.Exec(ctx, `INSERT INTO playground_orders (id) VALUES ($1) ON CONFLICT DO NOTHING`, "ord-2"); err != nil {
 				return nil, err
 			}
@@ -94,16 +90,10 @@ func run() error {
 		if _, err := tx.Exec(ctx, `INSERT INTO playground_orders (id) VALUES ($1) ON CONFLICT DO NOTHING`, "ord-3"); err != nil {
 			return err
 		}
-		if _, err := orders.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderPlacedV1, error) {
-				return &OrderPlacedV1{OrderId: "ord-3"}, nil
-			}, nil); err != nil {
+		if _, err := orders.ProduceInTx(ctx, tx, &OrderPlacedV1{OrderId: "ord-3"}, nil); err != nil {
 			return err
 		}
-		_, err := inventory.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx vulkan.Tx, _ string) (*InventoryReservedV1, error) {
-				return &InventoryReservedV1{OrderId: "ord-3", Sku: "sku-9"}, nil
-			}, nil)
+		_, err := inventory.ProduceInTx(ctx, tx, &InventoryReservedV1{OrderId: "ord-3", Sku: "sku-9"}, nil)
 		return err
 	}); err != nil {
 		return err

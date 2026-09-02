@@ -61,7 +61,7 @@ func run() error {
 
 	// WORK
 	for range *countPtr {
-		produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+		produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err

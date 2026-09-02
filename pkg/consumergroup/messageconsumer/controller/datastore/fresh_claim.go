@@ -110,8 +110,9 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 			--
 			-- gate takes the best proven head available:
 			--   settled_head     -- wins when neither pair proves (a txn seen by
-			--                       both snapshots is still open, e.g. a long
-			--                       ProduceInTx) -- claims hold at the last proven
+			--                       both snapshots is still open, e.g. one that
+			--                       produced with ProduceInTx and has not
+			--                       committed) -- claims hold at the last proven
 			--                       head until it closes
 			--   the fresh pair   -- $3/$4, wins when everything running at
 			--                       snapshotSql finished before this query ran --

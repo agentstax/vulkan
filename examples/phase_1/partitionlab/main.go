@@ -111,7 +111,7 @@ func run() (err error) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work]) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, nil)
 	must(err)

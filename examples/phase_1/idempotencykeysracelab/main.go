@@ -105,7 +105,7 @@ func sameKeyConcurrentScenario(ctx context.Context, pool *pgxpool.Pool) {
 	var duplicateCount atomic.Int64
 	for range n {
 		wg.Go(func() {
-			produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+			produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, &vulkan.ProduceOptions{IdempotencyKey: key})
 			must(err)
@@ -157,7 +157,7 @@ func distinctKeysConcurrentScenario(ctx context.Context, pool *pgxpool.Pool) {
 	for range n {
 		wg.Go(func() {
 			key := uuid.NewV7().String()
-			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, &vulkan.ProduceOptions{IdempotencyKey: key})
 			must(err)

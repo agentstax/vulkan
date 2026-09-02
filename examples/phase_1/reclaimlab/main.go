@@ -97,7 +97,7 @@ func run() (err error) {
 
 	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	for range seedRows {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, nil)
 		must(err)

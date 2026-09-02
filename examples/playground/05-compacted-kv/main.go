@@ -100,10 +100,7 @@ func run() error {
 		}
 		next := *head.Message
 		next.Restarts++
-		_, err = configs.ProduceInTx(ctx, tx,
-			func(ctx context.Context, tx vulkan.Tx, _ string) (*DeviceConfig, error) {
-				return &next, nil
-			}, &vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
+		_, err = configs.ProduceInTx(ctx, tx, &next, &vulkan.ProduceOptions{MessageKey: "dev-7", Compaction: compaction})
 		return err
 	}); err != nil {
 		return err

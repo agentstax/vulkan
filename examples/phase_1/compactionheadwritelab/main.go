@@ -165,7 +165,7 @@ func timeSequential(ctx context.Context, wpInstance *vulkan.ProducerInstance[com
 			opts.MessageKey = key
 			opts.Compaction = compaction
 		}
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, opts)
 		must(err)
@@ -194,7 +194,7 @@ func timeConcurrent(ctx context.Context, pool *pgxpool.Pool, label string, gorou
 			for i := range perGoroutine {
 				compaction, err := vulkan.NewCompactionOptions(0)
 				must(err)
-				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, &vulkan.ProduceOptions{MessageKey: keyFn(g, i), Compaction: compaction})
 				must(err)

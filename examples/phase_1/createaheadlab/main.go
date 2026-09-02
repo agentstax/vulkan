@@ -123,7 +123,11 @@ func inTxScenario(ctx context.Context, pool *pgxpool.Pool) {
 		publish(ctx, wpInstance)
 	}
 	must(client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
-		_, err := wpInstance.ProduceInTx(ctx, tx, workFunc, nil) // id 80
+		work, err := common.NewWork(30, "admin@example.com")
+		if err != nil {
+			return err
+		}
+		_, err = wpInstance.ProduceInTx(ctx, tx, work, nil) // id 80
 		return err
 	}))
 	waitForPartition(ctx, ds, tp.Id, 1)
@@ -155,7 +159,7 @@ func register(ctx context.Context, pool *pgxpool.Pool, scenario string) (*vulkan
 	return client, tp, wpInstance, warns, cleanup
 }
 
-func workFunc(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+func workFunc(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 	return common.NewWork(30, "admin@example.com")
 }
 

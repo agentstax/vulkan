@@ -163,7 +163,7 @@ func seed(ctx context.Context, wp *vulkan.ProducerInstance[Record]) {
 func publish(ctx context.Context, wp *vulkan.ProducerInstance[Record], key string) {
 	compaction, err := vulkan.NewCompactionOptions(0)
 	must(err)
-	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Record, error) {
+	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*Record, error) {
 		return &Record{Key: key}, nil
 	}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)

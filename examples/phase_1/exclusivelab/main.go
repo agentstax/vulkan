@@ -792,7 +792,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key 
 	if policy != "" {
 		opts.Message = &common.MessageOptions{Concurrency: policy}
 	}
-	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Rec, error) {
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, opts)
 	must(err)
@@ -801,7 +801,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key 
 // publishUncompacted produces a Exclusive message with a key and no Compaction --
 // every version is kept, deliveries serialize on the key.
 func publishUncompacted(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], key string, version int) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Rec, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, &vulkan.ProduceOptions{
 		MessageKey: key,
@@ -811,7 +811,7 @@ func publishUncompacted(ctx context.Context, wpInstance *vulkan.ProducerInstance
 }
 
 func publishUnkeyed(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec], version int) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*Rec, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*Rec, error) {
 		return &Rec{Version: version}, nil
 	}, nil)
 	must(err)

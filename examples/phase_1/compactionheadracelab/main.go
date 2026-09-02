@@ -111,7 +111,7 @@ func concurrentRaceScenario(ctx context.Context, pool *pgxpool.Pool) {
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, &vulkan.ProduceOptions{MessageKey: "hot-key", Compaction: compaction})
 			must(err)

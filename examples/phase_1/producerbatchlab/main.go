@@ -366,7 +366,7 @@ func throughputScenario(ctx context.Context, client *vulkan.Client) {
 		return err
 	})
 	perCall := timeArm(ctx, client, "percall", producers, msgs, func(wpInstance *vulkan.ProducerInstance[common.Work], work *common.Work) error {
-		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, vulkan.Tx, string) (*common.Work, error) { return work, nil }, nil)
+		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, vulkan.Tx) (*common.Work, error) { return work, nil }, nil)
 		return err
 	})
 

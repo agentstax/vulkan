@@ -151,7 +151,7 @@ func run() (err error) {
 func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[RankedRecord], key, label string, rank int64) {
 	compaction, err := vulkan.NewCompactionOptions(rank)
 	must(err)
-	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*RankedRecord, error) {
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*RankedRecord, error) {
 		return &RankedRecord{Key: key, Label: label}, nil
 	}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)

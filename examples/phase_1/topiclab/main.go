@@ -232,7 +232,7 @@ func run() (err error) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wp *vulkan.ProducerInstance[common.Work], routingKey string) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, &vulkan.ProduceOptions{RoutingKey: routingKey})
 	must(err)

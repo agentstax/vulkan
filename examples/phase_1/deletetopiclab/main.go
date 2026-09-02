@@ -90,7 +90,7 @@ func run() (err error) {
 	_, err = cd.DeclareBindings(ctx, tp.Id, groupId, []string{"orders.*"}, time.Now())
 	must(err)
 
-	fn := func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+	fn := func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}
 	// Compaction seeds compaction_head; the default (protected) idempotency

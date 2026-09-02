@@ -198,7 +198,7 @@ func metricsRowsSince(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 
 func seed(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work], n int) {
 	for range n {
-		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, nil)
 		must(err)

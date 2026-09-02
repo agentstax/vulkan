@@ -7,9 +7,9 @@ package main
 // Four scenarios:
 //   - atomicPublishScenario: two targets published inside one InTransaction
 //     closure both land together on success.
-//   - rollbackOnFailureScenario: the second target's producerFunc returning
-//     an error rolls back the WHOLE transaction, not just that target --
-//     the first target's insert never lands either.
+//   - rollbackOnFailureScenario: the second target's ProduceFuncInTx closure
+//     returning an error rolls back the WHOLE transaction, not just that
+//     target -- the first target's insert never lands either.
 //   - partitionSelfHealIsolationScenario: forcing a missing-partition retry
 //     on the second target must not touch the first target's already-made
 //     insert, and must not rerun a caller side effect that already fired
@@ -40,8 +40,15 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var fn = func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+var fn = func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 	return common.NewWork(30, "admin@example.com")
+}
+
+// work is what fn returns, for the value-taking verbs.
+func work() *common.Work {
+	built, err := common.NewWork(30, "admin@example.com")
+	must(err)
+	return built
 }
 
 func main() {
@@ -106,10 +113,10 @@ func atomicPublishScenario(ctx context.Context, client *vulkan.Client) {
 	defer cleanupB()
 
 	err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
+		if _, err := wpA.ProduceInTx(ctx, tx, work(), nil); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, fn, nil)
+		_, err := wpB.ProduceInTx(ctx, tx, work(), nil)
 		return err
 	})
 	must(err)
@@ -131,10 +138,10 @@ func rollbackOnFailureScenario(ctx context.Context, client *vulkan.Client) {
 
 	wantErr := errors.New("second target refuses to publish")
 	err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
+		if _, err := wpA.ProduceInTx(ctx, tx, work(), nil); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+		_, err := wpB.ProduceFuncInTx(ctx, tx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 			return nil, wantErr
 		}, nil)
 		return err
@@ -166,11 +173,11 @@ func partitionSelfHealIsolationScenario(ctx context.Context, client *vulkan.Clie
 
 	betweenCalls := 0
 	err = client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
+		if _, err := wpA.ProduceInTx(ctx, tx, work(), nil); err != nil {
 			return err
 		}
-		betweenCalls++                              // stands in for a caller side effect like sendEmailConfirmation
-		_, err := wpB.ProduceInTx(ctx, tx, fn, nil) // misses its partition, self-heals
+		betweenCalls++                                  // stands in for a caller side effect like sendEmailConfirmation
+		_, err := wpB.ProduceInTx(ctx, tx, work(), nil) // misses its partition, self-heals
 		return err
 	})
 	must(err)
@@ -197,10 +204,10 @@ func ambiguousCommitScenario(ctx context.Context, client *vulkan.Client) {
 	defer cleanupB()
 
 	err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
+		if _, err := wpA.ProduceInTx(ctx, tx, work(), nil); err != nil {
 			return err
 		}
-		if _, err := wpB.ProduceInTx(ctx, tx, fn, nil); err != nil {
+		if _, err := wpB.ProduceInTx(ctx, tx, work(), nil); err != nil {
 			return err
 		}
 		// passes now (deferred) -- fails when Commit checks the constraint
@@ -240,10 +247,10 @@ func callerKeyRetryScenario(ctx context.Context, client *vulkan.Client) {
 	keyB := uuid.NewV7().String()
 
 	closure := func(ctx context.Context, tx vulkan.Tx) error {
-		if _, err := wpA.ProduceInTx(ctx, tx, fn, &vulkan.ProduceOptions{IdempotencyKey: keyA}); err != nil {
+		if _, err := wpA.ProduceInTx(ctx, tx, work(), &vulkan.ProduceOptions{IdempotencyKey: keyA}); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, fn, &vulkan.ProduceOptions{IdempotencyKey: keyB})
+		_, err := wpB.ProduceInTx(ctx, tx, work(), &vulkan.ProduceOptions{IdempotencyKey: keyB})
 		return err
 	}
 

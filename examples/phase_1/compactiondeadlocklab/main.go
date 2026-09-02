@@ -279,9 +279,7 @@ func produceKeyInTx(ctx context.Context, tx vulkan.Tx, key string, idempotencyKe
 	if err != nil {
 		return err
 	}
-	_, err = wpInstance.ProduceInTx(ctx, tx, func(ctx context.Context, tx vulkan.Tx, _ string) (*labMessage, error) {
-		return &labMessage{Note: key}, nil
-	}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
+	_, err = wpInstance.ProduceInTx(ctx, tx, &labMessage{Note: key}, &vulkan.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
 	return err
 }
 

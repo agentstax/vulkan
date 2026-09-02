@@ -176,7 +176,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Wor
 		opts.MessageKey = key
 		opts.Compaction = compaction
 	}
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, opts)
 	must(err)
