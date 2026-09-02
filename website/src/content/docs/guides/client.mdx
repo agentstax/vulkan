@@ -65,6 +65,109 @@ spells lives in `vulkan`: `ConsumerConfig`, `ConsumeOptions`,
 `ScheduleConfig`; "controller" is the library's word for its
 persistence layer and a user should never have to type it.
 
+## Proposed: the datastore takes your pool
+
+`NewPostgresDatastore` would take a `*pgxpool.Pool` you built instead
+of building one from parts, and the guided form moves to its own
+constructor. Not built.
+
+```go
+// PROPOSED — not shipped API.
+pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+if err != nil {
+	return err
+}
+defer pool.Close()
+
+ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
+if err != nil {
+	return err
+}
+```
+
+Three things are wrong with the shipped signature. The credential pair
+is split across it, `user` inline and `Pass` in the config, which reads
+as though a password were optional tuning sitting next to `MaxConns`.
+`Port`, `MaxConns`, `ConnectTimeout`, and `TLSConfig` are all knobs pgx
+already parses, so the config is a second smaller spelling of something
+the driver owns. And an application that already runs pgx cannot hand
+Vulkan the pool it has, which is most applications; a `DATABASE_URL`
+deployment has no path at all.
+
+The guided form survives as a pool builder, for anyone who would rather
+not learn a DSN to get started:
+
+```go
+// PROPOSED — not shipped API.
+pool, err := datastore.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"), "localhost", "app_db",
+	&datastore.PostgresConnectionConfig{MaxConns: 20})
+```
+
+Its parameters are the DSN exploded in the order the URL writes them,
+`postgres://user:password@host:port/database`, so the two paths check
+each other. The password goes inline with `""` meaning no password,
+which is real on a trust or peer auth setup. `PostgresConnectionConfig`
+keeps only what is genuinely optional after that: `Port`, `MaxConns`,
+`ConnectTimeout`, `TLSConfig`. `Schema` moves to the datastore's own
+config, where it belongs — it was never a connection fact.
+
+What changes in code that exists today:
+
+- Every program grows a line and a `pgxpool` import. The quickstart
+  teaches pool then datastore, which is the model every other
+  pgx-backed library already shows.
+- `ds.Close()` goes away. You built the pool, so `defer pool.Close()`
+  replaces it at every call site. Ownership does not change here:
+  `NewClient` already documents the pool as the caller's to close.
+- `NewPostgresDatastore` keeps its `ctx` and its one `Ping`, so a wrong
+  host or a wrong password still fails at construction rather than at
+  the first produce. `pgxpool.New` on its own never dials.
+
+A pool you built can carry its own `search_path`, set on the DSN as
+`?search_path=myapp` or in an `AfterConnect` hook, and Vulkan does not
+care: every statement it runs names its schema outright and the pool
+sets no path of its own (below). That is what makes the handoff safe.
+Back when the SQL went out unqualified, a caller's path would have
+pointed Vulkan's own reads at another installation's tables.
+
+The one thing lost is the note on `MaxConns` that pgx's default pool is
+`max(4, numCPU)`, which quietly caps a high worker count. Nothing can
+enforce that against a pool Vulkan did not build, so the manager's
+starting line reports the pool's max as a config fact and an operator
+reads it there.
+
+The signature also commits the public API to pgx. The commitment is
+already there: `PostgresDatastore.Pool` is an exported `*pgxpool.Pool`
+today, and `vulkan.Tx` hands your closure pgx's own result types. What
+changes is that it moves to the front door, where the first sample
+anyone copies has `pgxpool` in it.
+
+A team standardized on `database/sql` still runs one pool for the whole
+application: build the pgxpool, hand it to Vulkan, and derive the
+`*sql.DB` view with pgx's own `stdlib.OpenDBFromPool(pool)`, which
+shares that pool instead of opening a second one and leaves closing to
+you. The derivation runs only that direction. An arbitrary `*sql.DB`
+cannot produce a pgxpool, so taking one here would be the signature
+that ages badly. The cost lands on a team that will not import pgx at
+all: there is no handoff for them, and they run a second pool beside
+Vulkan's.
+
+Rejected: a DSN-taking constructor, since `pgxpool.New(ctx, dsn)` is
+one line the caller already owns and Vulkan would otherwise have to
+referee a DSN against a config over the same knobs. Also rejected, a
+second datastore constructor beside the current one — two doors into
+one type, and every sample on the site would have to pick.
+
+Rejected too, a driver-neutral datastore interface held open for a
+future `database/sql` port. The coupling runs through the whole
+datastore layer rather than sitting at its edge: `SendBatch`,
+`CopyFrom`, driver-side JSONB encoding, and a `*pgxpool.Conn` pinned
+for the length of an advisory lock. An interface whose methods name
+pgx types insures nothing, and a genuinely neutral one has to wrap
+every result type pgx returns, which is a real cost paid now against a
+port nothing has scheduled. River carries that seam because it ships
+two drivers; Vulkan ships one.
+
 ## The schema
 
 Vulkan's tables live in one Postgres schema, `vulkan` unless you say
@@ -83,17 +186,18 @@ schema if it is missing, which needs CREATE on the database; without
 that you get [VK0064](/errors/VK0064/), and the fix is to create the
 schema yourself and grant the role USAGE and CREATE on it.
 
-The pool sets `search_path` to `<schema>, public`. Vulkan's name leads
-so its own tables win a name collision and `CREATE TABLE` lands there.
-`public` trails for `InTransaction`: your closure runs on vulkan's
-pool, and without `public` on the path your own tables would be
-invisible inside it. Tables anywhere else need qualifying in that
-closure.
+The pool sets no `search_path`. Every statement Vulkan runs names its
+schema outright, `vulkan.message_log_4` and never `message_log_4`, so
+the connection keeps whatever default it came with. Your own SQL inside
+`InTransaction` then resolves the way it would on any other connection:
+a `CREATE TABLE orders` in that closure lands in your default schema,
+not in Vulkan's.
 
 The diagnose queries on every error page carry a `{schema}` placeholder
-for the same reason. Paste one into psql with a `public` search_path and
-an unqualified `message_log_4` resolves to nothing, which reads as the
-row being gone rather than the query looking in the wrong place.
+because a psql session has no reason to have Vulkan's schema on its
+path. Paste one unfilled and an unqualified `message_log_4` resolves to
+nothing, which reads as the row being gone rather than the query
+looking in the wrong place.
 
 ## Consume
 
