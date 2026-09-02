@@ -46,11 +46,6 @@ func NewPostgresDatastore(ctx context.Context, user string, host string, databas
 		return nil, err
 	}
 
-	// public trails the schema so a caller's own SQL inside InTransaction --
-	// which runs on this pool -- still finds the caller's own tables. Vulkan's
-	// name wins on a tie, and CREATE TABLE lands in the leading entry.
-	poolConfig.ConnConfig.RuntimeParams["search_path"] = cfg.Schema + ", public"
-
 	if cfg.MaxConns > 0 {
 		poolConfig.MaxConns = int32(cfg.MaxConns)
 	}

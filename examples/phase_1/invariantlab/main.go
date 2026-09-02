@@ -86,22 +86,22 @@ func run() (err error) {
 	// 1. fresh == migrate ------------------------------------------------------
 	section("migrate v1 -> v4 builds the same schema as a fresh create-at-4")
 	must(controller.RunOnce(ctx, maxV, sysOwner, reg))
-	must(createFresh(ctx, pool))
-	check(sameColumns(ctx, pool), "stepwise migration == fresh-create-at-4 (information_schema)")
+	must(createFresh(ctx, pool, ds.Schema))
+	check(sameColumns(ctx, pool, ds.Schema), "stepwise migration == fresh-create-at-4 (information_schema)")
 
 	// 2. up -> down -> up ------------------------------------------------------
 	section("Down inverts Up, and re-up reproduces the schema")
 	must(controller.RunOnce(ctx, 1, sysOwner, reg))
-	check(!tableExists(ctx, pool, stepwise), "full down dropped the table")
+	check(!tableExists(ctx, pool, ds.Schema, stepwise), "full down dropped the table")
 	must(controller.RunOnce(ctx, maxV, sysOwner, reg))
-	check(sameColumns(ctx, pool), "re-up reproduced the identical schema")
+	check(sameColumns(ctx, pool, ds.Schema), "re-up reproduced the identical schema")
 
 	// 3. Up idempotency: version says v3 but the DDL is already at v4, so the
 	// re-run re-applies step 4's Up against an object that already exists.
 	section("Up is idempotent under an ambiguous-commit re-run")
 	forgetVersion(ctx, pool, ds.Schema, sysId, maxV)
 	must(controller.RunOnce(ctx, maxV, sysOwner, reg))
-	check(currentVersion(ctx, pool, ds.Schema, sysId) == maxV && sameColumns(ctx, pool),
+	check(currentVersion(ctx, pool, ds.Schema, sysId) == maxV && sameColumns(ctx, pool, ds.Schema),
 		"re-applied Up over existing schema -> no-op, schema unchanged")
 
 	// 4. Down idempotency: drop c3 (now at v3), then claim v4 again so the
@@ -110,7 +110,7 @@ func run() (err error) {
 	must(controller.RunOnce(ctx, maxV-1, sysOwner, reg))
 	claimVersion(ctx, pool, ds.Schema, sysId, maxV)
 	must(controller.RunOnce(ctx, maxV-1, sysOwner, reg))
-	check(currentVersion(ctx, pool, ds.Schema, sysId) == maxV-1 && !hasColumn(ctx, pool, stepwise, "c3"),
+	check(currentVersion(ctx, pool, ds.Schema, sysId) == maxV-1 && !hasColumn(ctx, pool, ds.Schema, stepwise, "c3"),
 		"re-applied Down over absent column -> no-op")
 
 	fmt.Println("\n✅ INVARIANT LAB PASSED")
@@ -123,38 +123,40 @@ func run() (err error) {
 func fixture() []migrate.Migration {
 	return []migrate.Migration{
 		{Version: 2,
-			Up:   exec(`CREATE TABLE IF NOT EXISTS ` + stepwise + ` (id BIGINT, c1 TEXT);`),
-			Down: exec(`DROP TABLE IF EXISTS ` + stepwise + `;`)},
+			Up:   exec(`CREATE TABLE IF NOT EXISTS %s.` + stepwise + ` (id BIGINT, c1 TEXT);`),
+			Down: exec(`DROP TABLE IF EXISTS %s.` + stepwise + `;`)},
 		{Version: 3,
-			Up:   exec(`ALTER TABLE ` + stepwise + ` ADD COLUMN IF NOT EXISTS c2 INT;`),
-			Down: exec(`ALTER TABLE ` + stepwise + ` DROP COLUMN IF EXISTS c2;`)},
+			Up:   exec(`ALTER TABLE %s.` + stepwise + ` ADD COLUMN IF NOT EXISTS c2 INT;`),
+			Down: exec(`ALTER TABLE %s.` + stepwise + ` DROP COLUMN IF EXISTS c2;`)},
 		{Version: 4,
-			Up:   exec(`ALTER TABLE ` + stepwise + ` ADD COLUMN IF NOT EXISTS c3 BOOLEAN;`),
-			Down: exec(`ALTER TABLE ` + stepwise + ` DROP COLUMN IF EXISTS c3;`)},
+			Up:   exec(`ALTER TABLE %s.` + stepwise + ` ADD COLUMN IF NOT EXISTS c3 BOOLEAN;`),
+			Down: exec(`ALTER TABLE %s.` + stepwise + ` DROP COLUMN IF EXISTS c3;`)},
 	}
 }
 
-func exec(sql string) func(context.Context, iDatastore.Querier, int64) error {
-	return func(ctx context.Context, q iDatastore.Querier, _ int64) error {
-		_, err := q.Exec(ctx, sql)
+// exec fills the statement's %s with the schema the engine hands the step --
+// a step reaches no datastore, so this is the only way its SQL names a table
+func exec(sql string) func(context.Context, iDatastore.Querier, string, int64) error {
+	return func(ctx context.Context, q iDatastore.Querier, schema string, _ int64) error {
+		_, err := q.Exec(ctx, fmt.Sprintf(sql, schema))
 		return err
 	}
 }
 
-func createFresh(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS `+fresh+` (id BIGINT, c1 TEXT, c2 INT, c3 BOOLEAN);`)
+func createFresh(ctx context.Context, pool *pgxpool.Pool, schema string) error {
+	_, err := pool.Exec(ctx, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.`+fresh+` (id BIGINT, c1 TEXT, c2 INT, c3 BOOLEAN);`, schema))
 	return err
 }
 
 // sameColumns diffs the two tables by name + type in ordinal order -- a
 // Down-doesn't-invert-Up or a baseline-that-drifted-from-the-steps shows here.
-func sameColumns(ctx context.Context, pool *pgxpool.Pool) bool {
-	return equal(columns(ctx, pool, stepwise), columns(ctx, pool, fresh))
+func sameColumns(ctx context.Context, pool *pgxpool.Pool, schema string) bool {
+	return equal(columns(ctx, pool, schema, stepwise), columns(ctx, pool, schema, fresh))
 }
 
-func columns(ctx context.Context, pool *pgxpool.Pool, table string) []string {
+func columns(ctx context.Context, pool *pgxpool.Pool, schema string, table string) []string {
 	rows, err := pool.Query(ctx,
-		`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position;`, table)
+		`SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position;`, schema, table)
 	must(err)
 	defer rows.Close()
 
@@ -180,15 +182,15 @@ func equal(a, b []string) bool {
 	return true
 }
 
-func tableExists(ctx context.Context, pool *pgxpool.Pool, table string) bool {
+func tableExists(ctx context.Context, pool *pgxpool.Pool, schema string, table string) bool {
 	var exists bool
-	must(pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1);`, table).Scan(&exists))
+	must(pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2);`, schema, table).Scan(&exists))
 	return exists
 }
 
-func hasColumn(ctx context.Context, pool *pgxpool.Pool, table, col string) bool {
+func hasColumn(ctx context.Context, pool *pgxpool.Pool, schema string, table string, col string) bool {
 	var exists bool
-	must(pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2);`, table, col).Scan(&exists))
+	must(pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3);`, schema, table, col).Scan(&exists))
 	return exists
 }
 
@@ -216,7 +218,7 @@ func claimVersion(ctx context.Context, pool *pgxpool.Pool, schema string, sysId 
 // one v1 baseline row -- the lab only ever borrowed the system scope, and its
 // round trips leave extra v1 rows (each down-to-baseline records one).
 func reset(ctx context.Context, pool *pgxpool.Pool, schema string, sysId int64) {
-	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS `+stepwise+`, `+fresh+`;`)
+	_, err := pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %[1]s.`+stepwise+`, %[1]s.`+fresh+`;`, schema))
 	must(err)
 	_, err = pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.migration_log WHERE system_id = $1;`, schema), sysId)
 	must(err)

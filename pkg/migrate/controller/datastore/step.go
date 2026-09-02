@@ -17,8 +17,8 @@ const ddlLockTimeout = 2 * time.Second
 func NewStep(
 	version int64,
 	minCompatibleVersion int64,
-	validate func(context.Context, datastore.Querier, int64) error,
-	apply func(context.Context, datastore.Querier, int64) error,
+	validate func(context.Context, datastore.Querier, string, int64) error,
+	apply func(context.Context, datastore.Querier, string, int64) error,
 	noTxn bool,
 ) (*Step, error) {
 	if version < 1 {
@@ -80,11 +80,11 @@ func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn
 	}
 
 	if step.Validate != nil {
-		if err := step.Validate(ctx, tx, owner.TopicId); err != nil {
+		if err := step.Validate(ctx, tx, d.Datastore.Schema, owner.TopicId); err != nil {
 			return err
 		}
 	}
-	if err := step.Apply(ctx, tx, owner.TopicId); err != nil {
+	if err := step.Apply(ctx, tx, d.Datastore.Schema, owner.TopicId); err != nil {
 		return err
 	}
 	if err := d.recordSuccess(ctx, tx, owner, step.Version, step.MinCompatibleVersion); err != nil {
@@ -96,11 +96,11 @@ func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn
 // NoTxn step runs on the bare connection and records separately once its apply returns
 func (d *MigrateDatastore) runStepWithoutTx(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
 	if step.Validate != nil {
-		if err := step.Validate(ctx, conn, owner.TopicId); err != nil {
+		if err := step.Validate(ctx, conn, d.Datastore.Schema, owner.TopicId); err != nil {
 			return err
 		}
 	}
-	if err := step.Apply(ctx, conn, owner.TopicId); err != nil {
+	if err := step.Apply(ctx, conn, d.Datastore.Schema, owner.TopicId); err != nil {
 		return err
 	}
 	return d.recordSuccess(ctx, conn, owner, step.Version, step.MinCompatibleVersion)

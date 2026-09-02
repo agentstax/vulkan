@@ -145,12 +145,19 @@ ids are per-installation serials, so the collisions are real:
    database.ts names no `*SqlTemplate` at all -- executing a template is
    the bug, so the guard is structural rather than a value check.
 
-**search_path stays `"<schema>, public"`.** With every literal qualified
-the leading entry is belt-and-braces, and dropping it would even fix
-[0630]'s noted wart -- a caller's `CREATE TABLE` inside `InTransaction`
-would land in their own schema rather than Vulkan's. It stays anyway,
-because the qualification walk sees only pkg/ and cmd/ literals: a
-post-v1 migration step reaches no schema at all (its funcs take
-`(ctx, q, topicId)`), so without the entry its SQL would silently read
-and create in `public`. Revisit when that gap closes; the InTransaction
-improvement is the payoff.
+**Follow-up, done in the same session: the pool sets no search_path
+[0632].** The reason to keep it was the one gap [0631] left -- a post-v1
+migration step reaches no schema, so its SQL would have resolved through
+the path. Closing that is a signature change (`func(ctx, q, schema
+string, topicId int64)`) that is free while both registries are empty and
+impossible once a step ships, so it was now or never. With it closed the
+path has no remaining job and is gone, which also removes the wart [0630]
+accepted: a caller's `CREATE TABLE` inside `InTransaction` now lands in
+their own schema. schemalab asserts it, and restoring the path fails that
+assertion with the table in vulkan's schema.
+Fallout the suite caught, all of it names Postgres had been resolving
+through the path: two labs assembling a table name from a variable root,
+`destroysystemlab`'s bare control-plane list, `invariantlab`'s own
+migration fixture (which now uses the schema its steps are handed), and
+`tools/compat`'s guard, whose pin flow loses its `--schema public` step
+for any two builds that both name their own schema.

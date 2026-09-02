@@ -133,7 +133,7 @@ func run() (err error) {
 	must(client.System().Destroy(ctx, nil))
 
 	for _, table := range controlPlaneTables {
-		assertTableExists(ctx, table, false)
+		assertTableExists(ctx, ds.Schema+"."+table, false)
 	}
 	assertTableExists(ctx, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(alertsTopicId)), false)
 
@@ -144,7 +144,7 @@ func run() (err error) {
 	step("RegisterSystem stands the schema back up")
 	must(client.RegisterSystem(ctx, nil))
 	for _, table := range controlPlaneTables {
-		assertTableExists(ctx, table, true)
+		assertTableExists(ctx, ds.Schema+"."+table, true)
 	}
 	var topicCount int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.topic_config;`, ds.Schema)).Scan(&topicCount))

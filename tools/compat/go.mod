@@ -14,9 +14,11 @@ go 1.27.0
 //   git worktree add .compat/<prior-tag> <prior-tag>
 //   cd tools/compat && go mod edit -replace github.com/agentstax/vulkan=../../.compat/<prior-tag>
 //
-// A pinned build predating PostgresConnectionConfig.Schema resolves its
-// tables through the connection's search_path, which is public, so the
-// working tree has to migrate public for the two to meet:
+// Both builds name their own schema in their SQL and both default to
+// DefaultSchema, so an unconfigured pair meets with no flag. A pinned build
+// old enough to predate PostgresConnectionConfig.Schema instead lands in
+// whatever its connection defaults to, and the working tree has to migrate
+// there for the two to meet:
 //   go run ./cmd/vulkan migrate up --schema public --database-url <url>
 
 require github.com/agentstax/vulkan v0.0.0

@@ -119,7 +119,7 @@ func run() (err error) {
 	must(deliveryConsumers.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DeliveryLogMode))
 
 	for _, table := range []string{"consumer_group_cursor", "claim_lease", "binding_config"} {
-		assertGroupRowCount(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), groupId, 1, "before Destroy")
+		assertGroupRowCount(ctx, ds, fmt.Sprintf("%s.%s_%d", ds.Schema, table, tp.Id), groupId, 1, "before Destroy")
 	}
 	assertCompactionHeadCount(ctx, ds, tp.Id, 1, "before Destroy")
 	assertTableExists(ctx, ds, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageLogTable(tp.Id)), true)
@@ -137,7 +137,7 @@ func run() (err error) {
 		"message_log", "exception_queue", "delivery_log", "idempotency_key",
 		"consumer_group_cursor", "claim_lease", "message_key_lease", "compaction_head", "binding_config", "binding_config_log",
 	} {
-		assertTableExists(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), false)
+		assertTableExists(ctx, ds, fmt.Sprintf("%s.%s_%d", ds.Schema, table, tp.Id), false)
 	}
 
 	fmt.Println("\n✅ DELETE TOPIC CASCADE LAB PASSED")

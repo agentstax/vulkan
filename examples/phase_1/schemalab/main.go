@@ -7,7 +7,9 @@
 //     name registers in each with its own id, and each client lists only its
 //     own topics
 //  2. independence -- a message produced on one schema is invisible to the
-//     other, and destroying a topic on one leaves the other's standing
+//     other, destroying a topic on one leaves the other's standing, and a
+//     caller's own CREATE inside InTransaction lands in the caller's schema
+//     rather than vulkan's, because the pool sets no search_path [0632]
 //  3. absence -- a client pointed at a schema nobody registered reads an
 //     absence rather than the neighbouring schema's rows: Get is (nil, nil),
 //     every other verb raises ErrTopicNotFound. Holds with a whole
@@ -136,6 +138,26 @@ func run() (err error) {
 	}
 	fmt.Printf("   ✅ one produce on left: left holds %d, right holds %d\n", leftCount, rightCount)
 
+	// a caller's own statement inside InTransaction runs on vulkan's pool, and
+	// the pool sets no search_path [0632] -- so an unqualified CREATE lands
+	// where the caller's connection puts it, not inside vulkan's schema
+	const callerTable = "schemalab_caller_orders"
+	must(vulkan.InTransaction(ctx, leftDs, func(ctx context.Context, tx vulkan.Tx) error {
+		_, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS `+callerTable+` (id BIGINT);`)
+		return err
+	}))
+	var landedIn string
+	must(leftDs.Pool.QueryRow(ctx,
+		`SELECT schemaname FROM pg_tables WHERE tablename = $1;`, callerTable).Scan(&landedIn))
+	defer func() {
+		_, err := leftDs.Pool.Exec(ctx, `DROP TABLE IF EXISTS `+landedIn+`.`+callerTable+`;`)
+		must(err)
+	}()
+	if landedIn == leftSchema {
+		die("a caller's own CREATE inside InTransaction must not land in vulkan's schema, got " + landedIn)
+	}
+	fmt.Printf("   ✅ a caller's CREATE inside InTransaction lands in %q, not vulkan's %q\n", landedIn, leftSchema)
+
 	must(left.Topic(sharedName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	if _, err := right.Topic(sharedName).Get(ctx); err != nil {
 		die("destroying the left topic must leave the right one readable: " + err.Error())
@@ -148,9 +170,9 @@ func run() (err error) {
 	empty, emptyDs := openClient(ctx, emptySchema, shared)
 	defer emptyDs.Close()
 
-	// the schema does not exist, so search_path falls through to public --
-	// which holds no vulkan tables, so the read is an absence and not the
-	// neighbouring installation's rows
+	// the schema does not exist, and every vulkan statement names it [0631],
+	// so the catalog read raises undefined_table -- which the catalog reads
+	// map to absence, never to another installation's rows
 	found, err := empty.Topic(sharedName).Get(ctx)
 	must(err)
 	if found != nil {

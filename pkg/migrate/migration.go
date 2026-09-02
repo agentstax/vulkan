@@ -8,9 +8,12 @@ import (
 )
 
 // Migration is one schema step, shared by every scope -- a sparse struct, so a
-// step fills only the fields it needs. Its funcs take a topicId: the system
-// scope ignores it (always 0), the topic scope uses it so the SQL can name
-// per-topic tables (message_log_<id> etc).
+// step fills only the fields it needs. Its funcs take the two coordinates a
+// statement needs to name a table: the schema this installation lives in, and
+// a topicId that the system scope ignores (always 0) and the topic scope uses
+// for per-topic tables. Both are spelled in the SQL --
+// fmt.Sprintf("... %s.message_log_%d ...", schema, topicId) -- because the
+// pool's search_path does not name the schema [0631].
 //
 // Authoring rules the compiler can't enforce:
 //   - Shipped steps are IMMUTABLE: fix a mistake with a new, higher version,
@@ -33,10 +36,10 @@ type Migration struct {
 	//   Version -> breaking, no older binary survives
 	MinCompatibleVersion int64
 
-	ValidateUp   func(ctx context.Context, q datastore.Querier, topicId int64) error // preconditions; nil = none
-	Up           func(ctx context.Context, q datastore.Querier, topicId int64) error // idempotent -- a retry may re-run it
-	ValidateDown func(ctx context.Context, q datastore.Querier, topicId int64) error
-	Down         func(ctx context.Context, q datastore.Querier, topicId int64) error
+	ValidateUp   func(ctx context.Context, q datastore.Querier, schema string, topicId int64) error // preconditions; nil = none
+	Up           func(ctx context.Context, q datastore.Querier, schema string, topicId int64) error // idempotent -- a retry may re-run it
+	ValidateDown func(ctx context.Context, q datastore.Querier, schema string, topicId int64) error
+	Down         func(ctx context.Context, q datastore.Querier, schema string, topicId int64) error
 
 	NoTxn bool // e.g. CREATE INDEX CONCURRENTLY -- runs on the pool, not a tx
 }

@@ -16,8 +16,8 @@ const (
 type Step struct {
 	Version              int64
 	MinCompatibleVersion int64
-	Validate             func(context.Context, datastore.Querier, int64) error
-	Apply                func(context.Context, datastore.Querier, int64) error
+	Validate             func(context.Context, datastore.Querier, string, int64) error
+	Apply                func(context.Context, datastore.Querier, string, int64) error
 	NoTxn                bool
 }
 

@@ -53,19 +53,21 @@ func main() {
 	}
 }
 
-// requireMigratedSchema fails unless this build's search_path already reaches
-// the schema the working tree migrated. An unmigrated schema is the tell that
-// the two builds resolved to different ones.
+// requireMigratedSchema fails unless the schema THIS build resolves to is the
+// one the working tree migrated. An unmigrated schema is the tell that the two
+// builds resolved to different ones -- without this the pinned build would
+// create its own empty set and round-trip against itself.
 func requireMigratedSchema(ctx context.Context, ds *iDatastore.PostgresDatastore) error {
 	var applied int
-	err := ds.Pool.QueryRow(ctx, `SELECT count(*) FROM migration_log WHERE status = 'success';`).Scan(&applied)
+	sql := fmt.Sprintf(`SELECT count(*) FROM %s.migration_log WHERE status = 'success';`, ds.Schema)
+	err := ds.Pool.QueryRow(ctx, sql).Scan(&applied)
 	if err != nil {
-		return fmt.Errorf("this build's search_path reaches no migrated schema, so it would compare against tables it created itself -- "+
-			"migrate the working tree into the schema this build resolves to (public, for a pinned build predating the schema field): %w", err)
+		return fmt.Errorf("this build resolves to schema %q, which holds no migration_log, so it would compare against tables it created itself -- "+
+			"migrate the working tree into that schema: %w", ds.Schema, err)
 	}
 	if applied == 0 {
-		return errors.New("this build's search_path reaches a schema with no applied migration steps, so it would compare against tables it created itself -- " +
-			"migrate the working tree into the schema this build resolves to (public, for a pinned build predating the schema field)")
+		return fmt.Errorf("this build resolves to schema %q, which has no applied migration steps, so it would compare against tables it created itself -- "+
+			"migrate the working tree into that schema", ds.Schema)
 	}
 	return nil
 }
