@@ -421,6 +421,16 @@ topic's family -- never both.
   backtick then newline, the `-- vulkan:` owner comment and the statement
   indented one level past the declaring line, closing backtick on its own
   line at the declaring line's indent.
+- Every table a literal names is schema-qualified `%[1]s.<name>` [0631]:
+  the schema is Sprintf verb `[1]`, filled from the datastore's own
+  `Schema`, and table names follow as `[2]`, `[3]`. Indexed, not
+  positional -- the schema repeats at every reference. The pool's
+  search_path ends in `public`, so an unqualified name resolves to
+  whatever another installation left there: a read of its rows, or a DROP
+  of its table. An index name stays bare (an index lands in its table's
+  schema), and a name reaching Postgres as a bind parameter or inside a
+  quoted string is built qualified in Go at the call site.
+  `tools/conventions` walks every literal.
 
 ## Errors
 

@@ -108,8 +108,12 @@ ids are per-installation serials, so the collisions are real:
    Four unit tests pin the fill contract; an off-by-one in the value
    index fails two of them. Playwright's sandbox-boot runs are the
    end-to-end proof: PGlite creates and queries the tables for real.
-7. **Decision record** superseding the no-qualified-SQL half of [0628],
-   linked both ways.
+7. ~~**Decision record.**~~ DONE. [0631], superseding [0630]'s "no SQL
+   changes" clause and its rejection of qualifying; the rest of [0630]
+   stands and links back. The plan named [0628] here, which is wrong --
+   that record is the table-name funcs going public; the clause reversed
+   is [0630]'s. CONVENTIONS ## SQL carries the binding rule, since a
+   record is rationale and the rule file is what governs code.
 8. **The labs.** 242 unqualified table references across 45 files under
    examples/. They work today -- a lab connects through the datastore, so
    search_path resolves them -- but they are the "user writing a

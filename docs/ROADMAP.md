@@ -27,8 +27,8 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   database: wrong-table reads where 42P01 should mean absence, and a
   destructive `DROP TABLE IF EXISTS` on destroy retries. search_path
   keeps only the InTransaction seam's job. Picked up 2026-09-01 —
-  expanded in TODO.md; the record superseding the no-qualified-SQL half
-  of [0628] lands when the design settles.
+  expanded in TODO.md; settled as [0631], which supersedes [0630]'s "no
+  SQL changes" clause.
 - **`vulkan` as the real home of every user-spelled type**, instead of
   alias.go's aliases — the declarations, their doc comments, and their
   constructors move into the one package and internal code imports them
