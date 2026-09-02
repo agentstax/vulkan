@@ -209,22 +209,58 @@ documentation; the latter want a surface that has stopped moving.
 
 - **A declaration reports what it did** — `Declaration`
   (created / joined / updated) on the consumer and schedule instances,
-  spec'd in guides/client.mdx ("What a declaration reports", and
-  `nightly.Declaration` in the schedule section). Cut from the [0625]
-  chunk 12 build: `RequireMatch` + VK0061 is the mechanism that stops two
-  services flip-flopping a group's config, and VK0059 already reports an
-  overwrite as a Warn, so the value bought reporting only. Two things to
-  settle before it is worth building: whether the always-on soft report
-  earns an API surface when the strict form is opt-in (client.mdx:130
-  argues it does — `RequireMatch` only protects a service that already
-  knows it is a non-owner), and where a schedule's outcome would live,
-  since `client.RegisterSchedule` returns the handle and a handle is not
-  the product of one call. The handle cannot carry it; the options are
-  returning `*SchedulerInstance` with the client's `SystemManager` passed
-  in (today it builds a rival per call, which schedulepermitlab forbids)
-  or dropping the schedule half. The plumbing was built once and reverted
-  in full — a declaration verb returning the outcome and the instance
-  carrying it — so the shape is known.
+  carried as the "Reading the outcome back" aside in guides/client.mdx.
+  Cut from the [0625] chunk 12 build, and the strict form it was built
+  beside is rejected outright ([0626], parking lot), so this is now the
+  whole of what chunk 12 might still be worth. VK0059 already reports an
+  overwrite as a Warn and the value bought is reporting only — an API
+  for what the log says. One thing to settle before it is worth
+  building: where a schedule's outcome would live, since
+  `client.RegisterSchedule` returns the handle and a handle is not the
+  product of one call. The handle cannot carry it; the options are
+  returning `*SchedulerInstance` with the client's `SystemManager`
+  passed in (a `Schedule` call builds a rival per call, which
+  schedulepermitlab forbids) or dropping the schedule half. The plumbing
+  was built once and reverted in full — a declaration verb returning the
+  outcome and the instance carrying it — so the shape is known.
+
+- **`vulkantest`** — a test helper module, spec'd as the "A test helper"
+  aside in guides/client.mdx. The doc page comes first and the build
+  after it: [0625] chunk 15 carried it, and it was pulled out because
+  nobody had written down what it does. Sizing from that planning:
+  roughly 50 lines for `NewClient(t)` standing the real library up
+  against a database it drops at cleanup, and 30 for running a consumer
+  inside a test and waiting on its handler. Isolation should be
+  reconsidered rather than inherited: the planning finding was
+  per-DATABASE, on the grounds that a schema isolates the tables but not
+  the locks, and chunk 15 task 4 then made every advisory lock key carry
+  the schema. Two schemas of one database no longer serialize on
+  `RegisterSystem` — schemalab section 4 asserts it — so per-schema
+  isolation is now open, and a schema is cheaper to create and drop per
+  test than a database. What is left to check before choosing: whether
+  anything else a test touches is still database-wide.
+  `vulkan.Producer[T]` and `Consumer[T]` shipped in chunk 15 and cover
+  the unit-test half; this is only for tests that want the real
+  library.
+
+- **Diagnose queries filled from the values a raise attached** — today a
+  declared query renders with its `{topic_id}`/`{schema}` placeholders
+  literal, in `vulkan explain <code>` and on the error pages, and the
+  reader substitutes. `Error.Fill` already exists and runs on the fix;
+  pointing it at `Query.Sql` and rendering the result in
+  `renderErrorBlock` would hand an operator a query they can paste
+  as-is. That is what makes attaching values at every raise site worth
+  the plumbing — the [0625] chunk 15 task 5 settlement assumed the
+  filling existed, and it does not.
+
+- **"Schema version" for a migration version** — deferred 2026-09-01
+  during [0629], which gave `schema` one meaning everywhere else.
+  VK0022/VK0023's problem lines, `ErrSchemaOlderThanBuild` /
+  `ErrSchemaNewerThanBuild`, and roughly 8 files of prose still say
+  "schema version" about a migration version. The rule if it is taken
+  up: `migration_log.migration_version` reads "migration version" and
+  `message_log.schema_version` keeps "schema version", so
+  guides/schema-versions.mdx, which is about payloads, never moves.
 
 - **`schedule_config` declaration trail** — surfaced by the 2026-08-30
   init-model rethink (guides/consumer-group-config.mdx): topic, worker,

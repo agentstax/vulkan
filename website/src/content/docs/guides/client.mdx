@@ -417,10 +417,10 @@ concrete; a test that wants to fake the whole client defines the subset
 it uses.
 
 <ThreadAside label="PROPOSED" title="A test helper">
-A `vulkantest.NewClient(t)` that stands up the real library against an
-ephemeral database and drops it at cleanup. Ephemeral database, not
-schema: advisory locks are database-scoped, so two tests sharing a
-database would serialize on each other. Not built.
+A `vulkantest.NewClient(t)` that stands up the real library against a
+database or schema it drops at cleanup. Which of the two is still open:
+tables and locks are both per-schema now, so a schema may be enough and
+it is much cheaper to create per test. Not built.
 
 </ThreadAside>
 
