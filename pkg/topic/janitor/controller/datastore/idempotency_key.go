@@ -49,13 +49,13 @@ func (d *JanitorDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topi
 func (d *JanitorDatastore) sweepIdempotencyKeysBatch(ctx context.Context, topicId int64, cutoff time.Time, batchSize int) (int, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.sweepIdempotencyKeysBatch
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE idempotency_key IN (
-			SELECT idempotency_key FROM %s
+			SELECT idempotency_key FROM %[1]s.%[3]s
 			WHERE created_at < $1
 			LIMIT $2
 		);
-	`, topic.IdempotencyKeyTable(topicId), topic.IdempotencyKeyTable(topicId))
+	`, d.Datastore.Schema, topic.IdempotencyKeyTable(topicId), topic.IdempotencyKeyTable(topicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, cutoff, batchSize)
 	if err != nil {

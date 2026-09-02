@@ -28,11 +28,11 @@ func (d *CompactionDatastore) listKeyMessages(ctx context.Context, topicId int64
 			COALESCE(routing_key, ''),
 			message_key,
 			COALESCE(compaction_rank, 0)
-		FROM %s
+		FROM %[1]s.%[2]s
 		WHERE message_key = $1
 		ORDER BY id DESC
 		LIMIT $2;
-	`, topic.MessageLogTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, messageKey, limit)
 	if err != nil {

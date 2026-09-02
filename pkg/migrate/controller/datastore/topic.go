@@ -2,16 +2,18 @@ package datastore
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) ([]*common.Owner, error) {
-	rows, err := conn.Query(ctx, `
+	sql := fmt.Sprintf(`
 		-- vulkan: migrate.ListTopics
-		SELECT id, system_id, name FROM topic_config ORDER BY id;
-	`)
+		SELECT id, system_id, name FROM %[1]s.topic_config ORDER BY id;
+	`, d.Datastore.Schema)
+	rows, err := conn.Query(ctx, sql)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,9 @@
 package datastore
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // WorkerSnapshots is every worker row with its owner columns and aggregated
 // worker_instance liveness.
@@ -15,7 +18,7 @@ func (d *MetricsDatastore) WorkerSnapshots(ctx context.Context) ([]WorkerSnapsho
 }
 
 func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapshotRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: metrics.workerSnapshots
 		SELECT
 			w.name,
@@ -28,13 +31,13 @@ func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapsho
 			COUNT(i.id) FILTER (WHERE i.expires_at > now()) AS live_instances,
 			COALESCE(MAX(i.attempts) FILTER (WHERE i.expires_at > now()), 0) AS max_attempts,
 			COALESCE(EXTRACT(EPOCH FROM (now() - MAX(i.expires_at))), 0) AS unclaimed_for_secs  -- dead rows feed this until something deletes them
-		FROM worker_config w
-		LEFT JOIN consumer_group_config g ON g.id = w.consumer_group_id
-		LEFT JOIN topic_config t ON t.id = COALESCE(w.topic_id, g.topic_id)      -- group rows reach their topic through the group
-		LEFT JOIN worker_instance i ON i.worker_id = w.id
+		FROM %[1]s.worker_config w
+		LEFT JOIN %[1]s.consumer_group_config g ON g.id = w.consumer_group_id
+		LEFT JOIN %[1]s.topic_config t ON t.id = COALESCE(w.topic_id, g.topic_id)      -- group rows reach their topic through the group
+		LEFT JOIN %[1]s.worker_instance i ON i.worker_id = w.id
 		GROUP BY w.id, w.name, w.system_id, w.topic_id, w.consumer_group_id, w.target_instances, t.system_id, t.name, g.topic_id, g.name
 		ORDER BY t.name, w.name, g.name;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err

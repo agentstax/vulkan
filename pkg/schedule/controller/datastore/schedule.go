@@ -23,7 +23,7 @@ func (d *ScheduleDatastore) Get(ctx context.Context, name string) (*ScheduleConf
 }
 
 func (d *ScheduleDatastore) get(ctx context.Context, q datastore.Querier, name string) (*ScheduleConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: schedule.get
 		SELECT
 			schedule_config.id,
@@ -39,10 +39,10 @@ func (d *ScheduleDatastore) get(ctx context.Context, q datastore.Querier, name s
 			schedule_config.metadata,
 			schedule_cursor.next_scheduled_at,
 			schedule_cursor.last_scheduled_at
-		FROM schedule_config
-		JOIN schedule_cursor ON schedule_cursor.schedule_id = schedule_config.id
+		FROM %[1]s.schedule_config
+		JOIN %[1]s.schedule_cursor ON schedule_cursor.schedule_id = schedule_config.id
 		WHERE schedule_config.name = $1;
-	`
+	`, d.Datastore.Schema)
 	return d.scanScheduleConfigRow(q.QueryRow(ctx, sql, name))
 }
 
@@ -57,7 +57,7 @@ func (d *ScheduleDatastore) List(ctx context.Context) ([]ScheduleConfigRow, erro
 }
 
 func (d *ScheduleDatastore) list(ctx context.Context) ([]ScheduleConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: schedule.list
 		SELECT
 			schedule_config.id,
@@ -73,10 +73,10 @@ func (d *ScheduleDatastore) list(ctx context.Context) ([]ScheduleConfigRow, erro
 			schedule_config.metadata,
 			schedule_cursor.next_scheduled_at,
 			schedule_cursor.last_scheduled_at
-		FROM schedule_config
-		JOIN schedule_cursor ON schedule_cursor.schedule_id = schedule_config.id
+		FROM %[1]s.schedule_config
+		JOIN %[1]s.schedule_cursor ON schedule_cursor.schedule_id = schedule_config.id
 		ORDER BY schedule_config.name;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err
@@ -104,10 +104,11 @@ func (d *ScheduleDatastore) Suspend(ctx context.Context, name string) error {
 }
 
 func (d *ScheduleDatastore) suspend(ctx context.Context, name string) error {
-	tag, err := d.Datastore.Pool.Exec(ctx, `
+	sql := fmt.Sprintf(`
 		-- vulkan: schedule.suspend
-		UPDATE schedule_config SET suspended = true WHERE name = $1;
-	`, name)
+		UPDATE %[1]s.schedule_config SET suspended = true WHERE name = $1;
+	`, d.Datastore.Schema)
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, name)
 	if err != nil {
 		return err
 	}
@@ -150,10 +151,11 @@ func (d *ScheduleDatastore) unsuspend(ctx context.Context, name string) error {
 	}
 	defer tx.Rollback(ctx)
 
-	tag, err := tx.Exec(ctx, `
+	configSql := fmt.Sprintf(`
 		-- vulkan: schedule.unsuspend
-		UPDATE schedule_config SET suspended = false WHERE name = $1;
-	`, name)
+		UPDATE %[1]s.schedule_config SET suspended = false WHERE name = $1;
+	`, d.Datastore.Schema)
+	tag, err := tx.Exec(ctx, configSql, name)
 	if err != nil {
 		return err
 	}
@@ -161,10 +163,11 @@ func (d *ScheduleDatastore) unsuspend(ctx context.Context, name string) error {
 		return schedule.ErrScheduleNotFound.With("schedule", name)
 	}
 
-	if _, err := tx.Exec(ctx, `
+	cursorSql := fmt.Sprintf(`
 		-- vulkan: schedule.unsuspend
-		UPDATE schedule_cursor SET next_scheduled_at = $2 WHERE schedule_id = $1;
-	`, found.Id, next); err != nil {
+		UPDATE %[1]s.schedule_cursor SET next_scheduled_at = $2 WHERE schedule_id = $1;
+	`, d.Datastore.Schema)
+	if _, err := tx.Exec(ctx, cursorSql, found.Id, next); err != nil {
 		return err
 	}
 
@@ -209,10 +212,11 @@ func (d *ScheduleDatastore) Delete(ctx context.Context, name string) error {
 }
 
 func (d *ScheduleDatastore) delete(ctx context.Context, name string) error {
-	tag, err := d.Datastore.Pool.Exec(ctx, `
+	sql := fmt.Sprintf(`
 		-- vulkan: schedule.delete
-		DELETE FROM schedule_config WHERE name = $1;
-	`, name)
+		DELETE FROM %[1]s.schedule_config WHERE name = $1;
+	`, d.Datastore.Schema)
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, name)
 	if err != nil {
 		return err
 	}

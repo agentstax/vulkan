@@ -52,8 +52,8 @@ func (d *ProducerDatastore) insertUntilCovered(ctx context.Context, topicId int6
 func (d *ProducerDatastore) createNextIdPartition(ctx context.Context, topicId int64, partitionSize int64) error {
 	lastValueSql := fmt.Sprintf(`
 		-- vulkan: producer.createNextIdPartition
-		SELECT last_value FROM %s;
-	`, topic.MessageLogIdSequence(topicId))
+		SELECT last_value FROM %[1]s.%[2]s;
+	`, d.Datastore.Schema, topic.MessageLogIdSequence(topicId))
 
 	var lastValue int64
 	if err := d.Datastore.Pool.QueryRow(ctx, lastValueSql).Scan(&lastValue); err != nil {
@@ -72,10 +72,10 @@ func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId
 
 	createPartitionSql := fmt.Sprintf(`
 		-- vulkan: producer.ensureCoveringPartition
-		CREATE TABLE IF NOT EXISTS %s
-			PARTITION OF %s
-			FOR VALUES FROM (%d) TO (%d);
-	`, topic.MessageLogPartitionTable(topicId, next), topic.MessageLogTable(topicId), next*partitionSize, (next+1)*partitionSize)
+		CREATE TABLE IF NOT EXISTS %[1]s.%[2]s
+			PARTITION OF %[1]s.%[3]s
+			FOR VALUES FROM (%[4]d) TO (%[5]d);
+	`, d.Datastore.Schema, topic.MessageLogPartitionTable(topicId, next), topic.MessageLogTable(topicId), next*partitionSize, (next+1)*partitionSize)
 
 	lockKey, err := common.NewAdvisoryLockKey("partition", d.Datastore.Schema, topicId, next)
 	if err != nil {

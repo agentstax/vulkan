@@ -3,6 +3,7 @@ package datastore
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -23,7 +24,7 @@ func (d *TopicDatastore) Get(ctx context.Context, name string) (*TopicConfigRow,
 }
 
 func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name string) (*TopicConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topic.get
 		SELECT
 			id,
@@ -36,9 +37,9 @@ func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name stri
 			delivery_log_mode,
 			created_at,
 			updated_at
-		FROM topic_config
+		FROM %[1]s.topic_config
 		WHERE name = $1;
-	`
+	`, d.Datastore.Schema)
 	return d.scanTopicConfigRow(q.QueryRow(ctx, sql, name))
 }
 
@@ -54,7 +55,7 @@ func (d *TopicDatastore) GetById(ctx context.Context, id int64) (*TopicConfigRow
 }
 
 func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topic.getById
 		SELECT
 			id,
@@ -67,9 +68,9 @@ func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicConfigRow
 			delivery_log_mode,
 			created_at,
 			updated_at
-		FROM topic_config
+		FROM %[1]s.topic_config
 		WHERE id = $1;
-	`
+	`, d.Datastore.Schema)
 	return d.scanTopicConfigRow(d.Datastore.Pool.QueryRow(ctx, sql, id))
 }
 
@@ -84,7 +85,7 @@ func (d *TopicDatastore) List(ctx context.Context) ([]TopicConfigRow, error) {
 }
 
 func (d *TopicDatastore) list(ctx context.Context) ([]TopicConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topic.list
 		SELECT
 			id,
@@ -97,9 +98,9 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicConfigRow, error) {
 			delivery_log_mode,
 			created_at,
 			updated_at
-		FROM topic_config
+		FROM %[1]s.topic_config
 		ORDER BY name;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		// 42P01 = table does not exist -- an unregistered database has no topics
@@ -179,12 +180,12 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicConfigRow,
 		return d.replaceConfig(ctx, found, declared, declaredBy)
 	}
 
-	insertSql := `
+	insertSql := fmt.Sprintf(`
 		-- vulkan: topic.register
-		INSERT INTO topic_config (system_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
+		INSERT INTO %[1]s.topic_config (system_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at;
-	`
+	`, d.Datastore.Schema)
 	created := *declared
 	if err := tx.QueryRow(ctx, insertSql, declared.SystemId, declared.Name, declared.PartitionSize, declared.RetentionTTLNs, declared.AllowDropPastCommitted, declared.IdempotencyKeyTTLNs, declared.DeliveryLogMode).
 		Scan(&created.Id, &created.CreatedAt, &created.UpdatedAt); err != nil {
@@ -200,11 +201,11 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicConfigRow,
 	}
 
 	// add the migration baseline in the SAME txn
-	migrationSql := `
+	migrationSql := fmt.Sprintf(`
 		-- vulkan: topic.register
-		INSERT INTO migration_log (topic_id, migration_version, status)
+		INSERT INTO %[1]s.migration_log (topic_id, migration_version, status)
 		VALUES ($1, 1, 'success');
-	`
+	`, d.Datastore.Schema)
 	if _, err := tx.Exec(ctx, migrationSql, created.Id); err != nil {
 		return nil, err
 	}
@@ -238,9 +239,9 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 	}
 	defer tx.Rollback(ctx)
 
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topic.rename
-		UPDATE topic_config
+		UPDATE %[1]s.topic_config
 		SET name = $2, updated_at = NOW()
 		WHERE name = $1
 		RETURNING
@@ -254,7 +255,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 			delivery_log_mode,
 			created_at,
 			updated_at;
-	`
+	`, d.Datastore.Schema)
 	renamed, err := d.scanTopicConfigRow(tx.QueryRow(ctx, sql, oldName, newName))
 	if err != nil {
 		// 23505 = unique constraint violation ie name taken
@@ -283,11 +284,11 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 // appendTopicConfigLog writes data's full snapshot as one topic_config_log row, inside
 // the transaction that changed the topic row.
 func (d *TopicDatastore) appendTopicConfigLog(ctx context.Context, q datastore.Querier, data *TopicConfigRow, declaredBy string) error {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topic.appendTopicConfigLog
-		INSERT INTO topic_config_log (topic_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode, declared_by)
+		INSERT INTO %[1]s.topic_config_log (topic_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode, declared_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-	`
+	`, d.Datastore.Schema)
 	_, err := q.Exec(ctx, sql, data.Id, data.Name, data.PartitionSize, data.RetentionTTLNs, data.AllowDropPastCommitted, data.IdempotencyKeyTTLNs, data.DeliveryLogMode, declaredBy)
 	return err
 }

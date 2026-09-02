@@ -28,9 +28,9 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleCo
 	}
 	defer tx.Rollback(ctx)
 
-	updateConfigSql := `
+	updateConfigSql := fmt.Sprintf(`
 		-- vulkan: schedule.replaceConfig
-		UPDATE schedule_config
+		UPDATE %[1]s.schedule_config
 		SET
 			expression = $2,
 			topic_id = $3,
@@ -40,7 +40,7 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleCo
 			schema_version = $7,
 			metadata = COALESCE($8, '{}'::jsonb)
 		WHERE id = $1;
-	`
+	`, d.Datastore.Schema)
 	tag, err := tx.Exec(ctx, updateConfigSql, found.Id,
 		declared.Expression.String(), declared.TopicId, declared.Concurrency, declared.TimeoutNs, declared.Payload, declared.SchemaVersion, declared.Metadata)
 	if err != nil {
@@ -51,10 +51,11 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleCo
 	}
 
 	if next != nil {
-		if _, err := tx.Exec(ctx, `
+		cursorSql := fmt.Sprintf(`
 			-- vulkan: schedule.replaceConfig
-			UPDATE schedule_cursor SET next_scheduled_at = $2 WHERE schedule_id = $1;
-		`, found.Id, *next); err != nil {
+			UPDATE %[1]s.schedule_cursor SET next_scheduled_at = $2 WHERE schedule_id = $1;
+		`, d.Datastore.Schema)
+		if _, err := tx.Exec(ctx, cursorSql, found.Id, *next); err != nil {
 			return nil, err
 		}
 	}

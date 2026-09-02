@@ -108,8 +108,8 @@ func (d *TopicDatastore) dropPartitionBatch(ctx context.Context, partitions []st
 		// partition between the listPartitions read and here
 		dropSql := fmt.Sprintf(`
 			-- vulkan: topic.dropPartitionBatch
-			DROP TABLE IF EXISTS %s;
-		`, partition)
+			DROP TABLE IF EXISTS %[1]s.%[2]s;
+		`, d.Datastore.Schema, partition)
 		if _, err := tx.Exec(ctx, dropSql); err != nil {
 			return err
 		}

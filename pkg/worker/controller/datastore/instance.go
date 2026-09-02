@@ -3,6 +3,7 @@ package datastore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 	"uuid"
 
@@ -34,10 +35,11 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 	// the worker row lock serializes claimants: without it two concurrent
 	// counts both see room under target and both insert
 	var target int
-	err = tx.QueryRow(ctx, `
+	targetSql := fmt.Sprintf(`
 		-- vulkan: worker.claimInstance
-		SELECT target_instances FROM worker_config WHERE id = $1 FOR UPDATE;
-	`, workerId).Scan(&target)
+		SELECT target_instances FROM %[1]s.worker_config WHERE id = $1 FOR UPDATE;
+	`, d.Datastore.Schema)
+	err = tx.QueryRow(ctx, targetSql, workerId).Scan(&target)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -45,14 +47,14 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 		return nil, err
 	}
 
-	insertSql := `
+	insertSql := fmt.Sprintf(`
 		-- vulkan: worker.claimInstance
-		INSERT INTO worker_instance (worker_id, expires_at)
+		INSERT INTO %[1]s.worker_instance (worker_id, expires_at)
 		SELECT $1, now() + make_interval(secs => $2)
 		WHERE $3 = -1 -- '-1' means unbound (can always claim)
-			OR (SELECT count(*) FROM worker_instance WHERE worker_id = $1 AND expires_at > now()) < $3
+			OR (SELECT count(*) FROM %[1]s.worker_instance WHERE worker_id = $1 AND expires_at > now()) < $3
 		RETURNING id, worker_id, token, attempts;
-	`
+	`, d.Datastore.Schema)
 	var claimed WorkerInstanceRow
 	err = tx.QueryRow(ctx, insertSql, workerId, ttl.Seconds(), target).
 		Scan(&claimed.Id, &claimed.WorkerId, &claimed.Token, &claimed.Attempts)
@@ -79,14 +81,14 @@ func (d *WorkerDatastore) RenewInstance(ctx context.Context, instanceId int64, t
 func (d *WorkerDatastore) renewInstance(ctx context.Context, instanceId int64, token uuid.UUID, ttl time.Duration) error {
 	// an expired row may already be replaced -- renewing it past expiry
 	// would put live instances over target_instances
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: worker.renewInstance
-		UPDATE worker_instance
+		UPDATE %[1]s.worker_instance
 		SET expires_at = now() + make_interval(secs => $3)
 		WHERE id = $1
 			AND token = $2
 			AND expires_at > now();
-	`
+	`, d.Datastore.Schema)
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, instanceId, toTokenData(token), ttl.Seconds())
 	if err != nil {
 		return err
@@ -105,13 +107,13 @@ func (d *WorkerDatastore) RecordInstanceSuccess(ctx context.Context, instanceId 
 }
 
 func (d *WorkerDatastore) recordInstanceSuccess(ctx context.Context, instanceId int64, token uuid.UUID) error {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: worker.recordInstanceSuccess
-		UPDATE worker_instance
+		UPDATE %[1]s.worker_instance
 		SET attempts = 0
 		WHERE id = $1
 			AND token = $2;
-	`
+	`, d.Datastore.Schema)
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, instanceId, toTokenData(token))
 	if err != nil {
 		return err
@@ -135,14 +137,14 @@ func (d *WorkerDatastore) RecordInstanceFailure(ctx context.Context, instanceId 
 }
 
 func (d *WorkerDatastore) recordInstanceFailure(ctx context.Context, instanceId int64, token uuid.UUID) (int, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: worker.recordInstanceFailure
-		UPDATE worker_instance
+		UPDATE %[1]s.worker_instance
 		SET attempts = attempts + 1
 		WHERE id = $1
 			AND token = $2
 		RETURNING attempts;
-	`
+	`, d.Datastore.Schema)
 	var attempts int
 	err := d.Datastore.Pool.QueryRow(ctx, sql, instanceId, toTokenData(token)).Scan(&attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -163,12 +165,12 @@ func (d *WorkerDatastore) ReleaseInstance(ctx context.Context, instanceId int64,
 }
 
 func (d *WorkerDatastore) releaseInstance(ctx context.Context, instanceId int64, token uuid.UUID) error {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: worker.releaseInstance
-		DELETE FROM worker_instance
+		DELETE FROM %[1]s.worker_instance
 		WHERE id = $1
 			AND token = $2;
-	`
+	`, d.Datastore.Schema)
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, instanceId, toTokenData(token))
 	if err != nil {
 		return err
@@ -192,10 +194,11 @@ func (d *WorkerDatastore) SweepExpiredInstances(ctx context.Context) (int64, err
 }
 
 func (d *WorkerDatastore) sweepExpiredInstances(ctx context.Context) (int64, error) {
-	tag, err := d.Datastore.Pool.Exec(ctx, `
+	sql := fmt.Sprintf(`
 		-- vulkan: worker.sweepExpiredInstances
-		DELETE FROM worker_instance WHERE expires_at <= now();
-	`)
+		DELETE FROM %[1]s.worker_instance WHERE expires_at <= now();
+	`, d.Datastore.Schema)
+	tag, err := d.Datastore.Pool.Exec(ctx, sql)
 	if err != nil {
 		return 0, err
 	}

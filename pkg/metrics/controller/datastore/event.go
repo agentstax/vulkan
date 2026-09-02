@@ -2,9 +2,10 @@ package datastore
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // EventTimestamps is every distinct (message, attempt) of eventType under
@@ -26,16 +27,16 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 		return nil, err
 	}
 
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: metrics.eventTimestamps
 		SELECT
 			(payload->>'message_id')::bigint,
 			(payload->>'attempt')::int,
 			MIN((payload->>'at')::timestamptz)
-		FROM ` + topic.MessageLogTable(metricsTopicId) + `
+		FROM %[1]s.%[2]s
 		WHERE routing_key = $1 AND payload->>'type' = $2
 		GROUP BY (payload->>'message_id')::bigint, (payload->>'attempt')::int;
-	`
+	`, d.Datastore.Schema, topic.MessageLogTable(metricsTopicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql, routingKey, eventType)
 	if err != nil {
 		return nil, err
@@ -56,12 +57,11 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 // resolveMetricsTopicId is the __system.metrics topic's own id.
 func (d *MetricsDatastore) resolveMetricsTopicId(ctx context.Context) (int64, error) {
 	var id int64
-	err := d.Datastore.Pool.QueryRow(ctx,
-		`
-			-- vulkan: metrics.resolveMetricsTopicId
-			SELECT id FROM topic_config WHERE name = $1;
-		`, metrics.TopicName,
-	).Scan(&id)
+	sql := fmt.Sprintf(`
+		-- vulkan: metrics.resolveMetricsTopicId
+		SELECT id FROM %[1]s.topic_config WHERE name = $1;
+	`, d.Datastore.Schema)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, metrics.TopicName).Scan(&id)
 	if err != nil {
 		return 0, err
 	}

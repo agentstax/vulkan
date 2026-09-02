@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
@@ -62,9 +63,9 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 		return nil, err
 	}
 
-	insertConfigSql := `
+	insertConfigSql := fmt.Sprintf(`
 		-- vulkan: schedule.register
-		INSERT INTO schedule_config (
+		INSERT INTO %[1]s.schedule_config (
 			system_id,
 			topic_id,
 			name,
@@ -77,7 +78,7 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, '{}'::jsonb))
 		RETURNING id;
-	`
+	`, d.Datastore.Schema)
 	var id int64
 	if err := tx.QueryRow(ctx, insertConfigSql,
 		declared.SystemId, declared.TopicId,
@@ -87,11 +88,11 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 		return nil, err
 	}
 
-	insertCursorSql := `
+	insertCursorSql := fmt.Sprintf(`
 		-- vulkan: schedule.register
-		INSERT INTO schedule_cursor (schedule_id, next_scheduled_at)
+		INSERT INTO %[1]s.schedule_cursor (schedule_id, next_scheduled_at)
 		VALUES ($1, $2);
-	`
+	`, d.Datastore.Schema)
 	if _, err := tx.Exec(ctx, insertCursorSql, id, next); err != nil {
 		return nil, err
 	}

@@ -63,11 +63,11 @@ func (d *ScheduleDatastore) keyMessages(ctx context.Context, topicId int64, name
 			m.id,
 			(m.options->>'scheduled_at')::timestamptz,
 			m.created_at
-		FROM %s m
+		FROM %[1]s.%[2]s m
 		WHERE m.message_key = $1
 		ORDER BY m.id DESC
 		LIMIT $2;
-	`, topic.MessageLogTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, name, limit)
 	if err != nil {

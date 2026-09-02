@@ -63,7 +63,7 @@ func (d *ProducerDatastore) runInsertSavepoint[Message topic.Versioned](ctx cont
 // compaction, so it always fully batches. duplicate=true means the claim
 // already existed.
 func (d *ProducerDatastore) insertProtectedSavepoint[Message topic.Versioned](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *Append[Message]) (id int64, duplicate bool, err error) {
-	sql, args := protectedInsertSQL(topicId, payload, data)
+	sql, args := protectedInsertSQL(topicId, payload, data, d.Datastore.Schema)
 
 	batch := &pgx.Batch{}
 	batch.Queue(sql, args...)
@@ -92,7 +92,7 @@ func (d *ProducerDatastore) insertProtectedSavepoint[Message topic.Versioned](ct
 // upsert when compacted) in one round trip. duplicate=true means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
 func (d *ProducerDatastore) insertProtected[Message topic.Versioned](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *Append[Message]) (id int64, duplicate bool, err error) {
-	sql, args := protectedInsertSQL(topicId, payload, data)
+	sql, args := protectedInsertSQL(topicId, payload, data, d.Datastore.Schema)
 
 	err = q.QueryRow(ctx, sql, args...).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -121,7 +121,7 @@ func attemptRollbackToSavepoint(ctx context.Context, q iDatastore.Querier, savep
 // protectedInsertSQL builds the claim+insert(+compaction_head upsert when
 // compacted) CTE -- shared with the savepoint-batched path so both run the
 // exact same statement. Claims against idempotency_key_<topicId>
-func protectedInsertSQL[Message topic.Versioned](topicId int64, payload *Message, data *Append[Message]) (string, []any) {
+func protectedInsertSQL[Message topic.Versioned](topicId int64, payload *Message, data *Append[Message], schema string) (string, []any) {
 	// the row's schema_version is the payload's own SchemaVersion(): a constant
 	// per type for user messages, the stored version for a replayed one
 	args := []any{data.IdempotencyKey, payload, data.RoutingKey, int64((*payload).SchemaVersion())}
@@ -133,17 +133,17 @@ func protectedInsertSQL[Message topic.Versioned](topicId int64, payload *Message
 		sql = fmt.Sprintf(`
 			-- vulkan: producer.protectedInsert
 			WITH claim AS (
-				INSERT INTO %s (idempotency_key)
+				INSERT INTO %[1]s.%[2]s (idempotency_key)
 				VALUES ($1)
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			), inserted AS (
-				INSERT INTO %s (payload, routing_key, schema_version, message_key, compaction_rank, options)
+				INSERT INTO %[1]s.%[3]s (payload, routing_key, schema_version, message_key, compaction_rank, options)
 				SELECT $2, NULLIF($3, ''), $4, $5, $6, $7  -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
-				INSERT INTO %s AS h (compaction_key, head_id, schema_version, compaction_rank)
+				INSERT INTO %[1]s.%[4]s AS h (compaction_key, head_id, schema_version, compaction_rank)
 				SELECT $5, id, $4, $6 FROM inserted
 				ON CONFLICT (compaction_key) DO UPDATE
 				SET head_id = EXCLUDED.head_id, schema_version = EXCLUDED.schema_version, compaction_rank = EXCLUDED.compaction_rank
@@ -151,7 +151,7 @@ func protectedInsertSQL[Message topic.Versioned](topicId int64, payload *Message
 				WHERE (h.schema_version, h.compaction_rank, h.head_id) < (EXCLUDED.schema_version, EXCLUDED.compaction_rank, EXCLUDED.head_id)
 			)
 			SELECT id FROM inserted;
-		`, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId), topic.CompactionHeadTable(topicId))
+		`, schema, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId), topic.CompactionHeadTable(topicId))
 
 		args = append(args, data.MessageKey, data.CompactionRank, data.Options) // $5, $6, $7
 	} else {
@@ -161,12 +161,12 @@ func protectedInsertSQL[Message topic.Versioned](topicId int64, payload *Message
 		sql = fmt.Sprintf(`
 			-- vulkan: producer.protectedInsert
 			WITH claim AS (
-				INSERT INTO %s (idempotency_key)
+				INSERT INTO %[1]s.%[2]s (idempotency_key)
 				VALUES ($1)
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key, schema_version, message_key, options)
+			INSERT INTO %[1]s.%[3]s (payload, routing_key, schema_version, message_key, options)
 			SELECT
 				$2,
 				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
@@ -175,7 +175,7 @@ func protectedInsertSQL[Message topic.Versioned](topicId int64, payload *Message
 				$6
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
-		`, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId))
+		`, schema, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId))
 
 		args = append(args, data.MessageKey, data.Options) // $5, $6
 	}

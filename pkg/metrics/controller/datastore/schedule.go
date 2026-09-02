@@ -1,6 +1,9 @@
 package datastore
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // ScheduleSnapshots is every schedule (config row joined to its cursor) with
 // its target topic and schedule state.
@@ -15,7 +18,7 @@ func (d *MetricsDatastore) ScheduleSnapshots(ctx context.Context) ([]ScheduleSna
 }
 
 func (d *MetricsDatastore) scheduleSnapshots(ctx context.Context) ([]ScheduleSnapshotRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: metrics.scheduleSnapshots
 		SELECT
 			j.name,
@@ -27,11 +30,11 @@ func (d *MetricsDatastore) scheduleSnapshots(ctx context.Context) ([]ScheduleSna
 			c.next_scheduled_at,
 			c.last_scheduled_at,
 			EXTRACT(EPOCH FROM (now() - c.next_scheduled_at)) AS due_for_secs
-		FROM schedule_config j
-		JOIN schedule_cursor c ON c.schedule_id = j.id
-		JOIN topic_config t ON t.id = j.topic_id
+		FROM %[1]s.schedule_config j
+		JOIN %[1]s.schedule_cursor c ON c.schedule_id = j.id
+		JOIN %[1]s.topic_config t ON t.id = j.topic_id
 		ORDER BY j.name;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err

@@ -28,7 +28,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 		claimSql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.claim
 			WITH claimed AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'inflight',
 					lease_token = gen_random_uuid(),
@@ -37,12 +37,12 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 					updated_at = now()
 				WHERE (consumer_group_id, message_id) IN
 				(
-					SELECT d.consumer_group_id, d.message_id FROM %[1]s d
+					SELECT d.consumer_group_id, d.message_id FROM %[1]s.%[2]s d
 					WHERE d.consumer_group_id = $1
 						AND d.attempts - d.delays < $5
 						-- a row at another payload version stays put -- never decoded by this group
 						AND EXISTS (
-							SELECT 1 FROM %[2]s v
+							SELECT 1 FROM %[1]s.%[3]s v
 							WHERE v.id = d.message_id
 								AND v.schema_version = $6
 						)
@@ -54,7 +54,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 						-- never claim a row whose message key is under an unexpired lease
 						AND NOT EXISTS (
 							SELECT 1
-							FROM %[3]s kl
+							FROM %[1]s.%[4]s kl
 							WHERE kl.consumer_group_id = d.consumer_group_id
 								AND kl.message_key = d.message_key
 								AND kl.expires_at >= now()
@@ -64,7 +64,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 							d.concurrency = 'ordered'
 							AND EXISTS (
 								SELECT 1
-								FROM %[1]s earlier
+								FROM %[1]s.%[2]s earlier
 								WHERE earlier.consumer_group_id = d.consumer_group_id
 									AND earlier.message_key = d.message_key
 									AND earlier.message_id < d.message_id
@@ -93,9 +93,9 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				(m.compaction_rank IS NOT NULL) AS compacted,
 				m.options
 			FROM claimed c
-			JOIN %[2]s m ON m.id = c.message_id
+			JOIN %[1]s.%[3]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.MessageKeyLeaseTable(topicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.MessageKeyLeaseTable(topicId))
 	} else {
 		// eligible is split out so it can remember each row's pre-claim status
 		// and attempts -- the expired_logged CTE needs both, atomically with
@@ -104,12 +104,12 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 			-- vulkan: exceptionconsumer.claim
 			WITH eligible AS (
 				SELECT d.consumer_group_id, d.message_id, d.status, d.attempts
-				FROM %[1]s d
+				FROM %[1]s.%[2]s d
 				WHERE d.consumer_group_id = $1
 					AND d.attempts - d.delays < $5
 					-- a row at another payload version stays put -- never decoded by this group
 					AND EXISTS (
-						SELECT 1 FROM %[2]s v
+						SELECT 1 FROM %[1]s.%[3]s v
 						WHERE v.id = d.message_id
 							AND v.schema_version = $6
 					)
@@ -121,7 +121,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 					-- never claim a row whose message key is under an unexpired lease
 					AND NOT EXISTS (
 						SELECT 1
-						FROM %[4]s kl
+						FROM %[1]s.%[5]s kl
 						WHERE kl.consumer_group_id = d.consumer_group_id
 							AND kl.message_key = d.message_key
 							AND kl.expires_at >= now()
@@ -131,7 +131,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 						d.concurrency = 'ordered'
 						AND EXISTS (
 							SELECT 1
-							FROM %[1]s earlier
+							FROM %[1]s.%[2]s earlier
 							WHERE earlier.consumer_group_id = d.consumer_group_id
 								AND earlier.message_key = d.message_key
 								AND earlier.message_id < d.message_id
@@ -142,7 +142,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				LIMIT $2
 				FOR UPDATE OF d SKIP LOCKED
 			), claimed AS (
-				UPDATE %[1]s d
+				UPDATE %[1]s.%[2]s d
 				SET
 					status = 'inflight',
 					lease_token = gen_random_uuid(),
@@ -157,7 +157,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				-- an expired 'inflight' row is a claim nobody recorded: its
 				-- current attempt number is provably absent from the log (any
 				-- recorded outcome would have moved the row off 'inflight')
-				INSERT INTO %[3]s (consumer_group_id, message_id, attempt, status, error)
+				INSERT INTO %[1]s.%[4]s (consumer_group_id, message_id, attempt, status, error)
 				SELECT e.consumer_group_id, e.message_id, e.attempts, 'expired', 'delivery lease expired before an outcome was recorded'
 				FROM eligible e
 				WHERE e.status = 'inflight'
@@ -178,9 +178,9 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				(m.compaction_rank IS NOT NULL) AS compacted,
 				m.options
 			FROM claimed c
-			JOIN %[2]s m ON m.id = c.message_id
+			JOIN %[1]s.%[3]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.DeliveryLogTable(topicId), topic.MessageKeyLeaseTable(topicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.DeliveryLogTable(topicId), topic.MessageKeyLeaseTable(topicId))
 	}
 
 	rows, err := d.Datastore.Pool.Query(ctx, claimSql, groupId, limit, leaseDuration.Seconds(), topicId, maxRetries, schemaVersion)
@@ -206,14 +206,14 @@ func (d *ExceptionConsumerGroupDatastore) RenewLease(ctx context.Context, except
 func (d *ExceptionConsumerGroupDatastore) renewLease(ctx context.Context, exception *ExceptionQueueRow, duration time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: exceptionconsumer.renewLease
-		UPDATE %s
+		UPDATE %[1]s.%[2]s
 		SET
 			lease_expires_at = now() + make_interval(secs => $4),
 			updated_at = now()
 		WHERE consumer_group_id = $1
 			AND message_id = $2
 			AND lease_token = $3;
-	`, topic.ExceptionQueueTable(exception.TopicId))
+	`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken, duration.Seconds())
 	if err != nil {

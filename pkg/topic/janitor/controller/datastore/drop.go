@@ -32,8 +32,8 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicId in
 
 	headSql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.dropExpiredPartitions
-		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, topic.MessageLogTable(topicId))
+		SELECT COALESCE(MAX(id), 0) FROM %[1]s.%[2]s;
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId))
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
 		return err
@@ -106,10 +106,10 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	// already floor-protected) would join to nothing and sit there forever.
 	orphanSql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.dropPartition
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE message_id >= $1
 			AND message_id < $2;
-	`, topic.ExceptionQueueTable(topicId))
+	`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId))
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
 		return false, err
 	}
@@ -117,10 +117,10 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	if deliveryLogMode != topic.DeliveryLogModeOff {
 		orphanLogSql := fmt.Sprintf(`
 			-- vulkan: topicjanitor.dropPartition
-			DELETE FROM %s
+			DELETE FROM %[1]s.%[2]s
 			WHERE message_id >= $1
 				AND message_id < $2;
-		`, topic.DeliveryLogTable(topicId))
+		`, d.Datastore.Schema, topic.DeliveryLogTable(topicId))
 		if _, err := tx.Exec(ctx, orphanLogSql, low, high); err != nil {
 			return false, err
 		}
@@ -130,18 +130,18 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	// drop the now-dangling pointer rather than leave it forever
 	orphanKeySql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.dropPartition
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE head_id >= $1
 			AND head_id < $2;
-	`, topic.CompactionHeadTable(topicId))
+	`, d.Datastore.Schema, topic.CompactionHeadTable(topicId))
 	if _, err := tx.Exec(ctx, orphanKeySql, low, high); err != nil {
 		return false, err
 	}
 
 	dropSql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.dropPartition
-		DROP TABLE IF EXISTS %s;
-	`, topic.MessageLogPartitionTable(topicId, n))
+		DROP TABLE IF EXISTS %[1]s.%[2]s;
+	`, d.Datastore.Schema, topic.MessageLogPartitionTable(topicId, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {
 		return false, err

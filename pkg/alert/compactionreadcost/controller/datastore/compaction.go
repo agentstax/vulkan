@@ -21,8 +21,8 @@ func (d *CompactionReadCostDatastore) IsCompacted(ctx context.Context, topicId i
 func (d *CompactionReadCostDatastore) isCompacted(ctx context.Context, topicId int64) (bool, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: compactionreadcost.isCompacted
-		SELECT EXISTS (SELECT 1 FROM %s);
-	`, topic.CompactionHeadTable(topicId))
+		SELECT EXISTS (SELECT 1 FROM %[1]s.%[2]s);
+	`, d.Datastore.Schema, topic.CompactionHeadTable(topicId))
 	var compacted bool
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&compacted)
 	return compacted, err

@@ -28,14 +28,14 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 	snapshotSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.freshClaimMessagesWithCursor
 		SELECT
-			(SELECT COALESCE(MAX(id), 0) FROM %s) AS head,
+			(SELECT COALESCE(MAX(id), 0) FROM %[1]s.%[2]s) AS head,
 			pg_snapshot_xmax(pg_current_snapshot())::text AS xmax,
 			c.claimed,
 			c.settled_head,
 			c.pending_head
-		FROM %s c
+		FROM %[1]s.%[3]s c
 		WHERE c.consumer_group_id = $1;
-	`, topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var snapshotHead, claimed, settledHead, pendingHead int64
 	var snapshotXmax string
@@ -61,7 +61,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 				settled_head,
 				pending_head,
 				pending_xmax
-			FROM %s
+			FROM %[1]s.%[2]s
 			WHERE consumer_group_id = $1
 			-- must FOR UPDATE, get race if using a basic snapshot read
 			-- two same-group workers racing on one cursor row (claimed=0, head=200, limit=100):
@@ -135,7 +135,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 			FROM old_values o
 		),
 		updated AS (
-			UPDATE %s c
+			UPDATE %[1]s.%[3]s c
 			SET
 				-- advance by up to batchLimit, capped at the proven head.
 				claimed = LEAST(c.claimed + $2, gate.head),
@@ -163,7 +163,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 		--                                                       snapshot read it -> error
 		--
 		SELECT u.low, u.high FROM updated u;
-	`, topic.ConsumerGroupCursorTable(topicId), topic.ConsumerGroupCursorTable(topicId))
+	`, d.Datastore.Schema, topic.ConsumerGroupCursorTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 	cursorRows, err := tx.Query(ctx, cursorSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 	// get new lease associated with range
 	leaseSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.claimMessages
-		INSERT INTO %s (consumer_group_id, low, high, expires_at)
+		INSERT INTO %[1]s.%[2]s (consumer_group_id, low, high, expires_at)
 		VALUES (
 			$1,
 			$2,
@@ -212,7 +212,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 			high,
 			expires_at,
 			reclaims;
-	`, topic.ClaimLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, leaseSql, groupId, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err

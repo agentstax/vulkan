@@ -86,13 +86,13 @@ func (d *SystemDatastore) createSchema(ctx context.Context, tx pgx.Tx) error {
 
 // seedSystem seeds the singleton row, first register wins.
 func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemConfigRow, error) {
-	seedSystemSql := `
+	seedSystemSql := fmt.Sprintf(`
 		-- vulkan: system.seedSystem
-		INSERT INTO system_config (created_at, updated_at)
+		INSERT INTO %[1]s.system_config (created_at, updated_at)
 		SELECT NOW(), NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM system_config)
+		WHERE NOT EXISTS (SELECT 1 FROM %[1]s.system_config)
 		RETURNING id, created_at, updated_at;
-	`
+	`, d.Datastore.Schema)
 	seeded, err := d.scanSystemConfigRow(tx.QueryRow(ctx, seedSystemSql))
 	if err != nil {
 		return nil, err
@@ -114,15 +114,15 @@ func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemCon
 // recordBaseline records the baseline in migration_log, but only if there's no
 // success row yet.
 func (d *SystemDatastore) recordBaseline(ctx context.Context, tx pgx.Tx, systemId int64) error {
-	recordBaselineSql := `
+	recordBaselineSql := fmt.Sprintf(`
 		-- vulkan: system.recordBaseline
-		INSERT INTO migration_log (system_id, migration_version, status)
+		INSERT INTO %[1]s.migration_log (system_id, migration_version, status)
 		SELECT $1, 1, 'success'
 		WHERE NOT EXISTS (
-			SELECT 1 FROM migration_log
+			SELECT 1 FROM %[1]s.migration_log
 			WHERE system_id = $1 AND status = 'success'
 		);
-	`
+	`, d.Datastore.Schema)
 	_, err := tx.Exec(ctx, recordBaselineSql, systemId)
 	return err
 }
@@ -140,11 +140,11 @@ func (d *SystemDatastore) Get(ctx context.Context) (*SystemConfigRow, error) {
 }
 
 func (d *SystemDatastore) get(ctx context.Context, q datastore.Querier) (*SystemConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: system.get
 		SELECT id, created_at, updated_at
-		FROM system_config;
-	`
+		FROM %[1]s.system_config;
+	`, d.Datastore.Schema)
 	return d.scanSystemConfigRow(q.QueryRow(ctx, sql))
 }
 

@@ -24,13 +24,13 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 	snapshotSql := fmt.Sprintf(`
 		-- vulkan: deliveryconsumer.fanOut
 		SELECT
-			(SELECT COALESCE(MAX(id), 0) FROM %s) AS head,
+			(SELECT COALESCE(MAX(id), 0) FROM %[1]s.%[2]s) AS head,
 			pg_snapshot_xmax(pg_current_snapshot())::text AS xmax,
 			c.committed,
 			c.pending_head
-		FROM %s c
+		FROM %[1]s.%[3]s c
 		WHERE c.consumer_group_id = $1;
-	`, topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
@@ -51,7 +51,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 		-- vulkan: deliveryconsumer.fanOut
 		WITH old_values AS (
 			SELECT committed, pending_head, pending_xmax
-			FROM %[3]s                                             -- [3] = consumer_group_cursor table
+			FROM %[1]s.%[4]s                                             -- [4] = consumer_group_cursor table
 			WHERE consumer_group_id = $1
 			-- FOR UPDATE so a racing same-group peer's committed advance is
 			-- visible to our scan start (same race as the cursor claim path)
@@ -72,13 +72,13 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			-- plans the same bound as a join FILTER over an in-id-order index
 			-- walk from 0 -- O(whole log) per tick, measured 660x slower at 200k
 			SELECT m.id, m.schema_version, m.routing_key, m.message_key, m.compaction_rank, m.options
-			FROM %[2]s m                                           -- [2] = message_log table
+			FROM %[1]s.%[3]s m                                           -- [3] = message_log table
 			WHERE m.id > (SELECT committed FROM old_values)
 			ORDER BY m.id
 			LIMIT $2
 		),
 		materialized AS (
-			INSERT INTO %[1]s (consumer_group_id, message_id, status, message_key, concurrency) -- [1] = exception_queue table
+			INSERT INTO %[1]s.%[2]s (consumer_group_id, message_id, status, message_key, concurrency) -- [2] = exception_queue table
 			SELECT $1, b.id, 'ready', b.message_key, COALESCE(b.options->>'concurrency', 'parallel')
 			FROM batch b
 			-- rows at another payload version advance the mark without a delivery row
@@ -86,12 +86,12 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			AND (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
-					SELECT 1 FROM %[4]s bi                         -- [4] = binding_config table
+					SELECT 1 FROM %[1]s.%[5]s bi                         -- [5] = binding_config table
 					WHERE bi.consumer_group_id = $1
 				)
 				-- bindings for consumer_group exists and match routing_key pattern
 				OR EXISTS (
-					SELECT 1 FROM %[4]s bi
+					SELECT 1 FROM %[1]s.%[5]s bi
 					WHERE bi.consumer_group_id = $1
 						AND b.routing_key ~ bi.pattern_regex
 				)
@@ -105,7 +105,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 				-- compaction_head's current pointer for their key -- O(1) lookup,
 				-- no per-row scan
 				OR b.id = (
-					SELECT head_id FROM %[5]s                      -- [5] = compaction_head table
+					SELECT head_id FROM %[1]s.%[6]s                      -- [6] = compaction_head table
 					WHERE compaction_key = b.message_key
 				)
 			)
@@ -149,7 +149,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 				AS head
 			FROM gate
 		)
-		UPDATE %[3]s c SET
+		UPDATE %[1]s.%[4]s c SET
 			committed = mark.head,
 			-- claimed rides along equal to committed: a fanout group hands out
 			-- work per delivery row, never through a claimed/committed window.
@@ -164,7 +164,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			pending_xmax = GREATEST(c.pending_xmax, $4::xid8) -- also skips the initial NULL
 		FROM mark
 		WHERE c.consumer_group_id = $1;
-	`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId), topic.BindingConfigTable(topicId), topic.CompactionHeadTable(topicId))
+	`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId), topic.BindingConfigTable(topicId), topic.CompactionHeadTable(topicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, limit, snapshotHead, snapshotXmax, schemaVersion)
 	if err != nil {

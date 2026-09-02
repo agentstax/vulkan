@@ -31,9 +31,9 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicConfigRo
 	}
 	defer tx.Rollback(ctx)
 
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topic.replaceConfig
-		UPDATE topic_config
+		UPDATE %[1]s.topic_config
 		SET
 			retention_ttl_ns = $2,
 			allow_drop_past_committed = $3,
@@ -52,7 +52,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicConfigRo
 			delivery_log_mode,
 			created_at,
 			updated_at;
-	`
+	`, d.Datastore.Schema)
 	row := tx.QueryRow(ctx, sql,
 		found.Id,
 		declared.RetentionTTLNs,

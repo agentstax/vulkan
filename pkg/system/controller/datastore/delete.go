@@ -50,8 +50,8 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 	} {
 		if _, err := tx.Exec(ctx, fmt.Sprintf(`
 			-- vulkan: system.delete
-			DROP TABLE IF EXISTS %s;
-		`, table)); err != nil {
+			DROP TABLE IF EXISTS %[1]s.%[2]s;
+		`, d.Datastore.Schema, table)); err != nil {
 			return err
 		}
 	}

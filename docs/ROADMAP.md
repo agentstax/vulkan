@@ -21,6 +21,14 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
+- **`{schema}`-qualify every SQL literal** — production SQL joins the
+  diagnose queries and doc pages in writing `{schema}.table`, closing
+  the search_path fall-through between two installations in one
+  database: wrong-table reads where 42P01 should mean absence, and a
+  destructive `DROP TABLE IF EXISTS` on destroy retries. search_path
+  keeps only the InTransaction seam's job. Picked up 2026-09-01 —
+  expanded in TODO.md; the record superseding the no-qualified-SQL half
+  of [0628] lands when the design settles.
 - **`vulkan` as the real home of every user-spelled type**, instead of
   alias.go's aliases — the declarations, their doc comments, and their
   constructors move into the one package and internal code imports them

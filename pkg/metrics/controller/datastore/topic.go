@@ -23,8 +23,8 @@ func (d *MetricsDatastore) IsCompacted(ctx context.Context, topicId int64) (bool
 func (d *MetricsDatastore) isCompacted(ctx context.Context, topicId int64) (bool, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: metrics.isCompacted
-		SELECT EXISTS (SELECT 1 FROM %s);
-	`, topic.CompactionHeadTable(topicId))
+		SELECT EXISTS (SELECT 1 FROM %[1]s.%[2]s);
+	`, d.Datastore.Schema, topic.CompactionHeadTable(topicId))
 	var compacted bool
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&compacted)
 	return compacted, err
@@ -49,11 +49,11 @@ func (d *MetricsDatastore) schemaVersionCounts(ctx context.Context, topicId int6
 			m.schema_version,
 			count(*) AS messages,
 			count(h.compaction_key) AS compaction_heads
-		FROM %s m
-		LEFT JOIN %s h ON h.head_id = m.id
+		FROM %[1]s.%[2]s m
+		LEFT JOIN %[1]s.%[3]s h ON h.head_id = m.id
 		GROUP BY m.schema_version
 		ORDER BY m.schema_version;
-	`, topic.MessageLogTable(topicId), topic.CompactionHeadTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId), topic.CompactionHeadTable(topicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err
@@ -80,21 +80,21 @@ func (d *MetricsDatastore) groupSchemaVersionLag(ctx context.Context, topicId in
 		SELECT
 			g.name AS consumer_group,
 			(
-				SELECT count(*) FROM %[2]s m
+				SELECT count(*) FROM %[1]s.%[3]s m
 				WHERE m.schema_version = $1
 					AND m.id > c.committed
 			) AS unconsumed,
 			(
-				SELECT count(*) FROM %[3]s e
-				JOIN %[2]s m ON m.id = e.message_id
+				SELECT count(*) FROM %[1]s.%[4]s e
+				JOIN %[1]s.%[3]s m ON m.id = e.message_id
 				WHERE e.consumer_group_id = c.consumer_group_id
 					AND m.schema_version = $1
 					AND e.status IN ('ready', 'inflight', 'deferred')
 			) AS unresolved_exceptions
-		FROM %[1]s c
-		JOIN consumer_group_config g ON g.id = c.consumer_group_id
+		FROM %[1]s.%[2]s c
+		JOIN %[1]s.consumer_group_config g ON g.id = c.consumer_group_id
 		ORDER BY g.name;
-	`, topic.ConsumerGroupCursorTable(topicId), topic.MessageLogTable(topicId), topic.ExceptionQueueTable(topicId))
+	`, d.Datastore.Schema, topic.ConsumerGroupCursorTable(topicId), topic.MessageLogTable(topicId), topic.ExceptionQueueTable(topicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql, schemaVersion)
 	if err != nil {
 		return nil, err

@@ -34,10 +34,10 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 
 	freeSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.commit
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, topic.ClaimLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId))
 	tag, err := tx.Exec(ctx, freeSql, groupId, token)
 	if err != nil {
 		return err
@@ -50,7 +50,7 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 	// reaches this INSERT -- a stale worker's DELETE above matches 0 rows and
 	// returns before ever running deliverySql.
 	batch := &pgx.Batch{}
-	terminals := queueOutcomes(batch, deliveryStatement(topicId), logStatement(topicId), groupId, outcomes, initialBackoff, deliveryLogMode)
+	terminals := queueOutcomes(batch, deliveryStatement(topicId, d.Datastore.Schema), logStatement(topicId, d.Datastore.Schema), groupId, outcomes, initialBackoff, deliveryLogMode)
 	if err := execBatch(ctx, tx, batch); err != nil {
 		return err
 	}
@@ -88,11 +88,11 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 	// recorded-anything guard below.
 	truncateSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.partialCommit
-		UPDATE %s
+		UPDATE %[1]s.%[2]s
 		SET low = $3
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, topic.ClaimLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId))
 	tag, err := tx.Exec(ctx, truncateSql, groupId, token, lastProcessed)
 	if err != nil {
 		return err
@@ -103,7 +103,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 
 	// same delivery-insert shape as commit -- only the lease-side effect differs.
 	batch := &pgx.Batch{}
-	terminals := queueOutcomes(batch, deliveryStatement(topicId), logStatement(topicId), groupId, outcomes, initialBackoff, deliveryLogMode)
+	terminals := queueOutcomes(batch, deliveryStatement(topicId, d.Datastore.Schema), logStatement(topicId, d.Datastore.Schema), groupId, outcomes, initialBackoff, deliveryLogMode)
 	if err := execBatch(ctx, tx, batch); err != nil {
 		return err
 	}
@@ -130,10 +130,10 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 // *** HELPERS ***
 // ***************
 
-func deliveryStatement(topicId int64) string {
+func deliveryStatement(topicId int64, schema string) string {
 	return fmt.Sprintf(`
 		-- vulkan: messageconsumer.deliveryStatement
-		INSERT INTO %s (
+		INSERT INTO %[1]s.%[2]s (
 			consumer_group_id,
 			message_id,
 			status,
@@ -155,16 +155,16 @@ func deliveryStatement(topicId int64) string {
 			now() + make_interval(secs => $5),
 			$4
 		);
-	`, topic.ExceptionQueueTable(topicId))
+	`, schema, topic.ExceptionQueueTable(topicId))
 }
 
 // a freshly written delivery row is always the first recorded attempt (0)
-func logStatement(topicId int64) string {
+func logStatement(topicId int64, schema string) string {
 	return fmt.Sprintf(`
 		-- vulkan: messageconsumer.logStatement
-		INSERT INTO %s (consumer_group_id, message_id, attempt, status, error)
+		INSERT INTO %[1]s.%[2]s (consumer_group_id, message_id, attempt, status, error)
 		VALUES ($1, $2, 0, $3, $4);
-	`, topic.DeliveryLogTable(topicId))
+	`, schema, topic.DeliveryLogTable(topicId))
 }
 
 // queueOutcomes queues one delivery insert + one log statement per resolved message, sent

@@ -20,11 +20,12 @@ func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId in
 }
 
 func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotRow, error) {
-	var consumerGroupId int64
-	if err := d.Datastore.Pool.QueryRow(ctx, `
+	consumerGroupIdSql := fmt.Sprintf(`
 		-- vulkan: metrics.consumerGroupSnapshot
-		SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;
-	`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
+		SELECT id FROM %[1]s.consumer_group_config WHERE topic_id = $1 AND name = $2;
+	`, d.Datastore.Schema)
+	var consumerGroupId int64
+	if err := d.Datastore.Pool.QueryRow(ctx, consumerGroupIdSql, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
 		return nil, err
 	}
 
@@ -35,41 +36,41 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId in
 			c.committed,
 			COALESCE((
 				SELECT MAX(id)
-				FROM %[1]s
+				FROM %[1]s.%[2]s
 			), 0) AS head,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM %[2]s
+				FROM %[1]s.%[3]s
 				WHERE consumer_group_id = $1 AND status = 'ready'
 			), 0) AS ready_exceptions,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM %[2]s
+				FROM %[1]s.%[3]s
 				WHERE consumer_group_id = $1 AND status = 'inflight'
 			), 0) AS inflight_exceptions,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM %[2]s
+				FROM %[1]s.%[3]s
 				WHERE consumer_group_id = $1 AND status = 'deferred'
 			), 0) AS deferred_exceptions,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM %[2]s
+				FROM %[1]s.%[3]s
 				WHERE consumer_group_id = $1 AND status = 'dead'
 			), 0) AS dead_exceptions,
 			(
 				SELECT MIN(created_at)
-				FROM %[2]s
+				FROM %[1]s.%[3]s
 				WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight', 'deferred')
 			) AS oldest_unresolved_at,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM %[3]s
+				FROM %[1]s.%[4]s
 				WHERE consumer_group_id = $1
 			), 0) AS open_leases
-		FROM %[4]s c
+		FROM %[1]s.%[5]s c
 		WHERE c.consumer_group_id = $1;
-	`, topic.MessageLogTable(topicId), topic.ExceptionQueueTable(topicId), topic.ClaimLeaseTable(topicId), topic.ConsumerGroupCursorTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId), topic.ExceptionQueueTable(topicId), topic.ClaimLeaseTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var data ConsumerGroupSnapshotRow
 	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupId).Scan(
@@ -103,12 +104,12 @@ func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicId int64
 }
 
 func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicId int64) ([]string, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: metrics.listConsumerGroups
 		SELECT name
-		FROM consumer_group_config
+		FROM %[1]s.consumer_group_config
 		WHERE topic_id = $1 ORDER BY name;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
 	if err != nil {
 		return nil, err

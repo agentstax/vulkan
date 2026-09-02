@@ -29,13 +29,13 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 	// dead worker's stale commit still no-ops the same as before.
 	reclaimSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.reclaimWithCursor
-		UPDATE %s
+		UPDATE %[1]s.%[2]s
 		SET
 			reclaims = reclaims + 1,
 			expires_at = now() + make_interval(secs => $2),
 			token = gen_random_uuid()
 		WHERE (token, consumer_group_id) IN (
-			SELECT token, consumer_group_id FROM %s
+			SELECT token, consumer_group_id FROM %[1]s.%[3]s
 			WHERE consumer_group_id = $1
 				AND expires_at < now()
 			LIMIT 1
@@ -48,7 +48,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 			high,
 			expires_at,
 			reclaims;
-	`, topic.ClaimLeaseTable(topicId), topic.ClaimLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId), topic.ClaimLeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, reclaimSql, groupId, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
@@ -104,7 +104,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		deliverySql = fmt.Sprintf(`
 			-- vulkan: messageconsumer.quarantine
-			INSERT INTO %s (
+			INSERT INTO %[1]s.%[2]s (
 				consumer_group_id,
 				message_id,
 				status,
@@ -121,10 +121,10 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 				COALESCE(options->>'concurrency', 'parallel'),
 				0,
 				'quarantined: range reclaimed too many times'
-			FROM %s
+			FROM %[1]s.%[3]s
 			WHERE id > $2
 				AND id <= $3;
-		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId))
 	} else {
 		// inserted CTE + INSERT keeps the range-wide write and its delivery_log_<topic_id>
 		// rows atomic -- one log row per message written, same first-recorded-attempt
@@ -132,7 +132,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 		deliverySql = fmt.Sprintf(`
 			-- vulkan: messageconsumer.quarantine
 			WITH inserted AS (
-				INSERT INTO %[1]s (
+				INSERT INTO %[1]s.%[2]s (
 					consumer_group_id,
 					message_id,
 					status,
@@ -149,14 +149,14 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 					COALESCE(options->>'concurrency', 'parallel'),
 					0,
 					'quarantined: range reclaimed too many times'
-				FROM %[2]s
+				FROM %[1]s.%[3]s
 				WHERE id > $2
 					AND id <= $3
 				RETURNING message_id, last_error
 			)
-			INSERT INTO %[3]s (consumer_group_id, message_id, attempt, error)
+			INSERT INTO %[1]s.%[4]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, message_id, 0, last_error FROM inserted;
-		`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.DeliveryLogTable(topicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.DeliveryLogTable(topicId))
 	}
 	if _, err := tx.Exec(ctx, deliverySql, groupId, lease.Low, lease.High); err != nil {
 		return err
@@ -164,10 +164,10 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 
 	freeSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.quarantine
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, topic.ClaimLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId))
 	_, err := tx.Exec(ctx, freeSql, groupId, lease.Token)
 	return err
 }
@@ -186,14 +186,14 @@ func (d *MessageConsumerGroupDatastore) forceReclaimRange(ctx context.Context, t
 	// unconditional +1 nets it back to 0 -- this must not count as a real reclaim.
 	sql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.forceReclaimRange
-		UPDATE %s
+		UPDATE %[1]s.%[2]s
 		SET
 			expires_at = now(),
 			reclaims = GREATEST(reclaims - 1, -1), -- should never go under -1
 			token = gen_random_uuid()              -- rotate token so any retry matches 0 rows instead of double decrementing
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, topic.ClaimLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupId, token)
 	if err != nil {
 		return err

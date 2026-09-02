@@ -115,7 +115,7 @@ func (c *Controller) owners(ctx context.Context, conn *pgxpool.Conn, kind common
 
 // migrateOwner walks one owner between its current version and targetVersion.
 func (c *Controller) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, targetVersion, maxVersion int64, registry []migrate.Migration) error {
-	current, err := datastore.Version(ctx, conn, owner)
+	current, err := datastore.Version(ctx, conn, owner, c.datastore.Datastore.Schema)
 	if err != nil {
 		return err
 	}

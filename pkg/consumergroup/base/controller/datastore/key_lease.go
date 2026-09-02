@@ -47,10 +47,10 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 		-- vulkan: consumerbase.claimCompacted
 		WITH head AS (
 			SELECT head_id
-			FROM %s
+			FROM %[1]s.%[2]s
 			WHERE compaction_key = $1
 		), attempt AS (
-			INSERT INTO %s AS kl (consumer_group_id, message_key, lease_token, expires_at)
+			INSERT INTO %[1]s.%[3]s AS kl (consumer_group_id, message_key, lease_token, expires_at)
 			SELECT $2, $1, $5, now() + make_interval(secs => $4)
 			WHERE EXISTS (SELECT 1 FROM head WHERE head_id = $3)
 			ON CONFLICT (consumer_group_id, message_key) DO UPDATE
@@ -65,7 +65,7 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 		SELECT
 			EXISTS (SELECT 1 FROM head WHERE head_id = $3),
 			(SELECT lease_token FROM attempt);
-	`, topic.CompactionHeadTable(topicId), topic.MessageKeyLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.CompactionHeadTable(topicId), topic.MessageKeyLeaseTable(topicId))
 
 	// the claimSql head CTE snapshot could be stale on the INSERT that
 	// follows -- this rechecks with a fresh snapshot and deletes the
@@ -73,17 +73,17 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 	// back instead of orphaning the lease.
 	recheckSql := fmt.Sprintf(`
 		-- vulkan: consumerbase.claimCompacted
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $2
 			AND message_key = $1
 			AND lease_token = $4
 			AND NOT EXISTS (
 				SELECT 1
-				FROM %s
+				FROM %[1]s.%[3]s
 				WHERE compaction_key = $1
 					AND head_id = $3
 			);
-	`, topic.MessageKeyLeaseTable(topicId), topic.CompactionHeadTable(topicId))
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(topicId), topic.CompactionHeadTable(topicId))
 
 	// one round trip
 	batch := &pgx.Batch{}
@@ -130,7 +130,7 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 func (d *KeyLeaseDatastore) claimUncompacted(ctx context.Context, topicId int64, groupId int64, key string, duration time.Duration, token pgtype.UUID) (*KeyLease, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: consumerbase.claimUncompacted
-		INSERT INTO %s AS kl (consumer_group_id, message_key, lease_token, expires_at)
+		INSERT INTO %[1]s.%[2]s AS kl (consumer_group_id, message_key, lease_token, expires_at)
 		VALUES ($1, $2, $3, now() + make_interval(secs => $4))
 		ON CONFLICT (consumer_group_id, message_key) DO UPDATE
 		SET
@@ -140,7 +140,7 @@ func (d *KeyLeaseDatastore) claimUncompacted(ctx context.Context, topicId int64,
 		-- own lease instead of reading it as busy
 		WHERE kl.expires_at < now() OR kl.lease_token = $3
 		RETURNING lease_token;
-	`, topic.MessageKeyLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(topicId))
 
 	claim := KeyLease{TopicId: topicId, ConsumerGroupId: groupId, MessageKey: key}
 	err := d.Datastore.Pool.QueryRow(ctx, sql, groupId, key, token, duration.Seconds()).Scan(&claim.Token)
@@ -164,12 +164,12 @@ func (d *KeyLeaseDatastore) claimUncompacted(ctx context.Context, topicId int64,
 func (d *KeyLeaseDatastore) claimOrdered(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, ownLow int64, ownHigh int64, duration time.Duration, token pgtype.UUID) (*KeyLease, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: consumerbase.claimOrdered
-		INSERT INTO %[1]s AS kl (consumer_group_id, message_key, lease_token, expires_at)
+		INSERT INTO %[1]s.%[2]s AS kl (consumer_group_id, message_key, lease_token, expires_at)
 		SELECT $1, $2, $3, now() + make_interval(secs => $4)
 		-- no exception row still ready/inflight/deferred
 		WHERE NOT EXISTS (
 			SELECT 1
-			FROM %[2]s earlier
+			FROM %[1]s.%[3]s earlier
 			WHERE earlier.consumer_group_id = $1
 				AND earlier.message_key = $2
 				AND earlier.message_id < $5
@@ -179,10 +179,10 @@ func (d *KeyLeaseDatastore) claimOrdered(ctx context.Context, topicId int64, gro
 		-- outside the caller's own range (ownLow, ownHigh] -- the caller runs those in order
 		AND NOT EXISTS (
 			SELECT 1
-			FROM %[3]s m
+			FROM %[1]s.%[4]s m
 			WHERE m.message_key = $2
 				AND m.id < $5
-				AND m.id > (SELECT committed FROM %[4]s WHERE consumer_group_id = $1)
+				AND m.id > (SELECT committed FROM %[1]s.%[5]s WHERE consumer_group_id = $1)
 				AND NOT (m.id > $6 AND m.id <= $7)
 		)
 		ON CONFLICT (consumer_group_id, message_key) DO UPDATE
@@ -193,7 +193,7 @@ func (d *KeyLeaseDatastore) claimOrdered(ctx context.Context, topicId int64, gro
 		-- own lease instead of reading it as busy
 		WHERE kl.expires_at < now() OR kl.lease_token = $3
 		RETURNING lease_token;
-	`, topic.MessageKeyLeaseTable(topicId), topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(topicId), topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	claim := KeyLease{TopicId: topicId, ConsumerGroupId: groupId, MessageKey: key}
 	err := d.Datastore.Pool.QueryRow(ctx, sql, groupId, key, token, duration.Seconds(), messageId, ownLow, ownHigh).Scan(&claim.Token)
@@ -225,11 +225,11 @@ func (d *KeyLeaseDatastore) Release(ctx context.Context, claim *KeyLease) (bool,
 func (d *KeyLeaseDatastore) release(ctx context.Context, q datastore.Querier, claim *KeyLease) (bool, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: consumerbase.release
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $1
 			AND message_key = $2
 			AND lease_token = $3;
-	`, topic.MessageKeyLeaseTable(claim.TopicId))
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(claim.TopicId))
 	tag, err := q.Exec(ctx, sql, claim.ConsumerGroupId, claim.MessageKey, claim.Token)
 	if err != nil {
 		return false, err

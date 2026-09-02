@@ -52,16 +52,16 @@ func (d *ScheduleDatastore) matchingGroups(ctx context.Context, topicId int64, n
 	sql := fmt.Sprintf(`
 		-- vulkan: schedule.matchingGroups
 		SELECT cg.id, cg.name
-		FROM consumer_group_config cg
+		FROM %[1]s.consumer_group_config cg
 		WHERE cg.topic_id = $1
 		  AND (
 			-- a group with no bindings receives every routing key
-			NOT EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id)
+			NOT EXISTS (SELECT 1 FROM %[1]s.%[2]s b WHERE b.consumer_group_id = cg.id)
 			-- otherwise a binding must match the found's name ($2)
-			OR EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern_regex)
+			OR EXISTS (SELECT 1 FROM %[1]s.%[2]s b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern_regex)
 		  )
 		ORDER BY cg.name;
-	`, topic.BindingConfigTable(topicId))
+	`, d.Datastore.Schema, topic.BindingConfigTable(topicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId, name)
 	if err != nil {
 		return nil, err
@@ -88,9 +88,9 @@ func (d *ScheduleDatastore) keyMessageIds(ctx context.Context, topicId int64, na
 	sql := fmt.Sprintf(`
 		-- vulkan: schedule.keyMessageIds
 		SELECT m.id
-		FROM %s m
+		FROM %[1]s.%[2]s m
 		WHERE m.message_key = $1;
-	`, topic.MessageLogTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, name)
 	if err != nil {
@@ -117,9 +117,9 @@ func (d *ScheduleDatastore) headId(ctx context.Context, topicId int64, name stri
 	sql := fmt.Sprintf(`
 		-- vulkan: schedule.headId
 		SELECT head_id
-		FROM %s
+		FROM %[1]s.%[2]s
 		WHERE compaction_key = $1;
-	`, topic.CompactionHeadTable(topicId))
+	`, d.Datastore.Schema, topic.CompactionHeadTable(topicId))
 
 	var headId int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name).Scan(&headId)
@@ -142,11 +142,11 @@ func (d *ScheduleDatastore) messageOutcomes(ctx context.Context, topicId int64, 
 			bool_or(d.status = 'success')                          AS succeeded,
 			bool_or(d.status IN ('failure', 'expired', 'killed'))  AS raised,
 			bool_or(d.status = 'deferred')                         AS deferred
-		FROM %s d
+		FROM %[1]s.%[2]s d
 		WHERE d.consumer_group_id = $1
 		  AND d.message_id = ANY($2)
 		GROUP BY d.message_id;
-	`, topic.DeliveryLogTable(topicId))
+	`, d.Datastore.Schema, topic.DeliveryLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, consumerGroupId, messageIds)
 	if err != nil {

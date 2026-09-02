@@ -3,6 +3,7 @@ package datastore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -22,14 +23,14 @@ func (d *ScheduleProducerDatastore) ListDue(ctx context.Context) ([]int64, error
 }
 
 func (d *ScheduleProducerDatastore) listDue(ctx context.Context) ([]int64, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: scheduleproducer.listDue
 		SELECT schedule_config.id
-		FROM schedule_cursor
-		JOIN schedule_config ON schedule_config.id = schedule_cursor.schedule_id
+		FROM %[1]s.schedule_cursor
+		JOIN %[1]s.schedule_config ON schedule_config.id = schedule_cursor.schedule_id
 		WHERE schedule_cursor.next_scheduled_at <= now() AND NOT schedule_config.suspended
 		ORDER BY schedule_cursor.next_scheduled_at;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err
@@ -59,7 +60,7 @@ func (d *ScheduleProducerDatastore) ClaimDue(ctx context.Context, q datastore.Qu
 func (d *ScheduleProducerDatastore) claimDue(ctx context.Context, q datastore.Querier, id int64) (*DueScheduleRow, error) {
 	// FOR UPDATE locks both joined rows -- the cursor row Advance writes and
 	// the config row Suspend writes
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: scheduleproducer.claimDue
 		SELECT
 			schedule_config.id,
@@ -73,14 +74,14 @@ func (d *ScheduleProducerDatastore) claimDue(ctx context.Context, q datastore.Qu
 			schedule_config.metadata,
 			schedule_cursor.next_scheduled_at,
 			now()
-		FROM schedule_cursor
-		JOIN schedule_config ON schedule_config.id = schedule_cursor.schedule_id
-		JOIN topic_config ON topic_config.id = schedule_config.topic_id
+		FROM %[1]s.schedule_cursor
+		JOIN %[1]s.schedule_config ON schedule_config.id = schedule_cursor.schedule_id
+		JOIN %[1]s.topic_config ON topic_config.id = schedule_config.topic_id
 		WHERE schedule_config.id = $1
 			AND schedule_cursor.next_scheduled_at <= now()
 			AND NOT schedule_config.suspended
 		FOR UPDATE SKIP LOCKED;
-	`
+	`, d.Datastore.Schema)
 	var data DueScheduleRow
 	var timeoutNs int64
 	err := q.QueryRow(ctx, sql, id).Scan(&data.Id, &data.Name, &data.Expression, &data.TopicName, &data.Concurrency,
@@ -103,10 +104,11 @@ func (d *ScheduleProducerDatastore) Advance(ctx context.Context, q datastore.Que
 }
 
 func (d *ScheduleProducerDatastore) advance(ctx context.Context, q datastore.Querier, id int64, next time.Time, produced time.Time) error {
-	_, err := q.Exec(ctx, `
+	sql := fmt.Sprintf(`
 		-- vulkan: scheduleproducer.advance
-		UPDATE schedule_cursor SET next_scheduled_at = $2, last_scheduled_at = $3 WHERE schedule_id = $1;
-	`, id, next, produced)
+		UPDATE %[1]s.schedule_cursor SET next_scheduled_at = $2, last_scheduled_at = $3 WHERE schedule_id = $1;
+	`, d.Datastore.Schema)
+	_, err := q.Exec(ctx, sql, id, next, produced)
 	return err
 }
 
@@ -118,16 +120,18 @@ func (d *ScheduleProducerDatastore) Suspend(ctx context.Context, q datastore.Que
 }
 
 func (d *ScheduleProducerDatastore) suspend(ctx context.Context, q datastore.Querier, id int64, produced time.Time) error {
-	if _, err := q.Exec(ctx, `
+	configSql := fmt.Sprintf(`
 		-- vulkan: scheduleproducer.suspend
-		UPDATE schedule_config SET suspended = true WHERE id = $1;
-	`, id); err != nil {
+		UPDATE %[1]s.schedule_config SET suspended = true WHERE id = $1;
+	`, d.Datastore.Schema)
+	if _, err := q.Exec(ctx, configSql, id); err != nil {
 		return err
 	}
 
-	_, err := q.Exec(ctx, `
+	cursorSql := fmt.Sprintf(`
 		-- vulkan: scheduleproducer.suspend
-		UPDATE schedule_cursor SET last_scheduled_at = $2 WHERE schedule_id = $1;
-	`, id, produced)
+		UPDATE %[1]s.schedule_cursor SET last_scheduled_at = $2 WHERE schedule_id = $1;
+	`, d.Datastore.Schema)
+	_, err := q.Exec(ctx, cursorSql, id, produced)
 	return err
 }

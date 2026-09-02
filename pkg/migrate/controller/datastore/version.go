@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -24,11 +25,11 @@ func (d *MigrateDatastore) SystemSchemaState(ctx context.Context, systemId int64
 }
 
 func (d *MigrateDatastore) systemSchemaState(ctx context.Context, systemId int64) (*SchemaStateRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: migrate.systemSchemaState
 		WITH successes AS (
 			SELECT id, migration_version, min_compatible_version
-			FROM migration_log
+			FROM %[1]s.migration_log
 			WHERE system_id = $1
 				AND topic_id IS NULL
 				AND consumer_group_id IS NULL
@@ -48,7 +49,7 @@ func (d *MigrateDatastore) systemSchemaState(ctx context.Context, systemId int64
 		)
 		SELECT current.migration_version, compatibility.min_compatible_version
 		FROM current, compatibility;
-	`
+	`, d.Datastore.Schema)
 
 	var state SchemaStateRow
 	if err := d.Datastore.Pool.QueryRow(ctx, sql, systemId).Scan(&state.Version, &state.MinCompatibleVersion); err != nil {
@@ -71,11 +72,11 @@ func (d *MigrateDatastore) TopicSchemaState(ctx context.Context, topicId int64) 
 }
 
 func (d *MigrateDatastore) topicSchemaState(ctx context.Context, topicId int64) (*SchemaStateRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: migrate.topicSchemaState
 		WITH successes AS (
 			SELECT id, migration_version, min_compatible_version
-			FROM migration_log
+			FROM %[1]s.migration_log
 			WHERE system_id IS NULL
 				AND topic_id = $1
 				AND consumer_group_id IS NULL
@@ -95,7 +96,7 @@ func (d *MigrateDatastore) topicSchemaState(ctx context.Context, topicId int64) 
 		)
 		SELECT current.migration_version, compatibility.min_compatible_version
 		FROM current, compatibility;
-	`
+	`, d.Datastore.Schema)
 
 	var state SchemaStateRow
 	if err := d.Datastore.Pool.QueryRow(ctx, sql, topicId).Scan(&state.Version, &state.MinCompatibleVersion); err != nil {
@@ -110,18 +111,18 @@ func (d *MigrateDatastore) topicSchemaState(ctx context.Context, topicId int64) 
 // scope), so its read on the lock-holding connection is too.
 //
 // There is no implied baseline but every owner is recorded at creation.
-func Version(ctx context.Context, q datastore.Querier, owner *common.Owner) (int64, error) {
+func Version(ctx context.Context, q datastore.Querier, owner *common.Owner, schema string) (int64, error) {
 	// IS NOT DISTINCT FROM: NULL-safe equality against the owner's columns
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: migrate.Version
-		SELECT migration_version FROM migration_log
+		SELECT migration_version FROM %[1]s.migration_log
 		WHERE system_id IS NOT DISTINCT FROM $1
 			AND topic_id IS NOT DISTINCT FROM $2
 			AND consumer_group_id IS NOT DISTINCT FROM $3
 			AND status = 'success'
 		ORDER BY id DESC
 		LIMIT 1;
-	`
+	`, schema)
 
 	var version int64
 	if err := q.QueryRow(ctx, sql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).Scan(&version); err != nil {

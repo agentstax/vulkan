@@ -31,13 +31,13 @@ func (d *DeliveryConsumerGroupDatastore) claimMessagesWithLifecycle(ctx context.
 	sql := fmt.Sprintf(`
 		-- vulkan: deliveryconsumer.claimMessagesWithLifecycle
 		WITH claimed AS (
-			UPDATE %[1]s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'processing',
 				attempts = attempts + 1,
 				updated_at = now()
 			WHERE (consumer_group_id, message_id) IN (
-				SELECT consumer_group_id, message_id FROM %[1]s
+				SELECT consumer_group_id, message_id FROM %[1]s.%[2]s
 				WHERE consumer_group_id = $1
 					AND status = 'ready'
 				ORDER BY message_id
@@ -55,9 +55,9 @@ func (d *DeliveryConsumerGroupDatastore) claimMessagesWithLifecycle(ctx context.
 			m.payload,
 			m.options
 		FROM claimed c
-		JOIN %[2]s m ON m.id = c.message_id
+		JOIN %[1]s.%[3]s m ON m.id = c.message_id
 		ORDER BY c.message_id;
-	`, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId))
+	`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId), topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, groupId, limit, topicId)
 	if err != nil {

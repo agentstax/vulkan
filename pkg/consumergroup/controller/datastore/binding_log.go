@@ -36,13 +36,13 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, topicId in
 
 	// installed rows have no uniqueness; this row lock is what serializes
 	// concurrent installers on the group
-	lockSql := `
+	lockSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.declareBindings
 		SELECT id
-		FROM consumer_group_config
+		FROM %[1]s.consumer_group_config
 		WHERE id = $1
 		FOR UPDATE;
-	`
+	`, d.Datastore.Schema)
 	var lockedGroupId int64
 	if err := tx.QueryRow(ctx, lockSql, groupId).Scan(&lockedGroupId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -96,16 +96,16 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, topicId in
 // groupHasLiveInstance: a fresh heartbeat is a live instance still declaring
 // the stored set.
 func (d *ConsumerGroupDatastore) groupHasLiveInstance(ctx context.Context, tx pgx.Tx, groupId int64) (bool, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: consumergroup.groupHasLiveInstance
 		SELECT EXISTS (
 			SELECT 1
-			FROM worker_instance
-			JOIN worker_config ON worker_config.id = worker_instance.worker_id
+			FROM %[1]s.worker_instance
+			JOIN %[1]s.worker_config ON worker_config.id = worker_instance.worker_id
 			WHERE worker_config.consumer_group_id = $1
 			AND worker_instance.expires_at > now()
 		);
-	`
+	`, d.Datastore.Schema)
 
 	var live bool
 	err := tx.QueryRow(ctx, sql, groupId).Scan(&live)
@@ -116,9 +116,9 @@ func (d *ConsumerGroupDatastore) groupHasLiveInstance(ctx context.Context, tx pg
 func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, status BindingLogStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
 	sql := fmt.Sprintf(`
 		-- vulkan: consumergroup.appendDeclaration
-		INSERT INTO %s (consumer_group_id, status, patterns, declared_by, declared_at)
+		INSERT INTO %[1]s.%[2]s (consumer_group_id, status, patterns, declared_by, declared_at)
 		VALUES ($1, $2, $3, $4, $5);
-	`, topic.BindingConfigLogTable(topicId))
+	`, d.Datastore.Schema, topic.BindingConfigLogTable(topicId))
 	_, err := tx.Exec(ctx, sql, groupId, status, patterns, declaredBy, declaredAt)
 	return err
 }
@@ -126,18 +126,18 @@ func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.T
 func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, patterns []string) error {
 	deleteSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.replaceBindings
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $1;
-	`, topic.BindingConfigTable(topicId))
+	`, d.Datastore.Schema, topic.BindingConfigTable(topicId))
 	if _, err := tx.Exec(ctx, deleteSql, groupId); err != nil {
 		return err
 	}
 
 	insertSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.replaceBindings
-		INSERT INTO %s (consumer_group_id, pattern_regex, pattern)
+		INSERT INTO %[1]s.%[2]s (consumer_group_id, pattern_regex, pattern)
 		VALUES ($1, $2, $3);
-	`, topic.BindingConfigTable(topicId))
+	`, d.Datastore.Schema, topic.BindingConfigTable(topicId))
 	for _, pattern := range patterns {
 		expression := wildcardToRegex(pattern)
 		if _, err := tx.Exec(ctx, insertSql, groupId, expression, pattern); err != nil {
@@ -192,13 +192,13 @@ func (d *ConsumerGroupDatastore) listTopicBindingLog(ctx context.Context, querie
 			binding_config_log.declared_by,
 			binding_config_log.declared_at,
 			binding_config_log.attempted_at
-		FROM %s binding_config_log
-		JOIN consumer_group_config ON consumer_group_config.id = binding_config_log.consumer_group_id
-		JOIN topic_config ON topic_config.id = consumer_group_config.topic_id
+		FROM %[1]s.%[2]s binding_config_log
+		JOIN %[1]s.consumer_group_config ON consumer_group_config.id = binding_config_log.consumer_group_id
+		JOIN %[1]s.topic_config ON topic_config.id = consumer_group_config.topic_id
 		-- $1 = 0 -> every group
 		WHERE ($1 = 0 OR binding_config_log.consumer_group_id = $1)
 		ORDER BY binding_config_log.consumer_group_id, binding_config_log.status, binding_config_log.declared_by, binding_config_log.id DESC;
-	`, topic.BindingConfigLogTable(topicId))
+	`, d.Datastore.Schema, topic.BindingConfigLogTable(topicId))
 	rows, err := querier.Query(ctx, sql, groupId)
 	if err != nil {
 		return nil, err
@@ -230,12 +230,12 @@ func (d *ConsumerGroupDatastore) listTopicBindingLog(ctx context.Context, querie
 // binding_config_log row cascades with its group, so these topics cover
 // every declaration.
 func (d *ConsumerGroupDatastore) listGroupTopicIds(ctx context.Context, querier datastore.Querier) ([]int64, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: consumergroup.listGroupTopicIds
 		SELECT DISTINCT topic_id
-		FROM consumer_group_config
+		FROM %[1]s.consumer_group_config
 		ORDER BY topic_id;
-	`
+	`, d.Datastore.Schema)
 	rows, err := querier.Query(ctx, sql)
 	if err != nil {
 		return nil, err

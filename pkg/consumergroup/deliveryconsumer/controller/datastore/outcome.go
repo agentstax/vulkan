@@ -26,7 +26,7 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordSuccess
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'done',
 					last_error = NULL,
@@ -35,21 +35,21 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 					AND message_id = $2
 				RETURNING attempts
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts, 'success', ''
 			FROM updated;
-		`, topic.ExceptionQueueTable(delivery.TopicId), topic.DeliveryLogTable(delivery.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(delivery.TopicId), topic.DeliveryLogTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordSuccess
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'done',
 				last_error = NULL,
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, topic.ExceptionQueueTable(delivery.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(delivery.TopicId))
 	}
 
 	_, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroupId, delivery.MessageId)
@@ -80,19 +80,19 @@ func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxA
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordFailure
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'ready',
 				last_error = $3,
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, topic.ExceptionQueueTable(delivery.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordFailure
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'ready',
 					last_error = $3,
@@ -101,10 +101,10 @@ func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxA
 					AND message_id = $2
 				RETURNING 1
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.ExceptionQueueTable(delivery.TopicId), topic.DeliveryLogTable(delivery.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(delivery.TopicId), topic.DeliveryLogTable(delivery.TopicId))
 		args = append(args, delivery.Attempts)
 	}
 
@@ -127,19 +127,19 @@ func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, del
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordTerminal
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'dead',
 				last_error = $3,
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, topic.ExceptionQueueTable(delivery.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordTerminal
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'dead',
 					last_error = $3,
@@ -148,10 +148,10 @@ func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, del
 					AND message_id = $2
 				RETURNING 1
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.ExceptionQueueTable(delivery.TopicId), topic.DeliveryLogTable(delivery.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(delivery.TopicId), topic.DeliveryLogTable(delivery.TopicId))
 		args = append(args, delivery.Attempts)
 	}
 

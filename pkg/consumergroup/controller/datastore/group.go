@@ -26,12 +26,12 @@ func (d *ConsumerGroupDatastore) GetGroup(ctx context.Context, topicId int64, na
 }
 
 func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Querier, topicId int64, name string) (*ConsumerGroupConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: consumergroup.getGroup
 		SELECT id, topic_id, name, created_at
-		FROM consumer_group_config
+		FROM %[1]s.consumer_group_config
 		WHERE topic_id = $1 AND name = $2;
-	`
+	`, d.Datastore.Schema)
 	var group ConsumerGroupConfigRow
 	err := q.QueryRow(ctx, sql, topicId, name).Scan(&group.Id, &group.TopicId, &group.Name, &group.CreatedAt)
 	if err != nil {
@@ -55,13 +55,13 @@ func (d *ConsumerGroupDatastore) ListGroups(ctx context.Context, topicId int64) 
 }
 
 func (d *ConsumerGroupDatastore) listGroups(ctx context.Context, topicId int64) ([]ConsumerGroupConfigRow, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: consumergroup.listGroups
 		SELECT id, topic_id, name, created_at
-		FROM consumer_group_config
+		FROM %[1]s.consumer_group_config
 		WHERE topic_id = $1
 		ORDER BY name;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
 	if err != nil {
 		return nil, err
@@ -121,12 +121,12 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 		return found, nil
 	}
 
-	insertSql := `
+	insertSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.registerGroup
-		INSERT INTO consumer_group_config (topic_id, name)
+		INSERT INTO %[1]s.consumer_group_config (topic_id, name)
 		VALUES ($1, $2)
 		RETURNING id, topic_id, name, created_at;
-	`
+	`, d.Datastore.Schema)
 	var group ConsumerGroupConfigRow
 	if err := tx.QueryRow(ctx, insertSql, topicId, name).Scan(&group.Id, &group.TopicId, &group.Name, &group.CreatedAt); err != nil {
 		// 23503 = the topic_id FK -- name the real problem, not the constraint
@@ -158,18 +158,18 @@ func (d *ConsumerGroupDatastore) insertCursor(ctx context.Context, q datastore.Q
 	case consumergroup.CursorPositionBeginning:
 		sql = fmt.Sprintf(`
 			-- vulkan: consumergroup.insertCursor
-			INSERT INTO %s (consumer_group_id)
+			INSERT INTO %[1]s.%[2]s (consumer_group_id)
 			VALUES ($1)
 			RETURNING committed;
-		`, topic.ConsumerGroupCursorTable(topicId))
+		`, d.Datastore.Schema, topic.ConsumerGroupCursorTable(topicId))
 	case consumergroup.CursorPositionHead:
 		sql = fmt.Sprintf(`
 			-- vulkan: consumergroup.insertCursor
-			INSERT INTO %s (consumer_group_id, claimed, committed, settled_head)
+			INSERT INTO %[1]s.%[2]s (consumer_group_id, claimed, committed, settled_head)
 			SELECT $1, head, head, head
-			FROM (SELECT COALESCE(MAX(id), 0) AS head FROM %s) AS log
+			FROM (SELECT COALESCE(MAX(id), 0) AS head FROM %[1]s.%[3]s) AS log
 			RETURNING committed;
-		`, topic.ConsumerGroupCursorTable(topicId), topic.MessageLogTable(topicId))
+		`, d.Datastore.Schema, topic.ConsumerGroupCursorTable(topicId), topic.MessageLogTable(topicId))
 	default:
 		return 0, fmt.Errorf("unrecognized cursor position kind: %q", start.Kind)
 	}
@@ -197,8 +197,8 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	// no cascade -- nothing references the per-topic claim_lease table
 	leaseSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
-		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, topic.ClaimLeaseTable(topicId))
+		DELETE FROM %[1]s.%[2]s WHERE consumer_group_id = $1;
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId))
 	if _, err := tx.Exec(ctx, leaseSql, groupId); err != nil {
 		return err
 	}
@@ -206,8 +206,8 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	// no cascade -- nothing references the per-topic message_key_lease table
 	keyLeaseSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
-		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, topic.MessageKeyLeaseTable(topicId))
+		DELETE FROM %[1]s.%[2]s WHERE consumer_group_id = $1;
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(topicId))
 	if _, err := tx.Exec(ctx, keyLeaseSql, groupId); err != nil {
 		return err
 	}
@@ -215,8 +215,8 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	// no cascade -- nothing references the per-topic exception_queue table
 	deliverySql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
-		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, topic.ExceptionQueueTable(topicId))
+		DELETE FROM %[1]s.%[2]s WHERE consumer_group_id = $1;
+	`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId))
 	if _, err := tx.Exec(ctx, deliverySql, groupId); err != nil {
 		return err
 	}
@@ -224,18 +224,19 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	// no cascade -- nothing references the per-topic delivery_log table
 	deliveryLogSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
-		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, topic.DeliveryLogTable(topicId))
+		DELETE FROM %[1]s.%[2]s WHERE consumer_group_id = $1;
+	`, d.Datastore.Schema, topic.DeliveryLogTable(topicId))
 	if _, err := tx.Exec(ctx, deliveryLogSql, groupId); err != nil {
 		return err
 	}
 
 	// cascades: cursor, binding, migration_log, group-owned worker and
 	// schedule rows; worker_instance follows its worker
-	if _, err := tx.Exec(ctx, `
+	configSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
-		DELETE FROM consumer_group_config WHERE id = $1;
-	`, groupId); err != nil {
+		DELETE FROM %[1]s.consumer_group_config WHERE id = $1;
+	`, d.Datastore.Schema)
+	if _, err := tx.Exec(ctx, configSql, groupId); err != nil {
 		return err
 	}
 

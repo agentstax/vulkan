@@ -48,7 +48,7 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 			COALESCE(m.compaction_rank, 0) AS compaction_rank,
 			(m.compaction_rank IS NOT NULL) AS compacted,
 			m.options
-		FROM %s m
+		FROM %[1]s.%[2]s m
 		WHERE m.id > $1
 			AND m.id <= $2
 			-- rows at another payload version pass under the cursor unread
@@ -56,12 +56,12 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 			AND (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
-					SELECT 1 FROM %s b
+					SELECT 1 FROM %[1]s.%[3]s b
 					WHERE b.consumer_group_id = $3
 				)
 				-- bindings for consumer_group exists and match routing_key pattern
 				OR EXISTS (
-					SELECT 1 FROM %s b
+					SELECT 1 FROM %[1]s.%[4]s b
 					WHERE b.consumer_group_id = $3
 						AND m.routing_key ~ b.pattern_regex
 				)
@@ -74,14 +74,14 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 				-- compacted rows are eligible only if they're compaction_head's
 				-- current pointer for their key -- O(1) lookup, no per-row scan
 				OR m.id = (
-					SELECT head_id FROM %s
+					SELECT head_id FROM %[1]s.%[5]s
 					WHERE compaction_key = m.message_key
 				)
 			)
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, topic.MessageLogTable(topicId), topic.BindingConfigTable(topicId), topic.BindingConfigTable(topicId), topic.CompactionHeadTable(topicId))
+	`, d.Datastore.Schema, topic.MessageLogTable(topicId), topic.BindingConfigTable(topicId), topic.BindingConfigTable(topicId), topic.CompactionHeadTable(topicId))
 
 	rows, err := tx.Query(ctx, sql, low, high, groupId, schemaVersion)
 	if err != nil {

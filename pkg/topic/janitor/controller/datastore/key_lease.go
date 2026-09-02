@@ -37,14 +37,14 @@ func (d *JanitorDatastore) sweepExpiredKeyLeases(ctx context.Context, topicId in
 func (d *JanitorDatastore) sweepKeyLeasesBatch(ctx context.Context, topicId int64, batchSize int) (int, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.sweepKeyLeasesBatch
-		DELETE FROM %[1]s
+		DELETE FROM %[1]s.%[2]s
 		WHERE (consumer_group_id, message_key) IN (
 			SELECT k.consumer_group_id, k.message_key
-			FROM %[1]s k
+			FROM %[1]s.%[2]s k
 			WHERE k.expires_at < now()
 			LIMIT $1
 		);
-	`, topic.MessageKeyLeaseTable(topicId))
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, batchSize)
 	if err != nil {
 		return 0, err

@@ -47,14 +47,14 @@ func (d *JanitorDatastore) sweepTopicWaitingDeclarations(ctx context.Context, to
 		-- vulkan: consumergroupjanitor.sweepTopicWaitingDeclarations
 		WITH newest_waiting AS (
 			SELECT consumer_group_id, declared_by, max(id) AS newest_id
-			FROM %[1]s
+			FROM %[1]s.%[2]s
 			WHERE status = 'waiting'
 			GROUP BY consumer_group_id, declared_by
 		)
-		DELETE FROM %[1]s
+		DELETE FROM %[1]s.%[2]s
 		WHERE id IN (
 			SELECT binding_config_log.id
-			FROM %[1]s binding_config_log
+			FROM %[1]s.%[2]s binding_config_log
 			JOIN newest_waiting ON newest_waiting.consumer_group_id = binding_config_log.consumer_group_id
 				AND newest_waiting.declared_by = binding_config_log.declared_by
 			WHERE binding_config_log.status = 'waiting'
@@ -62,7 +62,7 @@ func (d *JanitorDatastore) sweepTopicWaitingDeclarations(ctx context.Context, to
 			AND binding_config_log.id < newest_waiting.newest_id
 			LIMIT $2
 		);
-	`, topic.BindingConfigLogTable(topicId))
+	`, d.Datastore.Schema, topic.BindingConfigLogTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, cutoff, batchSize)
 	if err != nil {
 		return 0, err
@@ -73,12 +73,12 @@ func (d *JanitorDatastore) sweepTopicWaitingDeclarations(ctx context.Context, to
 // listGroupTopicIds is every topic id with registered groups. A binding_config_log
 // row cascades with its group, so these topics cover every declaration.
 func (d *JanitorDatastore) listGroupTopicIds(ctx context.Context) ([]int64, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: consumergroupjanitor.listGroupTopicIds
 		SELECT DISTINCT topic_id
-		FROM consumer_group_config
+		FROM %[1]s.consumer_group_config
 		ORDER BY topic_id;
-	`
+	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err

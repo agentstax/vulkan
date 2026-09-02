@@ -42,13 +42,13 @@ func (d *CursorAdvancerDatastore) advanceCommitted(ctx context.Context, topicId 
 	targetSql := fmt.Sprintf(`
 		-- vulkan: cursoradvancer.advanceCommitted
 		SELECT LEAST(
-			(SELECT MIN(low) FROM %s WHERE consumer_group_id = $1),
-			(SELECT MIN(message_id) - 1 FROM %s WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight', 'deferred')),
+			(SELECT MIN(low) FROM %[1]s.%[2]s WHERE consumer_group_id = $1),
+			(SELECT MIN(message_id) - 1 FROM %[1]s.%[3]s WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight', 'deferred')),
 			claimed
 		)
-		FROM %s
+		FROM %[1]s.%[4]s
 		WHERE consumer_group_id = $1;
-	`, topic.ClaimLeaseTable(topicId), topic.ExceptionQueueTable(topicId), topic.ConsumerGroupCursorTable(topicId))
+	`, d.Datastore.Schema, topic.ClaimLeaseTable(topicId), topic.ExceptionQueueTable(topicId), topic.ConsumerGroupCursorTable(topicId))
 
 	var target int64
 	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupId).Scan(&target); err != nil {
@@ -58,11 +58,11 @@ func (d *CursorAdvancerDatastore) advanceCommitted(ctx context.Context, topicId 
 	// 2. apply it. GREATEST -> committed only ever moves forward.
 	advanceSql := fmt.Sprintf(`
 		-- vulkan: cursoradvancer.advanceCommitted
-		UPDATE %s
+		UPDATE %[1]s.%[2]s
 		SET committed = GREATEST(committed, $2)
 		WHERE consumer_group_id = $1
 		RETURNING committed;
-	`, topic.ConsumerGroupCursorTable(topicId))
+	`, d.Datastore.Schema, topic.ConsumerGroupCursorTable(topicId))
 
 	var committed int64
 	err := d.Datastore.Pool.QueryRow(ctx, advanceSql, groupId, target).Scan(&committed)

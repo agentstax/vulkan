@@ -68,16 +68,16 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 
 	sweepSql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.sweepBatch
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE id IN (
-			SELECT id FROM %s
+			SELECT id FROM %[1]s.%[3]s
 			WHERE created_at < $1
 				AND ($3::bigint IS NULL OR id <= $3) -- nil floor (allowDropPastCommitted) skips the check
 			ORDER BY id ASC -- walk the expired prefix from the front, same PK-index ride as partitionExpired
 			LIMIT $2
 		)
 		RETURNING id, compaction_rank;
-	`, topic.MessageLogPartitionTable(topicId, n), topic.MessageLogPartitionTable(topicId, n))
+	`, d.Datastore.Schema, topic.MessageLogPartitionTable(topicId, n), topic.MessageLogPartitionTable(topicId, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
 	if err != nil {
@@ -97,9 +97,9 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 		// otherwise these delivery rows (mostly 'dead' DLQ) would join to nothing and sit there forever.
 		orphanSql := fmt.Sprintf(`
 			-- vulkan: topicjanitor.sweepBatch
-			DELETE FROM %s
+			DELETE FROM %[1]s.%[2]s
 			WHERE message_id = ANY($1);
-		`, topic.ExceptionQueueTable(topicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId))
 		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
 			return 0, err
 		}
@@ -107,9 +107,9 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 		if deliveryLogMode != topic.DeliveryLogModeOff {
 			orphanLogSql := fmt.Sprintf(`
 				-- vulkan: topicjanitor.sweepBatch
-				DELETE FROM %s
+				DELETE FROM %[1]s.%[2]s
 				WHERE message_id = ANY($1);
-			`, topic.DeliveryLogTable(topicId))
+			`, d.Datastore.Schema, topic.DeliveryLogTable(topicId))
 			if _, err := tx.Exec(ctx, orphanLogSql, ids); err != nil {
 				return 0, err
 			}
@@ -123,9 +123,9 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 	if anyCompacted {
 		orphanKeySql := fmt.Sprintf(`
 			-- vulkan: topicjanitor.sweepBatch
-			DELETE FROM %s
+			DELETE FROM %[1]s.%[2]s
 			WHERE head_id = ANY($1);
-		`, topic.CompactionHeadTable(topicId))
+		`, d.Datastore.Schema, topic.CompactionHeadTable(topicId))
 		if _, err := tx.Exec(ctx, orphanKeySql, ids); err != nil {
 			return 0, err
 		}

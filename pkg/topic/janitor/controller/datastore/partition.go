@@ -46,8 +46,8 @@ func (d *JanitorDatastore) cursorFloor(ctx context.Context, q datastore.Querier,
 	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.cursorFloor
 		SELECT MIN(committed)
-		FROM %s;
-	`, topic.ConsumerGroupCursorTable(topicId))
+		FROM %[1]s.%[2]s;
+	`, d.Datastore.Schema, topic.ConsumerGroupCursorTable(topicId))
 
 	var floor *int64
 	err := q.QueryRow(ctx, sql).Scan(&floor)
@@ -58,10 +58,10 @@ func (d *JanitorDatastore) cursorFloor(ctx context.Context, q datastore.Querier,
 func (d *JanitorDatastore) partitionExpired(ctx context.Context, topicId int64, n int64, ttl time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.partitionExpired
-		SELECT created_at FROM %s
+		SELECT created_at FROM %[1]s.%[2]s
 		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
 		LIMIT 1;
-	`, topic.MessageLogPartitionTable(topicId, n))
+	`, d.Datastore.Schema, topic.MessageLogPartitionTable(topicId, n))
 
 	var newest time.Time
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&newest)

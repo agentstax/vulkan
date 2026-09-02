@@ -27,24 +27,24 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordSuccess
 			WITH deleted AS (
-				DELETE FROM %[1]s
+				DELETE FROM %[1]s.%[2]s
 				WHERE consumer_group_id = $1
 					AND message_id = $2
 					AND lease_token = $3
 				RETURNING attempts
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts, 'success', ''
 			FROM deleted;
-		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordSuccess
-			DELETE FROM %s
+			DELETE FROM %[1]s.%[2]s
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, topic.ExceptionQueueTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId))
 	}
 
 	if keyClaim == nil {
@@ -69,7 +69,7 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordFailure
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'ready',
 				lease_token = NULL,
@@ -80,12 +80,12 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $5;
-		`, topic.ExceptionQueueTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordFailure
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'ready',
 					lease_token = NULL,
@@ -98,10 +98,10 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 					AND lease_token = $5
 				RETURNING 1
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $6, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), retryPolicy.CalculateDelay(exception.Attempts - exception.Delays - 1).Seconds(), exception.LeaseToken}
@@ -130,7 +130,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDelayed(ctx context.Context, del
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordDelayed
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'ready',
 				delays = delays + 1,
@@ -142,12 +142,12 @@ func (d *ExceptionConsumerGroupDatastore) recordDelayed(ctx context.Context, del
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $5;
-		`, topic.ExceptionQueueTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordDelayed
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'ready',
 					delays = delays + 1,
@@ -161,10 +161,10 @@ func (d *ExceptionConsumerGroupDatastore) recordDelayed(ctx context.Context, del
 					AND lease_token = $5
 				RETURNING 1
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, $6, 'delayed', $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, delayErr.Error(), delay.Seconds(), exception.LeaseToken}
@@ -191,7 +191,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordTerminal
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'dead',
 				lease_token = NULL,
@@ -201,14 +201,14 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $4;
-		`, topic.ExceptionQueueTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT ... WHERE EXISTS keeps the UPDATE and its
 		// delivery_log_<topic_id> row atomic
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordTerminal
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'dead',
 					lease_token = NULL,
@@ -220,10 +220,10 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 					AND lease_token = $4
 				RETURNING 1
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $5, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), exception.LeaseToken}
@@ -258,7 +258,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordSuperseded
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'superseded',
 				attempts = attempts - 1,
@@ -268,14 +268,14 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, topic.ExceptionQueueTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
 		// row atomic
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordSuperseded
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'superseded',
 					attempts = attempts - 1,
@@ -287,10 +287,10 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 					AND lease_token = $3
 				RETURNING attempts
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts + 1, 'superseded', $4
 			FROM updated;
-		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken}
@@ -315,7 +315,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordDeferred
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'deferred',
 				concurrency = $4,
@@ -326,14 +326,14 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, topic.ExceptionQueueTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
 		// row atomic
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordDeferred
 			WITH updated AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'deferred',
 					concurrency = $4,
@@ -346,10 +346,10 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 					AND lease_token = $3
 				RETURNING attempts
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts + 1, 'deferred', $5
 			FROM updated;
-		`, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(exception.TopicId), topic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken, concurrency}
@@ -375,11 +375,11 @@ func (d *ExceptionConsumerGroupDatastore) recordAndReleaseKey(ctx context.Contex
 
 	releaseSql := fmt.Sprintf(`
 		-- vulkan: exceptionconsumer.recordAndReleaseKey
-		DELETE FROM %s
+		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $1
 			AND message_key = $2
 			AND lease_token = $3;
-	`, topic.MessageKeyLeaseTable(keyClaim.TopicId))
+	`, d.Datastore.Schema, topic.MessageKeyLeaseTable(keyClaim.TopicId))
 	releaseTag, err := tx.Exec(ctx, releaseSql, keyClaim.ConsumerGroupId, keyClaim.MessageKey, keyClaim.Token)
 	if err != nil {
 		return err

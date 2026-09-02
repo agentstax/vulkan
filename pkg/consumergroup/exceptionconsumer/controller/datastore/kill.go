@@ -25,7 +25,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		killSql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.kill
-			UPDATE %s
+			UPDATE %[1]s.%[2]s
 			SET
 				status = 'dead',
 				lease_token = NULL,
@@ -36,14 +36,14 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 				AND status = 'inflight'
 				AND lease_expires_at < now()
 				AND attempts - delays >= $2;
-		`, topic.ExceptionQueueTable(topicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId))
 	} else {
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
 		// atomic in one statement.
 		killSql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.kill
 			WITH killed AS (
-				UPDATE %[1]s
+				UPDATE %[1]s.%[2]s
 				SET
 					status = 'dead',
 					lease_token = NULL,
@@ -56,10 +56,10 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 					AND attempts - delays >= $2
 				RETURNING consumer_group_id, message_id, attempts, last_error
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			INSERT INTO %[1]s.%[3]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT consumer_group_id, message_id, attempts, 'killed', last_error
 			FROM killed;
-		`, topic.ExceptionQueueTable(topicId), topic.DeliveryLogTable(topicId))
+		`, d.Datastore.Schema, topic.ExceptionQueueTable(topicId), topic.DeliveryLogTable(topicId))
 	}
 	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, groupId, maxRetries)
 	if err != nil {

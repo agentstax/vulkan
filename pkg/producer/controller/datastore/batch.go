@@ -68,7 +68,7 @@ func (d *ProducerDatastore) appendMessageBatchTransaction[Message topic.Versione
 
 	statements := &pgx.Batch{}
 	for _, data := range appends {
-		sql, args := protectedInsertSQL(topicId, data.Payload, data)
+		sql, args := protectedInsertSQL(topicId, data.Payload, data, d.Datastore.Schema)
 		statements.Queue(sql, args...)
 	}
 
