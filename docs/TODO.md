@@ -73,15 +73,21 @@ ids are per-installation serials, so the collisions are real:
    `topic.get` back to an unqualified `FROM topic_config` leaves both
    original assertions passing and fails the new one with
    `got schemalab.orders` -- the cross-installation read, demonstrated.
-5. **tools/conventions.** Extend the diagnose-query table walk to
-   production literals — an unqualified table reference is a test
-   failure, so a missed `%[1]s.` is loud instead of silently rescued by
-   search_path. Split each reference on `.` and require exactly
-   `%[1]s.<name>`: a prefix test passes `%[1]s.%[2]s.%[3]s`, which is how
-   four double-qualified literals survived task 2's first check.
-   (`table_ddl_test.go`'s half landed in task 3.) Note `tools/` is its
-   own module reading library source as data, so `go test` caches a pass
-   across library edits — these need `-count=1` to mean anything.
+5. ~~**tools/conventions.**~~ DONE. `sql_schema_test.go` walks every
+   `-- vulkan:` literal in pkg/ and cmd/ through the Go AST and checks
+   each relation reference is exactly `%[1]s.<name>` — 298 references
+   across 208 literals, the same counts an independent scan found. It
+   splits on `.` rather than testing a prefix, so double qualification
+   fails too. Sabotaged four ways, each producing its own message:
+   unqualified, double-qualified, qualified with the wrong verb, and the
+   `walked == 0` guard when the patterns match nothing.
+   Deliberately out of its reach, and said so in the test: a name that
+   reaches Postgres as a bind parameter or inside a quoted string (task
+   4's class) has no keyword in front of it to match on.
+   `schemaVerb` is now the one home for `%[1]s`; `table_ddl_test.go`
+   builds its qualifier from it. Note `tools/` is its own module reading
+   library source as data, so `go test` caches a pass straight across
+   library edits — these runs need `-count=1` to mean anything.
 6. **Sandbox mirror re-sync.** sql.test.ts compares ~30 mirrored
    statements byte-exact against the Go source, so every mirrored
    literal carries the same `{schema}.` bytes; `interpolate.ts` gains a
