@@ -27,7 +27,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
-	"golang.org/x/sync/errgroup"
 )
 
 type BalanceChanged struct {
@@ -85,18 +84,16 @@ func run() error {
 		return err
 	}
 
-	// the first delivery of -30 fails; under ordered, +55 waits for its retry
+	// the first delivery of -30 fails; under ordered, +55 waits for its retry.
+	// atomic: MessageConcurrency 8 runs handlers on 8 goroutines -- ordered
+	// serializes this one key, not the flag's memory visibility.
 	var failedOnce atomic.Bool
 
-	group, ctx := errgroup.WithContext(ctx)
-	group.Go(func() error {
-		return ledger.Consume(ctx, func(ctx context.Context, change *BalanceChanged) error {
-			if change.Delta == -30 && failedOnce.CompareAndSwap(false, true) {
-				return errors.New("ledger row locked")
-			}
-			fmt.Printf("%s %+d\n", change.AccountId, change.Delta)
-			return nil
-		}, &vulkan.ConsumeOptions{MessageConcurrency: 8})
-	})
-	return group.Wait()
+	return ledger.Consume(ctx, func(ctx context.Context, change *BalanceChanged) error {
+		if change.Delta == -30 && failedOnce.CompareAndSwap(false, true) {
+			return errors.New("ledger row locked")
+		}
+		fmt.Printf("%s %+d\n", change.AccountId, change.Delta)
+		return nil
+	}, &vulkan.ConsumeOptions{MessageConcurrency: 8})
 }

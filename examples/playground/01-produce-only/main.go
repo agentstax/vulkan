@@ -17,7 +17,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -41,7 +40,8 @@ func main() {
 }
 
 func run() error {
-	ctx := context.Background()
+	ctx, stop := vulkan.LifecycleContext(nil)
+	defer stop()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db",
 		&datastore.PostgresConnectionConfig{Pass: "example_password"})

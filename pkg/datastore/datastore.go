@@ -16,8 +16,11 @@ type PostgresDatastore struct {
 	Schema string
 }
 
+// NewPostgresDatastore opens a connection pool to the named database and
+// pings it once, so a wrong address or credential fails here instead of at
+// the first query. The caller owns the pool: defer Close after a nil error.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range.
+// unset (port 5432, schema "vulkan"), Validate rejects what's out of range.
 func NewPostgresDatastore(ctx context.Context, user string, host string, database string, cfg *PostgresConnectionConfig) (*PostgresDatastore, error) {
 	if user == "" {
 		return nil, errors.New("user is required")
@@ -63,6 +66,7 @@ func NewPostgresDatastore(ctx context.Context, user string, host string, databas
 
 	// Sanity check
 	if err = pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, err
 	}
 

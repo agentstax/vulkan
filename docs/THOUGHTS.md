@@ -1,32 +1,13 @@
 # Public API
 
-okay I want to have a seperate session with none of the context this session has do an independent review of the different api-shapes layed out. I want it to be able to get relevant context and history but also make the review without worrying about the precedent of current code. It should purley be what is the best for the users. Give me a prompt to do this which is as unbiased as possible
-
----
-- where to put consumer.ConsumerConfig ie NewConsumer or Register, same pattern for producer etc
-- need metric / alert example playground scenarios
----
-
 01 reconsider this postgres per param layout and having password in optional config
    and / or have a connection string option
-
-01 produceOptions being required is not great orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, producer.ProduceOptions{})
-
-01 our comments for New* funcs are abyssmal. These are the first funcs users see
+   (research lead: accepting the caller's existing *pgxpool.Pool, River-style)
 
 02 produce-in-tx is nasty it really needs to be cleaned up
-- maybe less closures or required params (get meta context like for consumer)
-- produce options not required in return
-
-03 looks pretty good
-
-04 should NewConsumer be holding consumer config or should that be on register?
-	paymentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Message: &common.MessageOptions{
-			Timeout: 10 * time.Second,
-			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
-		},
-	})
+- value-taking ProduceInTx (River InsertTx shape) kills the closure-per-topic
+- idempotency key via ctx (KeyFromContext, mirror of MetaFromContext) drops
+  ProducerFunc to (ctx, tx)
 
 05 ignoring this for now
 
@@ -35,10 +16,16 @@ okay I want to have a seperate session with none of the context this session has
 08 Need to rethink if Consumer should auto run system manager not just manager
 - System manager is a good concept for eventual helm chart deploys but needing to know about that concept now is strange
   and we want things to just 'work'
-
-10 why do we need the run group with the atomic CAS? feels odd
+- research lead: River runs maintenance on every client behind leader
+  election; RunManager's manager-row claim already IS leader election
 
 11 gonna ignore this one for now, we just don't have a good solution yet but have it on roadmap
+
+Settled/done, removed from the list: ProduceOptions is nil-ok; config lives on
+RegisterConsumer per the client shape; defer Close can't replace
+LifecycleContext (Consume blocks, so the defer never runs -- signal helper is
+the ecosystem norm); scenario 10's errgroup deleted, its atomic kept (8
+handler goroutines); New* comments fixed on NewPostgresDatastore.
 
 # Doc
 
