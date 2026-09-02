@@ -1,11 +1,21 @@
 ---
 title: Transactional Produce
-description: Produce a message in the same transaction as your business write. The dual-write problem, solved by refusing to have two systems — every sample compiles against the shipped library.
+description: Produce a message in the same transaction as your business write. The dual-write problem, solved by refusing to have two systems — and the four verbs that produce into a transaction.
 ---
 
 import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 This is Vulkan's headline feature, so let's earn it properly.
+
+<ThreadAside label="PROPOSED" title="Four verbs, three of them shipped">
+Three of the four ship today: `Produce`, `ProduceFunc`, and a
+`ProduceInTx` that takes a closure. The proposal is to make
+`ProduceInTx` value-taking, rename today's closure form
+`ProduceFuncInTx`, and drop the closure's third `idempotencyKey`
+argument so a `ProducerFunc` is `func(ctx, tx) (*Message, error)`.
+Every sample below is written against that shape. Not built.
+
+</ThreadAside>
 
 ## The bug you've definitely shipped
 
@@ -54,7 +64,7 @@ return the payload; both commit together, or neither does.
 ```go
 func CreateOrder(ctx context.Context, instance *vulkan.ProducerInstance[OrderCreated], order Order) error {
 	_, err := instance.ProduceFunc(ctx,
-		func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderCreated, error) {
+		func(ctx context.Context, tx vulkan.Tx) (*OrderCreated, error) {
 			if _, err := tx.Exec(ctx,
 				`INSERT INTO orders (id, total) VALUES ($1, $2)`, order.Id, order.Total); err != nil {
 				return nil, err
@@ -70,19 +80,19 @@ and Postgres has spent thirty years making sure `COMMIT` means what it
 says. Returning an error from the closure rolls everything back:
 your writes and the message together.
 
-Three details about the closure's arguments:
+Three details about the closure:
 
 - `tx vulkan.Tx` runs `Exec`, `Query`, `QueryRow`, `SendBatch`, and
   `CopyFrom` — the statement surface of a pgx transaction. For anything
   beyond that, `tx.Raw()` returns the underlying `pgx.Tx` (an escape
   hatch, not the default path).
-- The string argument is the idempotency key this produce will dedup
-  on. Persist it alongside your work if you plan to retry across a
-  crash — more in
-  [Side Effects & Retries](/guides/side-effects-and-retries/).
 - The payload comes back from the closure, not from a captured
   variable — so it can be built from what your own statements returned
   (a generated id, a computed total).
+- Nothing hands you an idempotency key. A produce mints its own unless
+  you set `ProduceOptions.IdempotencyKey`, and retrying across a crash
+  means setting it — more in
+  [Side Effects & Retries](/guides/side-effects-and-retries/).
 
 You also get the converse guarantee free, from transaction isolation:
 **no consumer can observe the message before your transaction commits.**
@@ -98,7 +108,7 @@ workaround (send-after-commit hooks, with their own failure window).
 
    ```go
    _, err := instance.ProduceFunc(ctx,
-   	func(ctx context.Context, tx vulkan.Tx, _ string) (*OrderCreated, error) {
+   	func(ctx context.Context, tx vulkan.Tx) (*OrderCreated, error) {
    		if _, err := tx.Exec(ctx, `INSERT INTO orders (id) VALUES ($1)`, "order-9"); err != nil {
    			return nil, err
    		}
@@ -127,7 +137,7 @@ workaround (send-after-commit hooks, with their own failure window).
 
 To produce to more than one topic atomically, `client.InTransaction`
 opens one transaction and hands your closure a `Tx` that every
-instance's `ProduceInTx` accepts:
+instance's `ProduceInTx` accepts. One statement per topic:
 
 ```go
 err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
@@ -135,17 +145,11 @@ err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		return err
 	}
 
-	// produce LAST -- see the lock note below
-	if _, err := invoices.ProduceInTx(ctx, tx,
-		func(context.Context, vulkan.Tx, string) (*InvoicePaid, error) {
-			return &InvoicePaid{OrderId: orderId}, nil
-		}, nil); err != nil {
+	// produce last -- see the lock note below
+	if _, err := invoices.ProduceInTx(ctx, tx, &InvoicePaid{OrderId: orderId}, nil); err != nil {
 		return err
 	}
-	_, err := receipts.ProduceInTx(ctx, tx,
-		func(context.Context, vulkan.Tx, string) (*ReceiptRequested, error) {
-			return &ReceiptRequested{OrderId: orderId}, nil
-		}, nil)
+	_, err := receipts.ProduceInTx(ctx, tx, &ReceiptRequested{OrderId: orderId}, nil)
 	return err
 })
 ```
@@ -158,6 +162,15 @@ long that lock is held. Keep the produce the shortest-held thing in
 the transaction.
 
 </ThreadAside>
+
+Producing several **compacted** keys in one transaction adds a second
+ordering rule. Each key's `compaction_head` row stays locked until you
+commit, so two transactions taking the same keys in opposite order
+deadlock: Postgres kills one of them (`40P01`) and rolls its whole
+transaction back. `InTransaction` never reruns your closure, so that
+retry is yours to write. Producing in message-key order avoids the
+cycle, and `ProduceBatch` sorts its items the same way, so a consistent
+order composes across both.
 
 Two things stay yours after the commit guarantee — side effects the
 transaction can't undo, and rerunning the closure when the outcome
@@ -174,6 +187,48 @@ remote end. The hard half (atomic capture) is done; the relay is just
 another consumer.
 
 </ThreadAside>
+
+## Which verb
+
+Two questions pick one of four: who opens the transaction, and does the
+payload exist before it or come out of it.
+
+| who opens the transaction | the message is a value | the message comes from a closure |
+| --- | --- | --- |
+| Vulkan | `Produce(ctx, message, options)` | `ProduceFunc(ctx, producerFunc, options)` |
+| you, via `InTransaction` | `ProduceInTx(ctx, tx, message, options)` | `ProduceFuncInTx(ctx, tx, producerFunc, options)` |
+
+The rows differ in what the commit covers. Vulkan's own transaction
+holds the message and whatever the closure ran, and concurrent
+`Produce` calls share it — batched under load, committed alone at idle.
+Yours holds everything else you put in it, commits when you commit, and
+never batches with anyone.
+
+`ProduceBatch` is the many-messages form of the top-left cell: every
+item in one transaction of Vulkan's, all of them or none, results in
+argument order.
+
+`ProduceFuncInTx` is the one you'll reach for least, because inside
+your own transaction you already hold `tx` — the read can happen on the
+line above and the value form takes its result. It's there so the
+closure form composes with a transaction you own the same way
+`ProduceFunc` does with Vulkan's, and it keeps a write and the message
+describing that write in one place:
+
+```go
+err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
+	_, err := invoices.ProduceFuncInTx(ctx, tx,
+		func(ctx context.Context, tx vulkan.Tx) (*InvoicePaid, error) {
+			var invoiceId int64
+			if err := tx.QueryRow(ctx,
+				`INSERT INTO invoices (order_id) VALUES ($1) RETURNING id`, orderId).Scan(&invoiceId); err != nil {
+				return nil, err
+			}
+			return &InvoicePaid{OrderId: orderId, InvoiceId: invoiceId}, nil
+		}, nil)
+	return err
+})
+```
 
 ## Why brokers can't follow you here
 
