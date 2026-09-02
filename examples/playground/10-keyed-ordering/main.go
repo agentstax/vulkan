@@ -3,7 +3,7 @@
 // Account balance updates for one account must apply in order and never
 // overlap. The producer keys by account; the consumer runs concurrently.
 //
-// Concepts held before domain code (11): the produce set from scenario 01,
+// Concepts held before domain code (10): the produce set from scenario 01,
 // plus MessageKey, MessageOptions.Concurrency (ConcurrencyOrdered), the
 // session's ConsumeOptions.MessageConcurrency, the group's
 // ConcurrencyOverride, and the
@@ -54,12 +54,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-	if err != nil {
-		return err
-	}
-
-	client, err := vulkan.NewClient(ds, nil)
+	client, err := vulkan.NewClient(ctx, pool, nil)
 	if err != nil {
 		return err
 	}

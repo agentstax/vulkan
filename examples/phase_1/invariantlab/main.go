@@ -67,11 +67,9 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	client, err := vulkan.NewClient(ctx, pool, nil)
 	must(err)
-
-	client, err := vulkan.NewClient(ds, nil)
-	must(err)
+	ds := client.Datastore()
 	must(client.RegisterSystem(ctx, nil))
 
 	controller, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{Logger: logging.NewDefaultLogger(os.Stderr, slog.LevelError)})

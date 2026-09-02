@@ -30,6 +30,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const largePartitionSize = int64(1000000) // never rolls -- partition churn isn't what's being measured
@@ -69,11 +70,8 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	fixedCostScenario(ctx, ds)
-	hotKeyContentionScenario(ctx, ds)
+	fixedCostScenario(ctx, pool)
+	hotKeyContentionScenario(ctx, pool)
 
 	fmt.Println("\n✅ LATEST KEYS WRITE-COST LAB — numbers gathered; decision record [0262]")
 	fmt.Println("   (docs/decisions/) holds the write-per-keyed-publish tradeoff they measure.")
@@ -83,11 +81,11 @@ func run() (err error) {
 // fixedCostScenario: N sequential, single-threaded publishes per case --
 // zero contention, so the only thing the timing difference can reflect is
 // the extra statement itself (and INSERT vs. UPDATE within it).
-func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func fixedCostScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("fixed cost: sequential publishes, no contention -- unkeyed vs. fresh-key INSERT vs. same-key UPDATE")
 
 	const n = 500
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadwritelab.fixed.%d", time.Now().UnixNano())
@@ -112,23 +110,25 @@ func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // hotKeyContentionScenario: the design's own flagged-but-unmeasured tradeoff
 // -- concurrent publishes to the SAME key now serialize on that key's
 // compaction_head row, where plain message_log appends never contended before.
-func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func hotKeyContentionScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("hot-key contention: G concurrent publishers, each to its OWN key vs. all G to ONE key")
 
 	const goroutines = 50
 	const perGoroutine = 20
 
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
-	manyKeysMs, manyKeysTopic := timeConcurrent(ctx, ds, "manykeys", goroutines, perGoroutine, func(g, i int) string {
+	ds := client.Datastore()
+
+	manyKeysMs, manyKeysTopic := timeConcurrent(ctx, pool, "manykeys", goroutines, perGoroutine, func(g, i int) string {
 		return fmt.Sprintf("key-%d", g) // each goroutine owns a distinct key -- no cross-goroutine contention
 	})
 	defer func() {
 		must(client.Topic(manyKeysTopic).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
+	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, pool, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
 	})
 	defer func() {
@@ -176,8 +176,8 @@ func timeSequential(ctx context.Context, wpInstance *vulkan.ProducerInstance[com
 // timeConcurrent registers its own topic, fires goroutines*perGoroutine
 // publishes across `goroutines` concurrent workers, and returns total
 // elapsed time plus the topic name (caller destroys it once done reading it).
-func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+func timeConcurrent(ctx context.Context, pool *pgxpool.Pool, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("phase8c.compactionheadwritelab.%s.%d", label, time.Now().UnixNano())

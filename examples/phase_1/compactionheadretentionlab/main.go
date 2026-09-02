@@ -29,6 +29,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -70,11 +71,8 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	dropPartitionScenario(ctx, ds)
-	sweepBatchScenario(ctx, ds)
+	dropPartitionScenario(ctx, pool)
+	sweepBatchScenario(ctx, pool)
 
 	fmt.Println("\n✅ LATEST KEYS RETENTION LAB PASSED")
 	fmt.Println("   a dormant key's last row aging out takes its compaction_head pointer with it,")
@@ -83,12 +81,14 @@ func run() (err error) {
 	return nil
 }
 
-func dropPartitionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func dropPartitionScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("dropPartition: a whole-partition rollover reaps a dormant key's last row")
 
 	const partitionSize = int64(4)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadretentionlab.drop.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
@@ -124,12 +124,14 @@ func dropPartitionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 }
 
-func sweepBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func sweepBatchScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("sweepBatch: a low-volume tail reaps a dormant key's last row individually")
 
 	const partitionSize = int64(1000000) // matches migration 001's original width -- never rolls
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadretentionlab.sweep.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})

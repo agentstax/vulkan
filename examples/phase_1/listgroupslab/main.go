@@ -53,11 +53,9 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+	ds := client.Datastore()
 
 	name := fmt.Sprintf("listgroupslab.orders.%d", run)
 	registered, err := client.RegisterTopic(ctx, name, nil)

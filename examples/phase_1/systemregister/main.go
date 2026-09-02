@@ -46,10 +46,7 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	client, err := vulkan.NewClient(ds, nil)
+	client, err := vulkan.NewClient(ctx, pool, nil)
 	must(err)
 
 	must(client.RegisterSystem(ctx, nil))

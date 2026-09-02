@@ -17,13 +17,19 @@ const (
 	schemaEnv      = "VULKAN_ADMIN_SCHEMA"
 )
 
-// openDatastore resolves the connection (flag then env) and dials Postgres.
+// openClient resolves the connection (flag then env), dials Postgres, and
+// builds the client over the pool.
 // pgx owns the DSN, so sslmode, pool_max_conns, connect_timeout, the
 // keyword/value form, and the libpq PG* environment variables all work
 // without this package parsing any of them.
-// An empty schema is left to PostgresDatastoreConfig.WithDefaults.
+// An empty schema is left to ClientConfig.WithDefaults.
+// AllowDestroy is set here because this binary IS the privileged admin tool --
+// the gate exists for library embedders, not the CLI (ADMIN_CLI.md).
+// Library logs go to stderr, never stdout, which carries the command payload.
+// level is ERROR for the one-shot commands, whose own ✓/error output is the
+// interface, and INFO for `manager run`, whose log stream IS its output.
 // The returned close func releases the pool; callers defer it.
-func openDatastore(ctx context.Context, databaseURL string, schema string) (*datastore.PostgresDatastore, func(), error) {
+func openClient(ctx context.Context, databaseURL string, schema string, level slog.Level) (*vulkan.Client, func(), error) {
 	raw := databaseURL
 	if raw == "" {
 		raw = os.Getenv(databaseURLEnv)
@@ -35,9 +41,11 @@ func openDatastore(ctx context.Context, databaseURL string, schema string) (*dat
 		schema = os.Getenv(schemaEnv)
 	}
 
-	datastoreConfig := &datastore.PostgresDatastoreConfig{Schema: schema}
-	datastoreConfig.WithDefaults()
-	if err := datastoreConfig.Validate(); err != nil {
+	// the schema reaches CREATE SCHEMA and every table qualifier as written, so
+	// a bad identifier is a usage error before anything dials
+	schemaConfig := &datastore.PostgresDatastoreConfig{Schema: schema}
+	schemaConfig.WithDefaults()
+	if err := schemaConfig.Validate(); err != nil {
 		return nil, nil, failUsage("%s", err.Error())
 	}
 
@@ -66,37 +74,14 @@ func openDatastore(ctx context.Context, databaseURL string, schema string) (*dat
 		return nil, nil, failOp("could not connect to database: %v", err)
 	}
 
-	ds, err := datastore.NewPostgresDatastore(ctx, pool, datastoreConfig)
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{
+		Schema:       schemaConfig.Schema,
+		AllowDestroy: true,
+		Logger:       logging.NewDefaultLogger(os.Stderr, level),
+	})
 	if err != nil {
 		pool.Close()
 		return nil, nil, failOp("could not connect to database: %v", err)
 	}
-	return ds, func() { pool.Close() }, nil
-}
-
-// openClient is openDatastore plus a Client. AllowDestroy is set here
-// because this binary IS the privileged admin tool -- the gate exists for
-// library embedders, not the CLI (ADMIN_CLI.md). The datastore is returned
-// too, so destroy can build a topic controller for the one thing the
-// client doesn't expose (an emptiness probe).
-func openClient(ctx context.Context, databaseURL string, schema string) (*vulkan.Client, *datastore.PostgresDatastore, func(), error) {
-	ds, closeDS, err := openDatastore(ctx, databaseURL, schema)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// Library logs go to stderr (never stdout, which carries the command payload)
-	// and only at ERROR: the library's routine INFO/WARN lines ("topic
-	// registered", "topic destroyed") are implementation noise here -- the CLI's
-	// own ✓/error output is the interface.
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{
-		AllowDestroy: true,
-		Logger:       logging.NewDefaultLogger(os.Stderr, slog.LevelError),
-	})
-	if err != nil {
-		closeDS()
-		return nil, nil, nil, failOp("could not initialize client: %v", err)
-	}
-
-	return client, ds, closeDS, nil
+	return client, func() { pool.Close() }, nil
 }

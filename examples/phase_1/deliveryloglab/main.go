@@ -45,6 +45,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -86,16 +87,13 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	scenarioFreshFailureAndSuccess(ctx, ds)
-	scenarioRetryDistinctAttempts(ctx, ds)
-	scenarioDeliveryLogOff(ctx, ds)
-	scenarioDeliveryLogAll(ctx, ds)
-	scenarioRetentionDropPartition(ctx, ds)
-	scenarioRetentionSweepBatch(ctx, ds)
-	scenarioRedeferralSharesAttempt(ctx, ds)
+	scenarioFreshFailureAndSuccess(ctx, pool)
+	scenarioRetryDistinctAttempts(ctx, pool)
+	scenarioDeliveryLogOff(ctx, pool)
+	scenarioDeliveryLogAll(ctx, pool)
+	scenarioRetentionDropPartition(ctx, pool)
+	scenarioRetentionSweepBatch(ctx, pool)
+	scenarioRedeferralSharesAttempt(ctx, pool)
 
 	fmt.Println("\n✅ DELIVERY LOG LAB PASSED")
 	fmt.Println("   a failure logs exactly one row, retries append distinct rows instead of")
@@ -107,12 +105,14 @@ func run() (err error) {
 
 // ---- scenario 1: fresh failure logs one row, success logs none ----
 
-func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scenarioFreshFailureAndSuccess(ctx context.Context, pool *pgxpool.Pool) {
 	step("SCENARIO 1: a fresh failure logs one delivery_log row, a success logs none")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario1", vulkan.TopicConfig{})
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	tp, cd, wp, groupId := newTopic(ctx, pool, "scenario1", vulkan.TopicConfig{})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+	ds := client.Datastore()
+
 	defer func() {
 		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
@@ -135,14 +135,16 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.Postgres
 
 // ---- scenario 2: two retries append two more distinct rows ----
 
-func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scenarioRetryDistinctAttempts(ctx context.Context, pool *pgxpool.Pool) {
 	step("SCENARIO 2: retrying the same message twice appends attempt=1 then attempt=2, never overwrites")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario2", vulkan.TopicConfig{})
+	tp, cd, wp, groupId := newTopic(ctx, pool, "scenario2", vulkan.TopicConfig{})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
+	must(err)
+	ds := client.Datastore()
 	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+
 	defer func() {
 		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
@@ -178,12 +180,14 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresD
 
 // ---- scenario 3: DeliveryLogModeOff skips every write ----
 
-func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scenarioDeliveryLogOff(ctx context.Context, pool *pgxpool.Pool) {
 	step("SCENARIO 3: DeliveryLogModeOff skips every write (the table itself always exists)")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario3", vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeOff})
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	tp, cd, wp, groupId := newTopic(ctx, pool, "scenario3", vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeOff})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+	ds := client.Datastore()
+
 	defer func() {
 		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
@@ -209,14 +213,16 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 // ---- scenario 4: DeliveryLogModeAll logs successes in the success's own txn ----
 
-func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scenarioDeliveryLogAll(ctx context.Context, pool *pgxpool.Pool) {
 	step("SCENARIO 4: DeliveryLogModeAll logs a 'success' row per success, same txn as the success")
 
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4all", vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
+	tp, cd, wp, groupId := newTopic(ctx, pool, "scenario4all", vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
+	must(err)
+	ds := client.Datastore()
 	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+
 	defer func() {
 		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
@@ -258,15 +264,17 @@ func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 // ---- scenario 5: retention drains old delivery_log rows ----
 
-func scenarioRetentionDropPartition(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scenarioRetentionDropPartition(ctx context.Context, pool *pgxpool.Pool) {
 	step("SCENARIO 5a: dropPartition reaps a dormant message's delivery_log row")
 
 	const partitionSize = int64(4)
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4drop", vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, cd, wp, groupId := newTopic(ctx, pool, "scenario4drop", vulkan.TopicConfig{PartitionSize: partitionSize})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
+	must(err)
+	ds := client.Datastore()
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+
 	defer func() {
 		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
@@ -285,15 +293,17 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *iDatastore.Postgres
 	fmt.Println("PASS: dropPartition reaped the dormant message's delivery_log row, left the alive one")
 }
 
-func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scenarioRetentionSweepBatch(ctx context.Context, pool *pgxpool.Pool) {
 	step("SCENARIO 5b: sweepBatch reaps a dormant message's delivery_log row individually")
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
-	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4sweep", vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, cd, wp, groupId := newTopic(ctx, pool, "scenario4sweep", vulkan.TopicConfig{PartitionSize: partitionSize})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
+	must(err)
+	ds := client.Datastore()
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+
 	defer func() {
 		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
@@ -314,14 +324,16 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDat
 
 // ---- scenario 6: a gate re-deferral and the run after it share an attempt ----
 
-func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scenarioRedeferralSharesAttempt(ctx context.Context, pool *pgxpool.Pool) {
 	step("SCENARIO 6: a claim handed back at the key gate and the next run log under the same attempt")
 
-	tp, _, _, groupId := newTopic(ctx, ds, "scenario6", vulkan.TopicConfig{})
+	tp, _, _, groupId := newTopic(ctx, pool, "scenario6", vulkan.TopicConfig{})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
+	must(err)
+	ds := client.Datastore()
 	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+
 	defer func() {
 		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
@@ -355,10 +367,12 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix string, cfg vulkan.TopicConfig) (*topic.TopicData, *messageconsumergroupcontroller.MessageConsumerGroupController, *vulkan.ProducerInstance[common.Work], int64) {
+func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan.TopicConfig) (*topic.TopicData, *messageconsumergroupcontroller.MessageConsumerGroupController, *vulkan.ProducerInstance[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 	tp, err := client.RegisterTopic(ctx, name, &cfg)
 	must(err)
 

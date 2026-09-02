@@ -11,9 +11,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/otelvulkan"
-	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/migrate"
-	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -42,20 +40,15 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 			// force-kills instead of being swallowed mid-drain
 			go func() { <-ctx.Done(); stop() }()
 
-			ds, closeDS, err := openDatastore(ctx, g.databaseURL, g.schema)
+			// unlike the one-shot commands, the daemon's log stream IS its
+			// output -- full info level, still on stderr by convention
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelInfo)
 			if err != nil {
 				return err
 			}
-			defer closeDS()
-
-			// unlike the one-shot commands, the daemon's log stream IS its
-			// output -- full info level, still on stderr by convention
-			runLogger := logging.NewDefaultLogger(os.Stderr, slog.LevelInfo)
-
-			client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{Logger: runLogger})
-			if err != nil {
-				return failOp("%s", err.Error())
-			}
+			defer closeClient()
+			ds := client.Datastore()
+			runLogger := client.Logger
 
 			// a server failure cancels runCtx so the manager drains too
 			runCtx, cancelRun := context.WithCancel(ctx)

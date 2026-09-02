@@ -19,6 +19,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/systemmanager"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Client struct {
@@ -33,17 +34,24 @@ type Client struct {
 	heads     *compactioncontroller.CompactionController
 }
 
-// NewClient wraps ds -- it does not connect, and the caller keeps closing
-// the pool. cfg may be nil or a sparse struct.
-func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, error) {
-	if ds == nil {
-		return nil, errors.New("datastore must not be nil")
+// NewClient builds every assembler over pool and pings it once, so a wrong
+// address or credential fails here instead of at the first query. The pool
+// stays the caller's -- vulkan never closes it. cfg may be nil or a sparse
+// struct.
+func NewClient(ctx context.Context, pool *pgxpool.Pool, cfg *ClientConfig) (*Client, error) {
+	if pool == nil {
+		return nil, errors.New("pool must not be nil")
 	}
 	if cfg == nil {
 		cfg = &ClientConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	ds, err := datastore.NewPostgresDatastore(ctx, pool, &datastore.PostgresDatastoreConfig{Schema: cfg.Schema})
+	if err != nil {
 		return nil, err
 	}
 
@@ -103,6 +111,13 @@ func NewClient(ds *datastore.PostgresDatastore, cfg *ClientConfig) (*Client, err
 		groups:    groupController,
 		heads:     compactionController,
 	}, nil
+}
+
+// Datastore returns the handle NewClient built over the pool, for the paths
+// vulkan's own verbs do not cover -- otelvulkan's exporter, a diagnostic
+// query. One client is one datastore, so its Schema is always the client's.
+func (c *Client) Datastore() *datastore.PostgresDatastore {
+	return c.ds
 }
 
 // RegisterConsumer resolves the named topic and registers the consumer

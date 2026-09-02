@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
@@ -29,7 +30,7 @@ func newTopicRenameCmd(g *globalFlags) *cobra.Command {
 				return failUsage("new name matches the current name -- nothing to rename")
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

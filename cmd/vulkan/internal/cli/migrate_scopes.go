@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -75,11 +76,12 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				name = cmdArgs[0]
 			}
 
-			client, ds, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}
 			defer closeClient()
+			ds := client.Datastore()
 
 			controller, err := migratecontroller.NewController(ds, nil)
 			if err != nil {

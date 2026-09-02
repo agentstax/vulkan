@@ -3,9 +3,8 @@
 // A web service that emits an event when an order is placed. It never
 // consumes anything.
 //
-// Concepts held before domain code (6): connection pool, datastore,
-// Client, topic name, the Message type's SchemaVersion,
-// RegisterProducer[T].
+// Concepts held before domain code (5): connection pool, Client, topic
+// name, the Message type's SchemaVersion, RegisterProducer[T].
 //
 // Traps hit:
 //   - Nothing here runs topic upkeep (partition create-ahead, retention).
@@ -13,8 +12,8 @@
 //     `vulkan manager run`. RegisterProducer now warns VK0063 naming the
 //     unclaimed topic_janitor, so it is no longer silent -- but the warn
 //     is the only thing that says so, and it is not an error.
-//   - The pool is a second constructor before anything vulkan owns
-//     [0633]. It buys the DATABASE_URL path and one pool per
+//   - The pool is the one constructor before anything vulkan owns
+//     [0633] [0636]. It buys the DATABASE_URL path and one pool per
 //     application, and it costs a concept on every scenario's count.
 package main
 
@@ -51,12 +50,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-	if err != nil {
-		return err
-	}
-
-	client, err := vulkan.NewClient(ds, nil)
+	client, err := vulkan.NewClient(ctx, pool, nil)
 	if err != nil {
 		return err
 	}

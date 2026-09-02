@@ -1,11 +1,11 @@
 ---
 title: The Client
-description: The shape of the whole API — one client over your datastore, resources registered on it or named from it as handles, verbs on the handle they act on.
+description: The shape of the whole API — one client over your pool, resources registered on it or named from it as handles, verbs on the handle they act on.
 ---
 
 import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
-One client wraps the datastore and holds the ambient config. Every
+One client wraps the pool and holds the ambient config. Every
 resource is either registered on it (`RegisterConsumer`,
 `RegisterTopic`) or named from it as a handle (`client.Topic("orders")`),
 and the verbs live on the thing they act on. Before it, the same
@@ -37,12 +37,7 @@ if err != nil {
 }
 defer pool.Close()
 
-ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-if err != nil {
-	return err
-}
-
-client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{
+client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{
 	AllowDestroy: false,
 	Logger:       logger,
 })
@@ -51,16 +46,18 @@ if err != nil {
 }
 ```
 
-The client wraps `ds`, it does not connect. The pool stays yours:
-`producer.InTransaction` and raw access keep their seam, and the app
-that opened the pool closes it. `ClientConfig` is the ambient set held
-once: `Logger`, `Retry` (the client's own Postgres retry curve, never a
-message's), and `AllowDestroy`. Every config below inherits them and so
-none of them carries a `Logger` or `Retry` field. That removed the
-worst trap on the old `ConsumerConfig`: `Retry` next to `Message.Retry`,
-both `*RetryPolicy`, one for the datastore and one for redelivery.
+`NewClient` dials the pool once before it returns, so a wrong address
+or credential fails there rather than at the first produce. The pool
+stays yours: `client.InTransaction` and raw access keep their seam, and
+the app that opened the pool closes it. `ClientConfig` is the ambient
+set held once: `Schema`, `Logger`, `Retry` (the client's own Postgres
+retry curve, never a message's), and `AllowDestroy`. Every config below
+inherits them and so none of them carries a `Logger` or `Retry` field.
+That removed the worst trap on the old `ConsumerConfig`: `Retry` next
+to `Message.Retry`, both `*RetryPolicy`, one for the Postgres calls and
+one for redelivery.
 
-A first program imports `datastore` and `vulkan`. Every type a user
+A first program imports `pgxpool` and `vulkan`. Every type a user
 spells lives in `vulkan`: `ConsumerConfig`, `ConsumeOptions`,
 `ProducerConfig`, `ProduceOptions`, `ScheduleSpec`, `ScheduleConfig`,
 `TopicConfig`, `DestroyOptions`, `MessageOptions`, `RetryPolicy`, `Tx`,
@@ -71,12 +68,10 @@ persistence layer and a user should never have to type it.
 
 ## Building the pool
 
-`NewPostgresDatastore` takes a pool you built and pings it once, so a
-wrong address or credential fails there rather than at the first
-produce. Anyone holding a DSN passes `pgxpool.New(ctx, dsn)` as above.
-For callers who would rather not write one, the guided builder takes
-the DSN exploded in the order the URL writes it,
-`postgres://user:password@host:port/database`:
+Anyone holding a DSN passes `pgxpool.New(ctx, dsn)` as above, which is
+what the quickstart does. For callers who would rather not write one,
+the guided builder takes the DSN exploded in the order the URL writes
+it, `postgres://user:password@host:port/database`:
 
 ```go
 pool, err := datastore.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"), "localhost", "app_db",
@@ -86,16 +81,15 @@ pool, err := datastore.NewPostgresPool(ctx, "app_user", os.Getenv("PGPASSWORD"),
 The password goes inline, `""` meaning no password, which is real on a
 trust or peer auth setup. `PostgresConnectionConfig` holds what is
 optional after that: `Port`, `MaxConns`, `ConnectTimeout`, `TLSConfig`.
-`Schema` sits on the datastore's own config instead, since it was never
-a connection fact.
+`Schema` is not among them, since it was never a connection fact — it
+sits on `ClientConfig`.
 
 Whichever way the pool is built, you close it. Vulkan never does, and
-there is no `ds.Close()` — `defer pool.Close()` is the only shutdown
+the client has no `Close` — `defer pool.Close()` is the only shutdown
 this layer needs.
 
 Taking a pool commits the public API to pgx. The commitment was already
-there: `PostgresDatastore.Pool` is an exported `*pgxpool.Pool` and
-`vulkan.Tx` hands your closure pgx's own result types. A team
+there: `vulkan.Tx` hands your closure pgx's own result types. A team
 standardized on `database/sql` still runs one pool for the whole
 application — build the pgxpool, hand it to Vulkan, and derive the
 `*sql.DB` view with pgx's own `stdlib.OpenDBFromPool(pool)`, which
@@ -116,8 +110,7 @@ Vulkan's tables live in one Postgres schema, `vulkan` unless you say
 otherwise:
 
 ```go
-ds, err := datastore.NewPostgresDatastore(ctx, pool,
-	&datastore.PostgresDatastoreConfig{Schema: "payments"})
+client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{Schema: "payments"})
 ```
 
 One schema is one installation. Two clients on two schemas in the same

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ func newTopicConfigGetCmd(g *globalFlags) *cobra.Command {
 				entries = []topicConfigKey{entry}
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

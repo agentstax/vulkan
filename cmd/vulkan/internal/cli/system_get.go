@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/system"
@@ -18,7 +19,7 @@ func newSystemGetCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

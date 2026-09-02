@@ -34,6 +34,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const scalePartitionSize = int64(10)
@@ -75,11 +76,8 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	concurrentRaceScenario(ctx, ds)
-	scaleCurveScenario(ctx, ds)
+	concurrentRaceScenario(ctx, pool)
+	scaleCurveScenario(ctx, pool)
 
 	fmt.Println("\n✅ LATEST KEYS RACE + SCALE LAB PASSED")
 	return nil
@@ -88,12 +86,14 @@ func run() (err error) {
 // concurrentRaceScenario: N goroutines publish to the SAME key at once --
 // compaction_head must land on the true max id, not whichever transaction
 // happened to commit last in wall-clock time.
-func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func concurrentRaceScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("concurrent same-key publishes converge to the true max id")
 
 	const n = 50
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.race.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
@@ -128,11 +128,13 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 // scaleCurveScenario: identical seeding shape to compactionscalelab, but
 // EXPLAINs the NEW lookup instead of the old scan at each checkpoint.
-func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func scaleCurveScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("O(1) rerun: the same never-superseded row, re-measured against compaction_head as history grows")
 
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.scale.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: scalePartitionSize})

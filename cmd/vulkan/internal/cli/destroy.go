@@ -35,11 +35,12 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", name)
 			}
 
-			client, ds, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}
 			defer closeClient()
+			ds := client.Datastore()
 
 			// Check order matters: a doomed call must never waste a prompt.
 			// 1. exists?

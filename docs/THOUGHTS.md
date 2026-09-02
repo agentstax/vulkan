@@ -1,8 +1,5 @@
 # Public API
 
-01 SETTLED [0633]: NewPostgresDatastore(ctx, pool, cfg) + NewPostgresPool
-   convenience builder -- not yet built
-
 02 SETTLED [0634]: value-taking ProduceInTx, closure renamed ProduceFuncInTx,
    ProducerFunc drops to (ctx, tx) -- not yet built
 
@@ -20,6 +17,8 @@ RegisterConsumer per the client shape; defer Close can't replace
 LifecycleContext (Consume blocks, so the defer never runs -- signal helper is
 the ecosystem norm); scenario 10's errgroup deleted, its atomic kept (8
 handler goroutines); New* comments fixed on NewPostgresDatastore.
+
+Need to consider just moving NewPostresDatstore into NewClient
 
 # Doc
 

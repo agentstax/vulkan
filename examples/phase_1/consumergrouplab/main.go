@@ -38,6 +38,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type labMessage struct {
@@ -79,11 +80,9 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+	ds := client.Datastore()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
@@ -207,7 +206,7 @@ func run() (err error) {
 	assertChildren(ctx, ds, topicA.Id, registered.Id, 0, "after the group row's delete")
 	fmt.Printf("  ✓ group %d deleted, cursor cascaded away\n", registered.Id)
 
-	destroySection(ctx, ds, client, cd, topicA, suffix)
+	destroySection(ctx, pool, client, cd, topicA, suffix)
 
 	// cleanup
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema), topicA.Id, race)
@@ -218,7 +217,7 @@ func run() (err error) {
 	return nil
 }
 
-func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, client *vulkan.Client, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.TopicData, suffix int64) {
+func destroySection(ctx context.Context, pool *pgxpool.Pool, client *vulkan.Client, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.TopicData, suffix int64) {
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)
@@ -227,8 +226,10 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, clien
 	_, err = cd.DeclareBindings(ctx, topicA.Id, doomed.Id, []string{"some.routing.key"}, time.Now())
 	must(err)
 
-	locked, err := vulkan.NewClient(ds, nil)
+	locked, err := vulkan.NewClient(ctx, pool, nil)
 	must(err)
+
+	ds := locked.Datastore()
 	if err := locked.Topic(topicA.Name).Group(doomedName).Destroy(ctx, nil); !errors.Is(err, topic.ErrDestroyDisabled) {
 		die(fmt.Sprintf("destroy without AllowDestroy: want ErrDestroyDisabled, got %v", err))
 	}

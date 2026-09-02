@@ -5,6 +5,49 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-02 — the client takes the pool [0636]
+
+`vulkan.NewClient(ctx, pool, cfg)` builds the datastore itself. Setting
+Vulkan up is two steps now -- build a pool, hand it to the client -- and
+`PostgresDatastore` has left the user's path: the quickstart's first
+program imports `pgxpool` and `vulkan`, nothing else.
+
+The middle step carried no decision. `PostgresDatastore` is `{Pool,
+Schema}`, and 73 of the 75 places in this repo that built one did it to
+pass it straight to `NewClient`. The thirteen playground scenarios did it
+identically, and scenario 01's header already charged it against the API
+as a concept held before any domain code; every scenario's count falls by
+one.
+
+`ClientConfig` gains `Schema`, passed through to
+`PostgresDatastoreConfig`, which stays the one owner of the `vulkan`
+default and the lowercase-identifier rule. `Client.Datastore()` hands the
+built handle back for the paths the client's verbs do not cover --
+`otelvulkan.NewExporter`, a lab driving controllers directly. That
+accessor is what makes the fold safe rather than only shorter: with the
+client owning the schema, a caller building a second datastore beside it
+could set a different one, and `schemalab` and the CLI both passed a
+schema in two places before this.
+
+`vulkan.InTransaction(ctx, ds, fn)` became the method
+`client.InTransaction(ctx, fn)`. Left free it would have made the
+transactional-produce sample read `vulkan.InTransaction(ctx,
+client.Datastore(), fn)` -- the datastore back in the user's face, in the
+sample where it stood out most.
+
+The CLI collapsed to one connection helper. `openDatastore` is gone,
+`openClient` returns `(client, close, err)`, and it takes the log level
+its caller wants: ERROR for the twenty-two one-shot commands, whose own
+✓/error output is the interface, and INFO for `manager run`, whose log
+stream is its output.
+
+`NewClient` takes a `ctx` and performs I/O now -- the construction ping
+moved inside it, so the old "wraps ds, it does not connect" contract is
+gone, and one constructor verifies connectivity where two did.
+`NewPostgresDatastore` stays exported for the programs that work at that
+layer: `tools/compat` and the dozen labs whose scenarios drive
+controllers directly.
+
 ## 2026-09-02 — the datastore takes the caller's pool [0633]
 
 `NewPostgresDatastore(ctx, pool, cfg)` wraps a `*pgxpool.Pool` you built

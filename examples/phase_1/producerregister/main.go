@@ -57,10 +57,7 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	const topicName = "test.producerregister"

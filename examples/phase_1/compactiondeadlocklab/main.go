@@ -90,11 +90,9 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err = iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	client, err = vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-
-	client, err = vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+	ds = client.Datastore()
 
 	topicName = fmt.Sprintf("compactiondeadlocklab.%d", time.Now().UnixNano())
 	registered, err := client.RegisterTopic(ctx, topicName, nil)
@@ -247,7 +245,7 @@ func runCallerWithRetry(ctx context.Context, firstKey string, secondKey string, 
 	result := callerResult{}
 	for range 5 {
 		started := time.Now()
-		err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+		err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 			if err := produceKeyInTx(ctx, tx, firstKey, firstIdempotencyKey); err != nil {
 				return err
 			}

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"text/tabwriter"
 
@@ -46,7 +47,7 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 				return err
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

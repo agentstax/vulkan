@@ -77,14 +77,14 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
-	atomicPublishScenario(ctx, ds)
-	rollbackOnFailureScenario(ctx, ds)
-	partitionSelfHealIsolationScenario(ctx, ds)
-	ambiguousCommitScenario(ctx, ds)
-	callerKeyRetryScenario(ctx, ds)
+	atomicPublishScenario(ctx, client)
+	rollbackOnFailureScenario(ctx, client)
+	partitionSelfHealIsolationScenario(ctx, client)
+	ambiguousCommitScenario(ctx, client)
+	callerKeyRetryScenario(ctx, client)
 
 	fmt.Println("\n✅ MULTI-TARGET LAB PASSED")
 	fmt.Println("   two targets in one InTransaction closure commit together, a failure on")
@@ -95,15 +95,17 @@ func run() (err error) {
 	return nil
 }
 
-func atomicPublishScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func atomicPublishScenario(ctx context.Context, client *vulkan.Client) {
 	step("atomic publish: two targets in one InTransaction closure both land together")
 
-	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	ds := client.Datastore()
+
+	topicA, wpA, cleanupA := newTarget(ctx, client, "a", 1000)
 	defer cleanupA()
-	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	topicB, wpB, cleanupB := newTarget(ctx, client, "b", 1000)
 	defer cleanupB()
 
-	err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+	err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
 			return err
 		}
@@ -117,16 +119,18 @@ func atomicPublishScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	fmt.Println("  ✓ both targets committed together")
 }
 
-func rollbackOnFailureScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func rollbackOnFailureScenario(ctx context.Context, client *vulkan.Client) {
 	step("rollback on failure: second target's producerFunc erroring rolls back BOTH, not just itself")
 
-	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	ds := client.Datastore()
+
+	topicA, wpA, cleanupA := newTarget(ctx, client, "a", 1000)
 	defer cleanupA()
-	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	topicB, wpB, cleanupB := newTarget(ctx, client, "b", 1000)
 	defer cleanupB()
 
 	wantErr := errors.New("second target refuses to publish")
-	err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+	err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
 			return err
 		}
@@ -144,14 +148,16 @@ func rollbackOnFailureScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 	fmt.Println("  ✓ target A's insert never lands either -- one shared tx, not two independent publishes")
 }
 
-func partitionSelfHealIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func partitionSelfHealIsolationScenario(ctx context.Context, client *vulkan.Client) {
 	step("partition self-heal isolation: B's internal retry must not touch A's work or rerun a side effect between them")
 
-	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	ds := client.Datastore()
+
+	topicA, wpA, cleanupA := newTarget(ctx, client, "a", 1000)
 	defer cleanupA()
 	// partitionSize=2 -- one seeded row fills partition_0 [0,2) exactly
 	// (BIGSERIAL starts at 1), so the NEXT id has nowhere to land yet.
-	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 2)
+	topicB, wpB, cleanupB := newTarget(ctx, client, "b", 2)
 	defer cleanupB()
 
 	_, err := wpB.ProduceFunc(ctx, fn, nil)
@@ -159,7 +165,7 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *iDatastore.Post
 	assertMessageLogCount(ctx, ds, topicB.Id, 1)
 
 	betweenCalls := 0
-	err = vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+	err = client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
 			return err
 		}
@@ -177,18 +183,20 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *iDatastore.Post
 	fmt.Println("  ✓ A's insert survives untouched, the side effect between calls fired exactly once, B self-healed and landed")
 }
 
-func ambiguousCommitScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func ambiguousCommitScenario(ctx context.Context, client *vulkan.Client) {
 	step("ambiguous commit: a Commit-time failure surfaces unclassified -- retrying is the caller's decision")
+
+	ds := client.Datastore()
 
 	setupDeferredFKFixture(ctx, ds)
 	defer teardownDeferredFKFixture(ctx, ds)
 
-	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	topicA, wpA, cleanupA := newTarget(ctx, client, "a", 1000)
 	defer cleanupA()
-	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	topicB, wpB, cleanupB := newTarget(ctx, client, "b", 1000)
 	defer cleanupB()
 
-	err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+	err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, nil); err != nil {
 			return err
 		}
@@ -218,12 +226,14 @@ func ambiguousCommitScenario(ctx context.Context, ds *iDatastore.PostgresDatasto
 // keys -- what a caller does after losing the commit confirmation. Auto-minted keys
 // resolve fresh per call, so THIS dedup guarantee belongs to caller keys
 // alone: without them a closure rerun double-publishes every target.
-func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func callerKeyRetryScenario(ctx context.Context, client *vulkan.Client) {
 	step("caller-key retry: rerunning the closure under the same keys dedups every target")
 
-	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	ds := client.Datastore()
+
+	topicA, wpA, cleanupA := newTarget(ctx, client, "a", 1000)
 	defer cleanupA()
-	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	topicB, wpB, cleanupB := newTarget(ctx, client, "b", 1000)
 	defer cleanupB()
 
 	keyA := uuid.NewV7().String()
@@ -237,8 +247,8 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 		return err
 	}
 
-	must(vulkan.InTransaction(ctx, ds, closure)) // the publish whose confirmation was "lost"
-	must(vulkan.InTransaction(ctx, ds, closure)) // the caller's retry
+	must(client.InTransaction(ctx, closure)) // the publish whose confirmation was "lost"
+	must(client.InTransaction(ctx, closure)) // the caller's retry
 
 	assertMessageLogCount(ctx, ds, topicA.Id, 1)
 	assertMessageLogCount(ctx, ds, topicB.Id, 1)
@@ -247,10 +257,7 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 // ---- fixtures ----
 
-func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*vulkan.TopicData, *vulkan.ProducerInstance[common.Work], func()) {
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
-
+func newTarget(ctx context.Context, client *vulkan.Client, label string, partitionSize int64) (*vulkan.TopicData, *vulkan.ProducerInstance[common.Work], func()) {
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)

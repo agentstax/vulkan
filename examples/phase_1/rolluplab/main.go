@@ -33,6 +33,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -76,12 +77,9 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	stalenessScenario(ctx, ds)
-	fixedCostScenario(ctx, ds)
-	contentionScenario(ctx, ds)
+	stalenessScenario(ctx, pool)
+	fixedCostScenario(ctx, pool)
+	contentionScenario(ctx, pool)
 
 	fmt.Println("\n✅ ROLLUP LAB — numbers gathered; decision record [0301] (docs/decisions/)")
 	fmt.Println("   holds the lazy-vs-synchronous decision these numbers drove.")
@@ -107,13 +105,13 @@ type sample struct {
 	val int64
 }
 
-func stalenessScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func stalenessScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("staleness: time from Commit to `committed` reflecting it -- lazy ticker vs. synchronous")
 
-	lazyEvents, lazySamples := runLazyStaleness(ctx, ds)
+	lazyEvents, lazySamples := runLazyStaleness(ctx, pool)
 	lazyAvg, lazyMax := stalenessFromSamples(lazyEvents, lazySamples)
 
-	syncStalenesses := runSyncStaleness(ctx, ds)
+	syncStalenesses := runSyncStaleness(ctx, pool)
 	syncAvg, syncMax := avgMax(syncStalenesses)
 
 	fmt.Printf("  %-28s avg=%8.2fms  max=%8.2fms  (poll interval=%s)\n", "lazy (periodic roller)", lazyAvg, lazyMax, pollInterval)
@@ -123,9 +121,11 @@ func stalenessScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // runLazyStaleness commits numRanges ranges while a background ticker plays
 // the role of AdvanceCommitted, and a fast poller independently samples
 // `committed` so staleness is measured from the outside, not self-reported.
-func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]rangeEvent, []sample) {
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+func runLazyStaleness(ctx context.Context, pool *pgxpool.Pool) ([]rangeEvent, []sample) {
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
@@ -200,9 +200,11 @@ func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]
 
 // runSyncStaleness commits numRanges ranges, calling AdvanceCommitted
 // immediately after each Commit -- staleness is just that call's own latency.
-func runSyncStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) []float64 {
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+func runSyncStaleness(ctx context.Context, pool *pgxpool.Pool) []float64 {
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.sync.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
@@ -273,21 +275,23 @@ func jitter(i int) time.Duration {
 
 // ---- scenario 2: fixed cost, uncontended ----
 
-func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func fixedCostScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("fixed cost: sequential claim+commit, no contention -- commit-only vs. commit+synchronous-advance")
 
 	const n = 200
 
-	baselineMs := timeSequentialCommits(ctx, ds, "commitonly", n, false)
-	syncMs := timeSequentialCommits(ctx, ds, "commitsync", n, true)
+	baselineMs := timeSequentialCommits(ctx, pool, "commitonly", n, false)
+	syncMs := timeSequentialCommits(ctx, pool, "commitsync", n, true)
 
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op\n", "commit only (lazy hot path)", baselineMs, baselineMs/n)
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op  (+%.1f%% vs. baseline)\n", "commit + synchronous advance", syncMs, syncMs/n, pctOver(syncMs, baselineMs))
 }
 
-func timeSequentialCommits(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, n float64, syncAdvance bool) float64 {
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+func timeSequentialCommits(ctx context.Context, pool *pgxpool.Pool, label string, n float64, syncAdvance bool) float64 {
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.fixedcost.%s.%d", label, time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
@@ -325,25 +329,27 @@ func timeSequentialCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 
 // ---- scenario 3: concurrent contention ----
 
-func contentionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func contentionScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("concurrent contention: G goroutines committing against the SAME cursor row")
 
 	const goroutines = 20
 	const perGoroutine = 10
 	total := goroutines * perGoroutine
 
-	baseMs := timeConcurrentCommits(ctx, ds, "base", goroutines, perGoroutine, false)
-	syncMs := timeConcurrentCommits(ctx, ds, "sync", goroutines, perGoroutine, true)
+	baseMs := timeConcurrentCommits(ctx, pool, "base", goroutines, perGoroutine, false)
+	syncMs := timeConcurrentCommits(ctx, pool, "sync", goroutines, perGoroutine, true)
 
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op (%d ops, %d goroutines)\n", "commit only (baseline)", baseMs, baseMs/float64(total), total, goroutines)
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op (%d ops, %d goroutines)\n", "commit + synchronous advance", syncMs, syncMs/float64(total), total, goroutines)
 	fmt.Printf("  -> %.2fx slower with a synchronous rollup chained onto every commit\n", syncMs/baseMs)
 }
 
-func timeConcurrentCommits(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, goroutines, perGoroutine int, syncAdvance bool) float64 {
+func timeConcurrentCommits(ctx context.Context, pool *pgxpool.Pool, label string, goroutines, perGoroutine int, syncAdvance bool) float64 {
 	total := goroutines * perGoroutine
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.contention.%s.%d", label, time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})

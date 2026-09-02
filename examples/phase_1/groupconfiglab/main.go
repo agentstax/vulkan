@@ -75,10 +75,10 @@ func run() (err error) {
 	must(err)
 
 	captureA := newCaptureLogger()
-	clientA, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true, Logger: captureA})
+	clientA, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true, Logger: captureA})
 	must(err)
 	captureB := newCaptureLogger()
-	clientB, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true, Logger: captureB})
+	clientB, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true, Logger: captureB})
 	must(err)
 
 	suffix := time.Now().UnixNano()

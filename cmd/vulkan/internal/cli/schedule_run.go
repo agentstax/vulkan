@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
@@ -42,7 +43,7 @@ func newScheduleRunCmd(g *globalFlags) *cobra.Command {
 				return failUsage("invalid config: %s", err)
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

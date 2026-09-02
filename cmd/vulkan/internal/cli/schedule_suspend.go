@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/schedule"
@@ -20,7 +21,7 @@ func newScheduleSuspendCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			name := args[0]
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}
@@ -54,7 +55,7 @@ func newScheduleUnsuspendCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			name := args[0]
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

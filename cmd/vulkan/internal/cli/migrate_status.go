@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -20,11 +21,12 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			client, ds, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}
 			defer closeClient()
+			ds := client.Datastore()
 
 			controller, err := migratecontroller.NewController(ds, nil)
 			if err != nil {

@@ -6,9 +6,17 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type ClientConfig struct {
+	// Schema - the Postgres namespace holding every vulkan table.
+	// Default: "vulkan".
+	//
+	// One schema is one installation: two clients on two schemas in the
+	// same database share nothing.
+	Schema string
+
 	// AllowDestroy - whether this client may destroy topics at all.
 	// Default: false.
 	//
@@ -21,6 +29,9 @@ type ClientConfig struct {
 }
 
 func (c *ClientConfig) WithDefaults() *ClientConfig {
+	if c.Schema == "" {
+		c.Schema = datastore.DefaultSchema
+	}
 	if c.Logger == nil {
 		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}

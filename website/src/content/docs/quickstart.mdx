@@ -62,7 +62,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	"fmt"
    	"os"
 
-   	"github.com/agentstax/vulkan/pkg/datastore"
    	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
    	"github.com/jackc/pgx/v5/pgxpool"
    )
@@ -89,12 +88,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	}
    	defer pool.Close()
 
-   	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-   	if err != nil {
-   		return err
-   	}
-
-   	client, err := vulkan.NewClient(ds, nil)
+   	client, err := vulkan.NewClient(ctx, pool, nil)
    	if err != nil {
    		return err
    	}
@@ -142,7 +136,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	"os"
    	"time"
 
-   	"github.com/agentstax/vulkan/pkg/datastore"
    	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
    	"github.com/jackc/pgx/v5/pgxpool"
    )
@@ -170,12 +163,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	}
    	defer pool.Close()
 
-   	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-   	if err != nil {
-   		return err
-   	}
-
-   	client, err := vulkan.NewClient(ds, nil)
+   	client, err := vulkan.NewClient(ctx, pool, nil)
    	if err != nil {
    		return err
    	}
@@ -286,7 +274,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	}, nil)
    ```
 
-   To produce to several topics atomically, `vulkan.InTransaction` opens
+   To produce to several topics atomically, `client.InTransaction` opens
    one transaction and hands your closure a `Tx` that each instance's
    `ProduceInTx` accepts. Do your own statements first and produce last:
    producing holds a lock on consumer progress for the topic until commit,

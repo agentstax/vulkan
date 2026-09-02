@@ -76,9 +76,10 @@ func run() (err error) {
 	leftSchema := fmt.Sprintf("schemalab_left_%d", runId)
 	rightSchema := fmt.Sprintf("schemalab_right_%d", runId)
 
-	// ONE config for both clients: pipeline Args concatenate on merge, so a
-	// client that bound its schema back into the shared config would name both
-	// installations on every line either of them logs
+	// ONE base config, copied per client: NewClient resolves the pointer it is
+	// handed, so clients sharing one would all end on the last schema written
+	// into it, and pipeline Args concatenate on merge -- a shared config would
+	// name every installation on every line any of them logs
 	shared := &vulkan.ClientConfig{AllowDestroy: true}
 	left, leftDs := openClient(ctx, leftSchema, shared)
 	defer leftDs.Pool.Close()
@@ -142,7 +143,7 @@ func run() (err error) {
 	// the pool sets no search_path [0632] -- so an unqualified CREATE lands
 	// where the caller's connection puts it, not inside vulkan's schema
 	const callerTable = "schemalab_caller_orders"
-	must(vulkan.InTransaction(ctx, leftDs, func(ctx context.Context, tx vulkan.Tx) error {
+	must(left.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		_, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS `+callerTable+` (id BIGINT);`)
 		return err
 	}))
@@ -274,11 +275,12 @@ func openClient(ctx context.Context, schema string, cfg *vulkan.ClientConfig) (*
 	pool, err := iDatastore.NewPostgresPool(ctx, "example_user", "example_password", "localhost", "example_db", nil)
 	must(err)
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, &iDatastore.PostgresDatastoreConfig{Schema: schema})
+	clientConfig := *cfg
+	clientConfig.Schema = schema
+
+	client, err := vulkan.NewClient(ctx, pool, &clientConfig)
 	must(err)
-	client, err := vulkan.NewClient(ds, cfg)
-	must(err)
-	return client, ds
+	return client, client.Datastore()
 }
 
 // boundSchemas lists the schema values a client's logger binds onto every

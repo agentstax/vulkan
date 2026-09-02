@@ -6,7 +6,7 @@
 // Slack or PagerDuty hook would hang off. The checks are re-declared here
 // at every-minute so a run has any chance of seeing one.
 //
-// Concepts held before domain code (15): the 11 from scenario 08, plus
+// Concepts held before domain code (14): the 10 from scenario 08, plus
 // RegisterSystem, the three check JobConfigs and their cron expressions,
 // and pkg/alert's TopicName and Alert.
 //
@@ -58,12 +58,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-	if err != nil {
-		return err
-	}
-
-	client, err := vulkan.NewClient(ds, nil)
+	client, err := vulkan.NewClient(ctx, pool, nil)
 	if err != nil {
 		return err
 	}

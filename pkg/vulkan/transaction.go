@@ -3,7 +3,6 @@ package vulkan
 import (
 	"context"
 
-	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 )
 
@@ -21,6 +20,6 @@ type TransactionFunc = producer.TransactionFunc
 // only you know what's safe to rerun in your closure. Rerunning the whole
 // closure is dedup-safe ONLY under caller-supplied IdempotencyKeys -- unset
 // keys mint fresh per call, so a rerun double-publishes.
-func InTransaction(ctx context.Context, ds *iDatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
-	return producer.InTransaction(ctx, ds, transactionFunc)
+func (c *Client) InTransaction(ctx context.Context, transactionFunc TransactionFunc) error {
+	return producer.InTransaction(ctx, c.ds, transactionFunc)
 }

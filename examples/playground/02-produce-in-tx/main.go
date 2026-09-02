@@ -3,7 +3,7 @@
 // Insert the order row and the OrderPlaced message atomically; then the
 // multi-topic form where the caller owns the transaction.
 //
-// Concepts held before domain code (9): the 6 from scenario 01, plus
+// Concepts held before domain code (8): the 5 from scenario 01, plus
 // ProducerFunc, vulkan.Tx, InTransaction / ProduceInTx.
 //
 // Traps hit:
@@ -55,12 +55,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	ds, err := datastore.NewPostgresDatastore(ctx, pool, nil)
-	if err != nil {
-		return err
-	}
-
-	client, err := vulkan.NewClient(ds, nil)
+	client, err := vulkan.NewClient(ctx, pool, nil)
 	if err != nil {
 		return err
 	}
@@ -96,7 +91,7 @@ func run() error {
 	fmt.Printf("produced id=%d\n", produced.Id)
 
 	// two topics: the caller owns the transaction, each instance produces into it
-	if err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+	if err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		if _, err := tx.Exec(ctx, `INSERT INTO playground_orders (id) VALUES ($1) ON CONFLICT DO NOTHING`, "ord-3"); err != nil {
 			return err
 		}

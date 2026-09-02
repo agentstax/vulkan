@@ -23,6 +23,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const partitionSize = int64(100)
@@ -64,12 +65,9 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	perCallScenario(ctx, ds)
-	batchedScenario(ctx, ds)
-	inTxScenario(ctx, ds)
+	perCallScenario(ctx, pool)
+	batchedScenario(ctx, pool)
+	inTxScenario(ctx, pool)
 
 	fmt.Println("\n✅ CREATE-AHEAD LAB PASSED")
 	fmt.Println("   Every append path created the next partition at the 80% trigger point,")
@@ -79,10 +77,11 @@ func run() (err error) {
 
 // perCallScenario: ProduceFunc publishes one at a time -- the single-id
 // trigger path (shouldTriggerWithId inside AppendMessage).
-func perCallScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func perCallScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("per-call ProduceFunc: partition 1 exists before the boundary")
-	tp, wpInstance, warns, cleanup := register(ctx, ds, "percall")
+	client, tp, wpInstance, warns, cleanup := register(ctx, pool, "percall")
 	defer cleanup()
+	ds := client.Datastore()
 
 	for range triggerPublishes {
 		publish(ctx, wpInstance)
@@ -97,10 +96,11 @@ func perCallScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 
 // batchedScenario: payload-only Produce calls ride the batcher -- the id-range
 // trigger path (shouldTriggerWithRange inside AppendMessageBatch).
-func batchedScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func batchedScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("batched Produce: a batch's id range fires the trigger before the boundary")
-	tp, wpInstance, warns, cleanup := register(ctx, ds, "batched")
+	client, tp, wpInstance, warns, cleanup := register(ctx, pool, "batched")
 	defer cleanup()
+	ds := client.Datastore()
 
 	// 85 concurrent publishes cover id 80 inside some batch's range but stay
 	// well under the boundary at 100
@@ -113,15 +113,16 @@ func batchedScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 
 // inTxScenario: the trigger id lands via ProduceInTx -- it fires pre-commit,
 // and the create backs off until this tx's commit releases the parent lock.
-func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func inTxScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("ProduceInTx: pre-commit trigger, create lands after the caller commits")
-	tp, wpInstance, warns, cleanup := register(ctx, ds, "intx")
+	client, tp, wpInstance, warns, cleanup := register(ctx, pool, "intx")
 	defer cleanup()
+	ds := client.Datastore()
 
 	for range triggerPublishes - 1 {
 		publish(ctx, wpInstance)
 	}
-	must(vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+	must(client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 		_, err := wpInstance.ProduceInTx(ctx, tx, workFunc, nil) // id 80
 		return err
 	}))
@@ -135,10 +136,10 @@ func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 
 // ---- helpers ----
 
-func register(ctx context.Context, ds *iDatastore.PostgresDatastore, scenario string) (*vulkan.TopicData, *vulkan.ProducerInstance[common.Work], *WarnCounter, func()) {
+func register(ctx context.Context, pool *pgxpool.Pool, scenario string) (*vulkan.Client, *vulkan.TopicData, *vulkan.ProducerInstance[common.Work], *WarnCounter, func()) {
 	warns, err := NewWarnCounter(logging.NewDefaultLogger(os.Stdout))
 	must(err)
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true, Logger: warns})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true, Logger: warns})
 	must(err)
 
 	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
@@ -151,7 +152,7 @@ func register(ctx context.Context, ds *iDatastore.PostgresDatastore, scenario st
 	cleanup := func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}
-	return tp, wpInstance, warns, cleanup
+	return client, tp, wpInstance, warns, cleanup
 }
 
 func workFunc(ctx context.Context, tx vulkan.Tx, _ string) (*common.Work, error) {

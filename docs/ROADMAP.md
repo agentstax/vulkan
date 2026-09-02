@@ -37,13 +37,23 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   (scenario 11) is designed as *Lease heartbeat/renewal (9b)* in the
   parking lot -- promote on its merit. Everything below is that review,
   in the order it was already sequenced.
-  - Round 1 settled 2026-09-02, three records. [0633] the datastore
-    takes the caller's pool SHIPPED the same day (HISTORY). Still to
-    build: [0634] value-taking `ProduceInTx` with `ProducerFunc` down to
-    `(ctx, tx)`, and [0635] `Consume` running the system manager so a
-    deployment stops needing to know the concept. Both need their
-    doc-site pages first, the way [0633]'s page was written and reviewed
-    before its build.
+  - Round 1 settled 2026-09-02, four records. [0633] the datastore
+    takes the caller's pool and [0636] the client takes the pool both
+    SHIPPED the same day (HISTORY) -- setup is `pool -> NewClient` and
+    the datastore is off the doc site. Still to build: [0634]
+    value-taking `ProduceInTx` with `ProducerFunc` down to `(ctx, tx)`,
+    and [0635] `Consume` running the system manager so a deployment
+    stops needing to know the concept. Both need their doc-site pages
+    first, the way [0633]'s page was written and reviewed before its
+    build.
+    - OPEN from [0636]: `NewPostgresPool` and
+      `PostgresConnectionConfig` still live in `pkg/datastore`, so the
+      client guide's "Building the pool" section names that package
+      once for the guided builder. The quickstart does not -- it uses
+      `pgxpool.New` -- so the concept is gone from a first program
+      either way. Moving them into `pkg/vulkan` would take the package
+      name off the doc site entirely, at the cost of a 75-file sweep
+      and a decision about what an API package may own.
   - Also round 1: the playground gained scenarios 12 (reading
     `__system.metrics`) and 13 (consuming `__system.alerts` as a pager
     feed), which is the metric/alert coverage the catalog was missing,

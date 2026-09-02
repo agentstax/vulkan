@@ -125,12 +125,12 @@ workaround (send-after-commit hooks, with their own failure window).
 
 ## Several topics, one commit
 
-To produce to more than one topic atomically, `vulkan.InTransaction`
+To produce to more than one topic atomically, `client.InTransaction`
 opens one transaction and hands your closure a `Tx` that every
 instance's `ProduceInTx` accepts:
 
 ```go
-err := vulkan.InTransaction(ctx, ds, func(ctx context.Context, tx vulkan.Tx) error {
+err := client.InTransaction(ctx, func(ctx context.Context, tx vulkan.Tx) error {
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, orderId); err != nil {
 		return err
 	}

@@ -29,6 +29,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -66,11 +67,8 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	sameKeyConcurrentScenario(ctx, ds)
-	distinctKeysConcurrentScenario(ctx, ds)
+	sameKeyConcurrentScenario(ctx, pool)
+	distinctKeysConcurrentScenario(ctx, pool)
 
 	fmt.Println("\n✅ IDEMPOTENCY KEYS RACE LAB PASSED")
 	fmt.Println("   N concurrent publishes under one shared key land exactly once, and N")
@@ -82,12 +80,14 @@ func run() (err error) {
 // sameKeyConcurrentScenario: N goroutines share ONE idempotency key and
 // publish at the exact same time -- exactly 1 message and 1 claim row must
 // land, however the goroutines' claim inserts happen to interleave/commit.
-func sameKeyConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func sameKeyConcurrentScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("same key, concurrent: N goroutines sharing one idempotency key must land exactly once")
 
 	const n = 50
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysracelab.same.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
@@ -134,12 +134,14 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 // distinctKeysConcurrentScenario: N goroutines each publish under their OWN
 // distinct key, all at once -- concurrency alone must never drop a write or
 // cause a false collision across unrelated keys.
-func distinctKeysConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func distinctKeysConcurrentScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("distinct keys, concurrent: N goroutines each with their own key must all land")
 
 	const n = 50
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysracelab.distinct.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})

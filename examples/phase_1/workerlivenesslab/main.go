@@ -96,15 +96,13 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err = iDatastore.NewPostgresDatastore(ctx, pool, nil)
+	client, err = vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
-
-	client, err = vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
-	must(err)
+	ds = client.Datastore()
 	must(client.RegisterSystem(ctx, nil))
 
 	capture = newCaptureLogger()
-	registerClient, err = vulkan.NewClient(ds, &vulkan.ClientConfig{Logger: capture})
+	registerClient, err = vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{Logger: capture})
 	must(err)
 
 	schedulesTopic, err = client.Topic(schedule.TopicName).Get(ctx)

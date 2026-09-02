@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"text/tabwriter"
 	"time"
 
@@ -38,7 +39,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 				return failUsage("--quiet and --output json cannot be combined")
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

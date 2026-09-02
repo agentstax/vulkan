@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/alert"
@@ -26,7 +27,7 @@ func newAlertListCmd(g *globalFlags) *cobra.Command {
 				return failUsage("--quiet and --output json cannot be combined")
 			}
 
-			client, _, closeClient, err := openClient(ctx, g.databaseURL, g.schema)
+			client, closeClient, err := openClient(ctx, g.databaseURL, g.schema, slog.LevelError)
 			if err != nil {
 				return err
 			}

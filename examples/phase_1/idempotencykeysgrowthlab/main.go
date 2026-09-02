@@ -35,6 +35,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const largePartitionSize = int64(1_000_000) // never rolls -- partition churn isn't what's being measured
@@ -74,11 +75,8 @@ func run() (err error) {
 	must(err)
 	defer pool.Close()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, pool, nil)
-	must(err)
-
-	accumulationScenario(ctx, ds)
-	sweepKeepUpScenario(ctx, ds)
+	accumulationScenario(ctx, pool)
+	sweepKeepUpScenario(ctx, pool)
 
 	fmt.Println("\n✅ IDEMPOTENCY KEYS GROWTH LAB -- numbers gathered, see the idempotency_key")
 	fmt.Println("   tradeoff discussion for what they mean and whether they change anything.")
@@ -89,11 +87,13 @@ func run() (err error) {
 // idempotency_key_<id>'s size against message_log's own size at the same
 // checkpoints -- isolates "how much extra storage does the claim gate cost"
 // from the separate question (next scenario) of whether the sweep keeps up.
-func accumulationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func accumulationScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("accumulation: idempotency_key_<id> size vs. message_log size, no sweep running")
 
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
@@ -129,7 +129,7 @@ func accumulationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 // SweepExpiredIdempotencyKeys, batched) -- proves whether steady-state size
 // stays bounded near rate * ttl (Little's Law) or the sweep falls behind and
 // the table grows toward the full published count instead.
-func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+func sweepKeepUpScenario(ctx context.Context, pool *pgxpool.Pool) {
 	step("sweep keep-up: sustained publish load concurrent with the real janitor cadence")
 
 	const ttl = 200 * time.Millisecond
@@ -138,8 +138,10 @@ func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) 
 	const duration = 3 * time.Second
 	const publishers = 30
 
-	client, err := vulkan.NewClient(ds, &vulkan.ClientConfig{AllowDestroy: true})
+	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
+
+	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.keepup.%d", time.Now().UnixNano())
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
