@@ -21,14 +21,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **`{schema}`-qualify every SQL literal** — production SQL joins the
-  diagnose queries and doc pages in writing `{schema}.table`, closing
-  the search_path fall-through between two installations in one
-  database: wrong-table reads where 42P01 should mean absence, and a
-  destructive `DROP TABLE IF EXISTS` on destroy retries. search_path
-  keeps only the InTransaction seam's job. Picked up 2026-09-01 —
-  expanded in TODO.md; settled as [0631], which supersedes [0630]'s "no
-  SQL changes" clause.
 - **`vulkan` as the real home of every user-spelled type**, instead of
   alias.go's aliases — the declarations, their doc comments, and their
   constructors move into the one package and internal code imports them
@@ -239,8 +231,10 @@ documentation; the latter want a surface that has stopped moving.
   the schema. Two schemas of one database no longer serialize on
   `RegisterSystem` — schemalab section 4 asserts it — so per-schema
   isolation is now open, and a schema is cheaper to create and drop per
-  test than a database. What is left to check before choosing: whether
-  anything else a test touches is still database-wide.
+  test than a database. [0632] strengthens it again: the pool sets no
+  `search_path`, so a test's own fixture tables land in the connection's
+  schema rather than vulkan's. What is left to check before choosing:
+  whether anything else a test touches is still database-wide.
   `vulkan.Producer[T]` and `Consumer[T]` shipped in chunk 15 and cover
   the unit-test half; this is only for tests that want the real
   library.

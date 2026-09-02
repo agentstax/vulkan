@@ -5,6 +5,85 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-01 — every SQL literal names its schema [0631][0632]
+
+`search_path` is gone. Every table reference in production SQL is
+`%[1]s.<name>` -- the schema is Sprintf verb `[1]`, filled from the
+datastore's own `Schema`, tables following as `[2]`, `[3]` -- so the schema
+repeats at every reference rather than being passed N times (23 of them in
+`deliveryconsumer.fanOut`). Plain `fmt.Sprintf` and no helper: `go vet`
+only checks verbs against args when the format string reaches Sprintf
+unmodified, and a `Fill` wrapper was built and reverted for exactly that.
+298 references across 208 literals and 53 files.
+
+This supersedes [0630]'s "no SQL changes" clause, whose premise counted 207
+literals each becoming a Sprintf when 114 already were one. The hazard it
+left was real, not theoretical: with the path set to `"<schema>, public"`,
+any table missing from the installation's own schema resolved to public's
+copy -- a neighbour's rows on a read, and its table on a
+`DROP TABLE IF EXISTS` during a destroy retry. Two installations in one
+database is what [0630] blessed, and topic ids are per-installation
+serials, so the names collide by construction.
+
+Names that reach Postgres outside a literal are qualified in Go instead:
+four `to_regclass($1)` bind parameters and the janitor's `'%s'::regclass`.
+Index names stay bare (an index lands in its table's schema), and so does
+`REPLACE(c.relname, ...)` -- `pg_class.relname` is unqualified, so the
+prefix stripped from it must be too. Five free funcs with no receiver took
+a trailing `schema string`.
+
+With every literal naming its schema, the path had one job left: a post-v1
+migration step reaches no datastore, so its SQL would still have resolved
+through it. `migrate.Migration`'s four func fields took
+`(ctx, q, schema string, topicId int64)` -- free while both registries are
+empty and impossible once a step ships -- and the pool then stopped setting
+`search_path` at all [0632]. That removed the wart [0630] had accepted: a
+caller's own `CREATE TABLE` inside `InTransaction` now lands in the
+caller's schema, not Vulkan's. Absence still reads as absence, because a
+read through a missing schema raises 42P01 and only a write raises 3F000.
+
+Demonstrated rather than argued. schemalab stands a whole installation in
+`public` -- the schema every `search_path` ends with -- and asserts an
+unregistered schema still reads the `(nil, nil)` absence; sabotaging
+`topic.get` back to an unqualified `FROM topic_config` leaves the original
+assertions passing and fails the new one with `got schemalab.orders`. A
+second section asserts the `InTransaction` CREATE lands outside Vulkan's
+schema, and fails with the path restored.
+
+Four verification layers, because each is blind where the next sees:
+`sql_schema_test.go` walks every `-- vulkan:` literal through the Go AST
+and splits on the dot rather than testing a prefix (a prefix test passes
+double qualification -- four literals had it, and the user caught them
+before the walk existed); `go vet` catches arity but not a wrong-but-valid
+index; only the fresh-DB suite executes the statements. Task 3 silently
+killed `TestTableNamesEndInAKnownKind` on the way -- it skipped any name
+containing `%`, so all 13 shared tables fell out of the kind check and it
+passed while walking nothing. Both directions sabotaged. `tools/` is its
+own module reading library source as data, so these runs need `-count=1`
+to mean anything.
+
+The labs came along, closing the gap [0628] opened when it removed
+CONVENTIONS' lab exception without updating the labs: 217 per-topic sites
+now call `topic.*Table()` and carry the schema, 51 shared-table references
+are qualified, and the 62 display strings stay bare because they name a
+table for a human. The blanket sweep broke 8 labs, all one mistake --
+flattening the distinction the production pass had gotten right. The bare
+name is required where it meets `pg_class`/`pg_stat_user_tables.relname`,
+EXPLAIN output (which prints partition names unqualified), or
+`ALTER TABLE ... RENAME TO`, which Postgres refuses to qualify.
+
+The sandbox's 45 SQL mirrors re-synced byte-exact; `interpolate` reads
+indexed verbs and fills `[1]` with PGlite's own `public`, so no call site
+passes a schema. Both `statements.ts` files now hold the raw templates and
+the filled statements side by side, since one array had been serving the
+drift test and the runtime at once and the raw form is no longer runnable
+-- `npm run verify` caught that as a real prerender failure
+(`syntax error at or near "%"`), now guarded structurally.
+
+Green on a fresh database: 47/47 labs, `just verify`, `just compat-lab`,
+24 conventions tests, `npm run verify` (vale 0 errors across 94 files,
+vitest 114, Playwright 18 across three engines).
+
 ## 2026-09-01 — seams, the schema, and per-installation locks [0628]-[0630]
 
 Chunk 15, the last of the one-client queue. `vulkan.Producer[Message]`
