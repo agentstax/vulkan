@@ -40,6 +40,7 @@ type (
 	CompactionOptions                    = produce.CompactionOptions
 	CursorPosition                       = consume.CursorPosition
 	ScheduleConfig                       = schedule.ScheduleConfig
+	ScheduleSpec                         = schedule.ScheduleSpec
 
 	TopicConfig          = topic.TopicConfig
 	DestroyOptions       = admin.DestroyOptions

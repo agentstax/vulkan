@@ -97,8 +97,9 @@ func NewCompactionReadCostProvisioner(ds *iDatastore.PostgresDatastore, cfg *Com
 	}
 
 	scheduleConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
+		Bindings: []string{JobName},
+		Logger:   cfg.Logger,
+		Retry:    cfg.Retry,
 	})
 	if err != nil {
 		return nil, err

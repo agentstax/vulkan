@@ -1,4 +1,4 @@
-package vulkan
+package schedule
 
 // ScheduleSpec names a schedule declaration: the schedule, the topic it
 // produces to, and the cron expression it runs on. A struct rather than

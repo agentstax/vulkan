@@ -2,8 +2,6 @@ package vulkan
 
 import (
 	"context"
-
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // Topic is a handle: the topic's name plus the client, holding no row.
@@ -51,41 +49,17 @@ func (t *Topic) Metrics(ctx context.Context) (*TopicSnapshot, error) {
 // CompactionHead returns messageKey's current compaction head, or nil if
 // nothing has been produced under it.
 func (t *Topic) CompactionHead[Message Versioned](ctx context.Context, messageKey string) (*MessageData[Message], error) {
-	found, err := t.client.admin.GetTopic(ctx, t.name)
-	if err != nil {
-		return nil, err
-	}
-	if found == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", t.name)
-	}
-
-	return t.client.heads.GetHead[Message](ctx, found.Id, messageKey)
+	return t.client.admin.GetCompactionHead[Message](ctx, t.name, messageKey)
 }
 
 // ListKeyMessages returns messageKey's retained messages, newest first.
 func (t *Topic) ListKeyMessages[Message Versioned](ctx context.Context, messageKey string, limit int) ([]*MessageData[Message], error) {
-	found, err := t.client.admin.GetTopic(ctx, t.name)
-	if err != nil {
-		return nil, err
-	}
-	if found == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", t.name)
-	}
-
-	return t.client.heads.ListKeyMessages[Message](ctx, found.Id, messageKey, limit)
+	return t.client.admin.ListKeyMessages[Message](ctx, t.name, messageKey, limit)
 }
 
 // ListGroups lists the topic's consumer groups, ordered by name.
 func (t *Topic) ListGroups(ctx context.Context) ([]*GroupData, error) {
-	found, err := t.client.admin.GetTopic(ctx, t.name)
-	if err != nil {
-		return nil, err
-	}
-	if found == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", t.name)
-	}
-
-	return t.client.groups.ListGroups(ctx, found.Id)
+	return t.client.admin.ListGroups(ctx, t.name)
 }
 
 // Group names a consumer group on this topic. No I/O and no failure --

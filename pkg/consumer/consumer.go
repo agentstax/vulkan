@@ -114,9 +114,9 @@ func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consume
 // returning an instance that consumes Message from it. Callable many times,
 // with a different Message per call -- each call returns an independent
 // instance.
-// bindings is the group's full set; nil = the whole topic.
+// ConsumerConfig.Bindings is the group's full pattern set; nil = the whole topic.
 // ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consumerGroup string, topicName string, bindings []string) (*ConsumerInstance[Message], error) {
+func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consumerGroup string, topicName string) (*ConsumerInstance[Message], error) {
 	if consumerGroup == "" {
 		return nil, errors.New("consumer group is required")
 	}
@@ -158,13 +158,13 @@ func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consu
 	}
 
 	declaredAt := time.Now()
-	outcome, err := c.consumers.DeclareBindings(ctx, current.Id, group.Id, bindings, declaredAt)
+	outcome, err := c.consumers.DeclareBindings(ctx, current.Id, group.Id, c.Config.Bindings, declaredAt)
 	if err != nil {
 		return nil, err
 	}
 	if outcome == consume.BindingWaiting {
 		c.Logger.InfoContext(ctx, "binding declaration waiting -- a live instance still declares a different set; Consume retries until installed",
-			"group", group.Name, "patterns", bindings)
+			"group", group.Name, "patterns", c.Config.Bindings)
 	}
 
 	// built per instance -- two instances must never share one event queue
@@ -177,5 +177,5 @@ func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consu
 		return nil, err
 	}
 
-	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, common.SchemaVersionOf[Message](), bindings, declaredAt, c.Config)
+	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, common.SchemaVersionOf[Message](), declaredAt, c.Config)
 }

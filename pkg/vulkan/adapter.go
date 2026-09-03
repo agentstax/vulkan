@@ -41,6 +41,7 @@ func toConsumerConfig(cfg *ConsumerConfig, retry *common.RetryPolicy, log loggin
 		MessageMax:              cfg.MessageMax,
 		ConcurrencyOverride:     cfg.ConcurrencyOverride,
 		Start:                   cfg.Start,
+		Bindings:                cfg.Bindings,
 		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
 		MaxRangeReclaims:        cfg.MaxRangeReclaims,
 		Logger:                  log,

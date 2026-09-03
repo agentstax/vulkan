@@ -63,7 +63,7 @@ func run() (err error) {
 
 	step("RegisterSchedule returns the handle; Get reads the row")
 	scheduleName := fmt.Sprintf("scheduleconcurrencylab.nightly.%d", run)
-	nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx, vulkan.ScheduleSpec{Name: scheduleName, Topic: topicName, Cron: "0 3 * * *"}, &ReportRequestedV1{Kind: "nightly"}, nil)
+	nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx, &vulkan.ScheduleSpec{Name: scheduleName, Topic: topicName, Cron: "0 3 * * *"}, &ReportRequestedV1{Kind: "nightly"}, nil)
 	must(err)
 	row, err := nightly.Get(ctx)
 	must(err)

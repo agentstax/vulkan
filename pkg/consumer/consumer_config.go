@@ -3,6 +3,7 @@ package consumer
 import (
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -38,6 +39,10 @@ type ConsumerConfig struct {
 	// a group that already has a cursor row keeps its position.
 	// Default: consume.Beginning() -- the oldest retained message.
 	Start consume.CursorPosition
+
+	// Bindings - the group's whole pattern set, declared on every Register.
+	// Default: nil (the whole topic).
+	Bindings []string
 
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
 	MaxRangeReclaims        int           // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
@@ -166,6 +171,7 @@ func (c *ConsumerConfig) DeepCopy() *ConsumerConfig {
 	copied.Message = cloneMessageOptions(c.Message)
 	copied.MessageMin = cloneMessageOptions(c.MessageMin)
 	copied.MessageMax = cloneMessageOptions(c.MessageMax)
+	copied.Bindings = slices.Clone(c.Bindings)
 	if c.Retry != nil {
 		retry := *c.Retry
 		copied.Retry = &retry

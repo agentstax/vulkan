@@ -77,26 +77,16 @@ func NewScheduler(ds *datastore.PostgresDatastore, cfg *SchedulerConfig) (*Sched
 	}, nil
 }
 
-// Register declares the schedule named name on the target topic and returns
+// Register declares the schedule spec names on its target topic and returns
 // an instance for it. Safe to call on every startup: the newest declaration
 // wins, so two services passing different values for one name overwrite
 // each other. A changed expression drops a time already due under the old
 // one; a suspended schedule stays suspended. The name is the message key of
 // every produce. cfg may be nil or sparse.
 // ctx bounds only this call's I/O; the instance's lifetime is Schedule's ctx.
-func (s *Scheduler) Register[Message common.Versioned](ctx context.Context, name string, expression string, topicName string, payload *Message, cfg *schedule.ScheduleConfig) (*SchedulerInstance[Message], error) {
-	if name == "" {
-		return nil, errors.New("schedule name is required")
-	}
-	if expression == "" {
-		return nil, errors.New("expression is required")
-	}
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
-	parsed, err := schedule.ParseExpression(expression)
-	if err != nil {
-		return nil, err
+func (s *Scheduler) Register[Message common.Versioned](ctx context.Context, spec *schedule.ScheduleSpec, payload *Message, cfg *schedule.ScheduleConfig) (*SchedulerInstance[Message], error) {
+	if spec == nil {
+		return nil, errors.New("spec must not be nil")
 	}
 
 	// gate -- a schedule needs the control-plane tables RegisterSystem creates
@@ -105,25 +95,25 @@ func (s *Scheduler) Register[Message common.Versioned](ctx context.Context, name
 		return nil, err
 	}
 	if sys == nil {
-		return nil, migrate.ErrNotRegistered.With("schedule", name)
+		return nil, migrate.ErrNotRegistered.With("schedule", spec.Name)
 	}
 
-	target, err := s.topicController.Get(ctx, topicName)
+	target, err := s.topicController.Get(ctx, spec.Topic)
 	if err != nil {
 		return nil, err
 	}
 	if target == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", topicName)
+		return nil, topic.ErrTopicNotFound.With("topic", spec.Topic)
 	}
 	if err := s.topicController.AssertSchemaSupported(ctx, target.SystemId, target.Id); err != nil {
 		return nil, err
 	}
 
 	if target.DeliveryLogMode != topic.DeliveryLogModeAll {
-		s.Logger.WarnContext(ctx, schedule.EventTargetKeepsNoSuccessRows.Message, "code", schedule.EventTargetKeepsNoSuccessRows.Code, "schedule", name, "topic", target.Name, "delivery_log_mode", string(target.DeliveryLogMode))
+		s.Logger.WarnContext(ctx, schedule.EventTargetKeepsNoSuccessRows.Message, "code", schedule.EventTargetKeepsNoSuccessRows.Code, "schedule", spec.Name, "topic", target.Name, "delivery_log_mode", string(target.DeliveryLogMode))
 	}
 
-	registered, err := s.scheduleController.Register(ctx, sys.Id, name, parsed, target.Id, payload, cfg)
+	registered, err := s.scheduleController.Register(ctx, sys.Id, spec, target.Id, payload, cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -60,7 +60,7 @@ func run() error {
 		return err
 	}
 
-	nightly, err := client.RegisterSchedule[InvoiceRun](ctx, vulkan.ScheduleSpec{Name: "invoices.nightly", Topic: invoices.Name, Cron: "0 2 * * *"}, &InvoiceRun{Region: "eu"}, nil)
+	nightly, err := client.RegisterSchedule[InvoiceRun](ctx, &vulkan.ScheduleSpec{Name: "invoices.nightly", Topic: invoices.Name, Cron: "0 2 * * *"}, &InvoiceRun{Region: "eu"}, nil)
 	if err != nil {
 		return err
 	}

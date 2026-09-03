@@ -9,21 +9,27 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
-// Register resolves name to its schedule, creating it under systemId if it
-// doesn't exist; an existing schedule takes expression, topic, payload and
+// Register resolves spec.Name to its schedule, creating it under systemId if
+// it doesn't exist; an existing schedule takes spec.Cron, topic, payload and
 // cfg -- the newest declaration wins. The payload is stored marshaled with
 // Message's schema version; every produce carries both. cfg may be nil or a
 // sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func (c *ScheduleController) Register[Message common.Versioned](ctx context.Context, systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) (*schedule.ScheduleData, error) {
+func (c *ScheduleController) Register[Message common.Versioned](ctx context.Context, systemId int64, spec *schedule.ScheduleSpec, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) (*schedule.ScheduleData, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
-	if !schedule.SlugPattern.MatchString(name) {
-		return nil, fmt.Errorf("name must match %s, got %q", schedule.SlugPattern, name)
+	if spec == nil {
+		return nil, errors.New("spec must not be nil")
 	}
-	if expression == nil {
-		return nil, errors.New("expression is required")
+	if !schedule.SlugPattern.MatchString(spec.Name) {
+		return nil, fmt.Errorf("Name must match %s, got %q", schedule.SlugPattern, spec.Name)
+	}
+	if spec.Topic == "" {
+		return nil, errors.New("Topic is required")
+	}
+	if spec.Cron == "" {
+		return nil, errors.New("Cron is required")
 	}
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
@@ -38,11 +44,15 @@ func (c *ScheduleController) Register[Message common.Versioned](ctx context.Cont
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	expression, err := schedule.ParseExpression(spec.Cron)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.Timeout > expression.MinRate() {
-		return nil, fmt.Errorf("timeout %v exceeds expression %q's min rate %v", cfg.Timeout, expression, expression.MinRate())
+		return nil, fmt.Errorf("Timeout %v exceeds Cron %q's min rate %v", cfg.Timeout, spec.Cron, expression.MinRate())
 	}
 
-	registered, err := c.datastore.Register(ctx, toScheduleDeclaration(systemId, name, expression, topicId, payload, cfg))
+	registered, err := c.datastore.Register(ctx, toScheduleDeclaration(systemId, spec.Name, expression, topicId, payload, cfg))
 	if err != nil {
 		return nil, err
 	}

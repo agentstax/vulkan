@@ -27,9 +27,9 @@ func NewMetricsConsumer(ds *iDatastore.PostgresDatastore, cfg *consumer.Consumer
 
 // Register registers consumerGroup on __system.metrics, returning an
 // instance ready to Consume. Measurements route under their metric name, so
-// names is the group's binding set -- metric names or wildcard patterns;
-// nil = every metric.
+// cfg.Bindings is the group's binding set -- metric names or wildcard
+// patterns; nil = every metric.
 // Returns ErrTopicNotFound until RegisterSystem has run.
-func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string, names []string) (*consumer.ConsumerInstance[metrics.Measurement], error) {
-	return c.consumer.Register[metrics.Measurement](ctx, consumerGroup, metrics.TopicName, names)
+func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string) (*consumer.ConsumerInstance[metrics.Measurement], error) {
+	return c.consumer.Register[metrics.Measurement](ctx, consumerGroup, metrics.TopicName)
 }

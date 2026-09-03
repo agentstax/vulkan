@@ -10,9 +10,36 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// GetGroup reads the group's config.
+// GetGroup reads the group's row. Returns (nil, nil), not an error, when
+// the topic or the group isn't registered.
+func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName string) (*consume.GroupData, error) {
+	if groupName == "" {
+		return nil, errors.New("group name is required")
+	}
+
+	found, err := a.GetTopic(ctx, topicName)
+	if err != nil || found == nil {
+		return nil, err
+	}
+	return a.consumerController.GetGroup(ctx, found.Id, groupName)
+}
+
+// ListGroups lists the topic's consumer groups, ordered by name.
+// Returns ErrTopicNotFound when the topic isn't registered.
+func (a *MessageAdmin) ListGroups(ctx context.Context, topicName string) ([]*consume.GroupData, error) {
+	found, err := a.GetTopic(ctx, topicName)
+	if err != nil {
+		return nil, err
+	}
+	if found == nil {
+		return nil, topic.ErrTopicNotFound.With("topic", topicName)
+	}
+	return a.consumerController.ListGroups(ctx, found.Id)
+}
+
+// ListGroupWorkers lists the group's worker rows -- its stored config.
 // Returns ErrTopicNotFound / ErrGroupNotFound when either side is missing.
-func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName string) ([]*worker.WorkerData, error) {
+func (a *MessageAdmin) ListGroupWorkers(ctx context.Context, topicName string, groupName string) ([]*worker.WorkerData, error) {
 	groupOwner, err := a.groupOwner(ctx, topicName, groupName)
 	if err != nil {
 		return nil, err

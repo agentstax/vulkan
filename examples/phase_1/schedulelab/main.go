@@ -226,14 +226,14 @@ func targetSection(ctx context.Context) {
 func handleSection(ctx context.Context) {
 	step("handle: scheduler.Register declares the row, Schedule runs the manager until ctx cancels")
 
-	if _, err := labScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", prefix+".missing", payload, nil); !errors.Is(err, topic.ErrTopicNotFound) {
+	if _, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: prefix + ".handle", Topic: prefix + ".missing", Cron: "@hourly"}, payload, nil); !errors.Is(err, topic.ErrTopicNotFound) {
 		die(fmt.Sprintf("want ErrTopicNotFound for an unregistered target, got %v", err))
 	}
-	if _, err := labScheduler.Register[labMessage](ctx, prefix+".handle", "every day at noon", target.Name, payload, nil); err == nil {
+	if _, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: prefix + ".handle", Topic: target.Name, Cron: "every day at noon"}, payload, nil); err == nil {
 		die("want an error for an unparseable expression")
 	}
 
-	nightly, err := labScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", target.Name, payload, nil)
+	nightly, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: prefix + ".handle", Topic: target.Name, Cron: "@hourly"}, payload, nil)
 	must(err)
 	defer func() { must(client.Schedule(prefix + ".handle").Destroy(ctx)) }()
 	found, err := client.Schedule(prefix + ".handle").Get(ctx)
@@ -815,7 +815,7 @@ func exec(ctx context.Context, sql string, args ...any) {
 // registerSchedule is the handle's Register for the lab's message type,
 // returning the row like admin's reads do.
 func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedule.ScheduleConfig) (*schedule.ScheduleData, error) {
-	instance, err := labScheduler.Register[labMessage](ctx, name, expression, topicName, payload, cfg)
+	instance, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: name, Topic: topicName, Cron: expression}, payload, cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -11,8 +11,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
@@ -30,8 +28,6 @@ type Client struct {
 	admin     *admin.MessageAdmin
 	scheduler *scheduler.Scheduler
 	manager   *systemmanager.SystemManager
-	groups    *consumecontroller.ConsumeController
-	heads     *compactioncontroller.CompactionController
 }
 
 // NewClient builds every assembler over pool and pings it once, so a wrong
@@ -85,22 +81,6 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, cfg *ClientConfig) (*Cli
 		return nil, err
 	}
 
-	groupController, err := consumecontroller.NewConsumeController(ds, &consumecontroller.ControllerConfig{
-		Logger: logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	compactionController, err := compactioncontroller.NewCompactionController(ds, &compactioncontroller.ControllerConfig{
-		Logger: logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	return &Client{
 		Config:    cfg,
 		Logger:    logger,
@@ -108,8 +88,6 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, cfg *ClientConfig) (*Cli
 		admin:     messageAdmin,
 		scheduler: messageScheduler,
 		manager:   systemManager,
-		groups:    groupController,
-		heads:     compactionController,
 	}, nil
 }
 
@@ -131,11 +109,7 @@ func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consum
 		return nil, err
 	}
 
-	var bindings []string
-	if cfg != nil {
-		bindings = cfg.Bindings
-	}
-	instance, err := messageConsumer.Register[Message](ctx, consumerGroup, topicName, bindings)
+	instance, err := messageConsumer.Register[Message](ctx, consumerGroup, topicName)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +129,8 @@ func (c *Client) RegisterProducer[Message Versioned](ctx context.Context, topicN
 // RegisterSchedule declares the schedule spec names on its target topic and
 // returns its handle. The newest declaration wins. cfg may be nil or
 // sparse.
-func (c *Client) RegisterSchedule[Message Versioned](ctx context.Context, spec ScheduleSpec, payload *Message, cfg *ScheduleConfig) (*Schedule, error) {
-	if _, err := c.scheduler.Register[Message](ctx, spec.Name, spec.Cron, spec.Topic, payload, cfg); err != nil {
+func (c *Client) RegisterSchedule[Message Versioned](ctx context.Context, spec *ScheduleSpec, payload *Message, cfg *ScheduleConfig) (*Schedule, error) {
+	if _, err := c.scheduler.Register[Message](ctx, spec, payload, cfg); err != nil {
 		return nil, err
 	}
 	return c.Schedule(spec.Name), nil

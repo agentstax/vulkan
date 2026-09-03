@@ -29,15 +29,15 @@ type ConsumerInstance[Message common.Versioned] struct {
 	consumers    *consumecontroller.ConsumeController
 	topicName    string
 	topicVersion int
-	bindings     []string
 	declaredAt   time.Time
 	permit       *concurrency.Permit // held for the length of a Consume call
 }
 
 // cfg arrives already resolved by NewConsumer -- Register is the only caller,
 // so there is nothing left to default or validate here.
-// bindings and declaredAt are Register's declaration, re-attempted by Consume.
-func newConsumerInstance[Message common.Versioned](owner *common.Owner, ds *datastore.PostgresDatastore, metrics *metricsproducer.MetricsProducer, consumers *consumecontroller.ConsumeController, topicName string, topicVersion int, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+// declaredAt is Register's declaration time; Consume re-attempts the
+// Config.Bindings declaration under it.
+func newConsumerInstance[Message common.Versioned](owner *common.Owner, ds *datastore.PostgresDatastore, metrics *metricsproducer.MetricsProducer, consumers *consumecontroller.ConsumeController, topicName string, topicVersion int, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -74,7 +74,6 @@ func newConsumerInstance[Message common.Versioned](owner *common.Owner, ds *data
 		consumers:    consumers,
 		topicName:    topicName,
 		topicVersion: topicVersion,
-		bindings:     bindings,
 		declaredAt:   declaredAt,
 		permit:       permit,
 	}, nil
@@ -185,7 +184,7 @@ func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context, binding
 	for attempt := 1; ; attempt++ {
 		// Register's outcome is not trusted -- another declarer may have
 		// replaced the set while this instance had no live heartbeat
-		outcome, err := i.consumers.DeclareBindings(ctx, i.Owner.TopicId, i.Owner.ConsumerGroupId, i.bindings, i.declaredAt)
+		outcome, err := i.consumers.DeclareBindings(ctx, i.Owner.TopicId, i.Owner.ConsumerGroupId, i.Config.Bindings, i.declaredAt)
 		if err != nil {
 			return err
 		}
@@ -195,7 +194,7 @@ func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context, binding
 
 		i.Logger.WarnContext(ctx, "binding declaration waiting -- a live instance still declares a different set",
 			"group", i.Owner.Name,
-			"patterns", i.bindings,
+			"patterns", i.Config.Bindings,
 			"attempt", attempt,
 			"elapsed", time.Since(i.declaredAt).Round(time.Second))
 

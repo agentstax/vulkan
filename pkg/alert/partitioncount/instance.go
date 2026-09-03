@@ -79,7 +79,7 @@ func (i *PartitionCountInstance) consume(ctx context.Context) error {
 	}
 	i.measurements = measurements
 
-	instance, err := i.provisioner.scheduleConsumer.Register[alert.JobPayload](ctx, JobName, schedule.TopicName, []string{JobName})
+	instance, err := i.provisioner.scheduleConsumer.Register[alert.JobPayload](ctx, JobName, schedule.TopicName)
 	if err != nil {
 		return err
 	}

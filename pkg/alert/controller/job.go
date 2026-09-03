@@ -9,10 +9,9 @@ import (
 
 // Job is one built-in alert's schedule, as RegisterSystem declares it.
 type Job struct {
-	Name       string
-	Expression string
-	Payload    *alert.JobPayload
-	Config     *schedule.ScheduleConfig
+	Spec    *schedule.ScheduleSpec
+	Payload *alert.JobPayload
+	Config  *schedule.ScheduleConfig
 }
 
 // NewJob parses expression so a bad one fails here, not at register.
@@ -29,9 +28,8 @@ func NewJob(name string, expression string, payload *alert.JobPayload, cfg *sche
 		return nil, err
 	}
 	return &Job{
-		Name:       name,
-		Expression: expression,
-		Payload:    payload,
-		Config:     cfg,
+		Spec:    &schedule.ScheduleSpec{Name: name, Topic: schedule.TopicName, Cron: expression},
+		Payload: payload,
+		Config:  cfg,
 	}, nil
 }
