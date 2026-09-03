@@ -27,9 +27,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -134,9 +134,9 @@ func runLazyStaleness(ctx context.Context, pool *pgxpool.Pool) ([]rangeEvent, []
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -213,9 +213,9 @@ func runSyncStaleness(ctx context.Context, pool *pgxpool.Pool) []float64 {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -300,9 +300,9 @@ func timeSequentialCommits(ctx context.Context, pool *pgxpool.Pool, label string
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -358,9 +358,9 @@ func timeConcurrentCommits(ctx context.Context, pool *pgxpool.Pool, label string
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)

@@ -15,7 +15,7 @@ import (
 // by attemptTimeout) and a missing partition (healed, then rerun until a
 // partition covers the batch). failedIndex is the FIRST failure in pipeline
 // order, -1 when the failure carries no index.
-func (d *ProducerDatastore) AppendMessageBatch[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) ([]Appended[Message], int, error) {
+func (d *ProduceDatastore) AppendMessageBatch[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) ([]Appended[Message], int, error) {
 	appended, failedIndex, err := d.appendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appends)
 	if err != nil {
 		return appended, failedIndex, err
@@ -30,7 +30,7 @@ func (d *ProducerDatastore) AppendMessageBatch[Message common.Versioned](ctx con
 
 // appendMessageBatch reruns one-attempt transactions under the transient-retry
 // policy; the last attempt wins failedIndex.
-func (d *ProducerDatastore) appendMessageBatch[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) (appended []Appended[Message], failedIndex int, err error) {
+func (d *ProduceDatastore) appendMessageBatch[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) (appended []Appended[Message], failedIndex int, err error) {
 	failedIndex = -1
 	err = d.DatastoreRetry.Wrap(ctx, func() error {
 		// bound each attempt -- a hung database must not hold the batch forever
@@ -57,7 +57,7 @@ func (d *ProducerDatastore) appendMessageBatch[Message common.Versioned](ctx con
 
 // appendMessageBatchTransaction is one attempt: ONE plain transaction, every
 // query batched into a single round trip, no savepoints.
-func (d *ProducerDatastore) appendMessageBatchTransaction[Message common.Versioned](ctx context.Context, topicId int64, appends []*Append[Message]) ([]Appended[Message], int, error) {
+func (d *ProduceDatastore) appendMessageBatchTransaction[Message common.Versioned](ctx context.Context, topicId int64, appends []*Append[Message]) ([]Appended[Message], int, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, -1, err

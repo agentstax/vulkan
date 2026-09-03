@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupjanitorcontroller "github.com/agentstax/vulkan/pkg/consume/janitor/controller"
+	consumejanitorcontroller "github.com/agentstax/vulkan/pkg/consume/janitor/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -195,7 +195,7 @@ func run() (err error) {
 		groupId)
 	must(err)
 
-	sweepController, err := consumergroupjanitorcontroller.NewJanitorController(ds, nil)
+	sweepController, err := consumejanitorcontroller.NewJanitorController(ds, nil)
 	must(err)
 	swept, err := sweepController.SweepExpiredWaitingDeclarations(ctx, 7*24*time.Hour, 1000)
 	must(err)

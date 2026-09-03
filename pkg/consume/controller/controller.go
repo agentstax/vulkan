@@ -8,15 +8,15 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
-type ConsumerGroupController struct {
+type ConsumeController struct {
 	Logger logging.Logger
 
-	datastore *datastore.ConsumerGroupDatastore
+	datastore *datastore.ConsumeDatastore
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewConsumerGroupController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*ConsumerGroupController, error) {
+func NewConsumeController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*ConsumeController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -28,7 +28,7 @@ func NewConsumerGroupController(ds *iDatastore.PostgresDatastore, cfg *Controlle
 		return nil, err
 	}
 
-	consumerDatastore, err := datastore.NewConsumerGroupDatastore(ds, &datastore.ConsumerGroupDatastoreConfig{
+	consumerDatastore, err := datastore.NewConsumeDatastore(ds, &datastore.ConsumeDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -36,7 +36,7 @@ func NewConsumerGroupController(ds *iDatastore.PostgresDatastore, cfg *Controlle
 		return nil, err
 	}
 
-	return &ConsumerGroupController{
+	return &ConsumeController{
 		Logger:    cfg.Logger,
 		datastore: consumerDatastore,
 	}, nil

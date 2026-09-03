@@ -47,9 +47,9 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer"
-	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
+	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -118,9 +118,9 @@ func run() (err error) {
 	must(err)
 	topicId = tp.Id
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
 	wpInstance, err := client.RegisterProducer[Rec](ctx, tp.Name, nil)
 	must(err)
@@ -727,7 +727,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 	tp, err := topicController.Get(ctx, topicName)
 	must(err)
 
-	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	consumerDatastore, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consume.Beginning())
 	must(err)
@@ -817,7 +817,7 @@ func publishUnkeyed(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec
 	must(err)
 }
 
-func groupId(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, name string) int64 {
+func groupId(ctx context.Context, cd *consumecontroller.ConsumeController, name string) int64 {
 	g, err := cd.RegisterGroup(ctx, topicId, name, consume.Beginning())
 	must(err)
 	return g.Id

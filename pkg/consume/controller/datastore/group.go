@@ -15,7 +15,7 @@ import (
 
 // GetGroup resolves a consumer group by its owning topic and name.
 // Returns (nil, nil) if the group is not registered on that topic.
-func (d *ConsumerGroupDatastore) GetGroup(ctx context.Context, topicId int64, name string) (*ConsumerGroupConfigRow, error) {
+func (d *ConsumeDatastore) GetGroup(ctx context.Context, topicId int64, name string) (*ConsumerGroupConfigRow, error) {
 	var group *ConsumerGroupConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -25,7 +25,7 @@ func (d *ConsumerGroupDatastore) GetGroup(ctx context.Context, topicId int64, na
 	return group, err
 }
 
-func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Querier, topicId int64, name string) (*ConsumerGroupConfigRow, error) {
+func (d *ConsumeDatastore) getGroup(ctx context.Context, q datastore.Querier, topicId int64, name string) (*ConsumerGroupConfigRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: consume.getGroup
 		SELECT id, topic_id, name, created_at
@@ -44,7 +44,7 @@ func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Queri
 }
 
 // ListGroups lists the topic's consumer groups, ordered by name.
-func (d *ConsumerGroupDatastore) ListGroups(ctx context.Context, topicId int64) ([]ConsumerGroupConfigRow, error) {
+func (d *ConsumeDatastore) ListGroups(ctx context.Context, topicId int64) ([]ConsumerGroupConfigRow, error) {
 	var groups []ConsumerGroupConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -54,7 +54,7 @@ func (d *ConsumerGroupDatastore) ListGroups(ctx context.Context, topicId int64) 
 	return groups, err
 }
 
-func (d *ConsumerGroupDatastore) listGroups(ctx context.Context, topicId int64) ([]ConsumerGroupConfigRow, error) {
+func (d *ConsumeDatastore) listGroups(ctx context.Context, topicId int64) ([]ConsumerGroupConfigRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: consume.listGroups
 		SELECT id, topic_id, name, created_at
@@ -71,7 +71,7 @@ func (d *ConsumerGroupDatastore) listGroups(ctx context.Context, topicId int64) 
 
 // RegisterGroup registers the group and its cursor if it doesn't exist; start
 // places the cursor only when this call creates the row.
-func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int64, name string, start consume.CursorPosition) (*ConsumerGroupConfigRow, error) {
+func (d *ConsumeDatastore) RegisterGroup(ctx context.Context, topicId int64, name string, start consume.CursorPosition) (*ConsumerGroupConfigRow, error) {
 	var group *ConsumerGroupConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -83,7 +83,7 @@ func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int6
 
 // registerGroup registers behind a per-(topic,name) advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int64, name string, start consume.CursorPosition) (*ConsumerGroupConfigRow, error) {
+func (d *ConsumeDatastore) registerGroup(ctx context.Context, topicId int64, name string, start consume.CursorPosition) (*ConsumerGroupConfigRow, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -152,7 +152,7 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 
 // insertCursor writes the group's cursor row at the declared position and
 // returns the committed id it starts from.
-func (d *ConsumerGroupDatastore) insertCursor(ctx context.Context, q datastore.Querier, topicId int64, groupId int64, start consume.CursorPosition) (int64, error) {
+func (d *ConsumeDatastore) insertCursor(ctx context.Context, q datastore.Querier, topicId int64, groupId int64, start consume.CursorPosition) (int64, error) {
 	var sql string
 	switch start.Kind {
 	case consume.CursorPositionBeginning:
@@ -181,13 +181,13 @@ func (d *ConsumerGroupDatastore) insertCursor(ctx context.Context, q datastore.Q
 }
 
 // DeleteGroup deletes the group and every row it owns in one transaction.
-func (d *ConsumerGroupDatastore) DeleteGroup(ctx context.Context, topicId int64, groupId int64, name string) error {
+func (d *ConsumeDatastore) DeleteGroup(ctx context.Context, topicId int64, groupId int64, name string) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.deleteGroup(ctx, topicId, groupId, name)
 	})
 }
 
-func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64, groupId int64, name string) error {
+func (d *ConsumeDatastore) deleteGroup(ctx context.Context, topicId int64, groupId int64, name string) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err

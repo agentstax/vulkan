@@ -26,9 +26,9 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -86,9 +86,9 @@ func run() (err error) {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -226,7 +226,7 @@ func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, arg
 	return v
 }
 
-func ids(msgs []messageconsumergroupcontroller.Message) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id

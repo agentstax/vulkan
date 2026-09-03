@@ -30,7 +30,7 @@ const createAheadAttemptAllowance = 3 * ddlLockTimeout
 // the loop only continues while other producers advanced the sequence a
 // whole partition in between. One heal for the boundary itself, then one
 // per configured retry.
-func (d *ProducerDatastore) insertUntilCovered(ctx context.Context, topicId int64, partitionSize int64, insert func() error) error {
+func (d *ProduceDatastore) insertUntilCovered(ctx context.Context, topicId int64, partitionSize int64, insert func() error) error {
 	for heals := 0; ; heals++ {
 		err := insert()
 		if !isMissingPartition(err) {
@@ -49,7 +49,7 @@ func (d *ProducerDatastore) insertUntilCovered(ctx context.Context, topicId int6
 // createNextIdPartition creates the partition the next id will land in.
 // can't use the passed id as that id is already likely burned from an
 // attempt in the sequence table.
-func (d *ProducerDatastore) createNextIdPartition(ctx context.Context, topicId int64, partitionSize int64) error {
+func (d *ProduceDatastore) createNextIdPartition(ctx context.Context, topicId int64, partitionSize int64) error {
 	lastValueSql := fmt.Sprintf(`
 		-- vulkan: produce.createNextIdPartition
 		SELECT last_value FROM %[1]s.%[2]s;
@@ -67,7 +67,7 @@ func (d *ProducerDatastore) createNextIdPartition(ctx context.Context, topicId i
 }
 
 // ensureCoveringPartition creates the partition that covers id.
-func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64, id int64) error {
+func (d *ProduceDatastore) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64, id int64) error {
 	next := id / partitionSize
 
 	createPartitionSql := fmt.Sprintf(`
@@ -124,7 +124,7 @@ func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId
 
 // createPartitionAhead creates the partition after id's early, in the
 // background. Best-effort: a failure warns and drops.
-func (d *ProducerDatastore) createPartitionAhead(topicId int64, partitionSize int64, id int64) {
+func (d *ProduceDatastore) createPartitionAhead(topicId int64, partitionSize int64, id int64) {
 	next := (id/partitionSize + 1) * partitionSize
 
 	go func() {

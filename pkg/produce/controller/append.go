@@ -37,7 +37,7 @@ func NewAppend[Message common.Versioned](payload *Message, options produce.Produ
 // AppendMessage appends one message in its own transaction, returning once it
 // is durably committed: produceFunc runs inside it and returns the payload to
 // store.
-func (c *ProducerController) AppendMessage[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], options produce.ProduceOptions) (*Appended[Message], error) {
+func (c *ProduceController) AppendMessage[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], options produce.ProduceOptions) (*Appended[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -59,7 +59,7 @@ func (c *ProducerController) AppendMessage[Message common.Versioned](ctx context
 
 // AppendMessageInTx appends produceFunc's message inside a transaction the
 // caller owns -- it commits or rolls back with everything else in tx.
-func (c *ProducerController) AppendMessageInTx[Message common.Versioned](ctx context.Context, tx iDatastore.Tx, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], options produce.ProduceOptions) (*Appended[Message], error) {
+func (c *ProduceController) AppendMessageInTx[Message common.Versioned](ctx context.Context, tx iDatastore.Tx, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], options produce.ProduceOptions) (*Appended[Message], error) {
 	if tx == nil {
 		return nil, errors.New("tx must not be nil")
 	}
@@ -84,7 +84,7 @@ func (c *ProducerController) AppendMessageInTx[Message common.Versioned](ctx con
 
 // AppendMessageBatch commits every append in one transaction. failedIdx is
 // the FIRST failure in pipeline order, -1 when the failure carries no index.
-func (c *ProducerController) AppendMessageBatch[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) ([]Appended[Message], int, error) {
+func (c *ProduceController) AppendMessageBatch[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) ([]Appended[Message], int, error) {
 	if topicId <= 0 {
 		return nil, -1, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}

@@ -40,11 +40,11 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
-	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
+	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -106,11 +106,11 @@ func run() (err error) {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)

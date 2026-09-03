@@ -24,7 +24,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -98,7 +98,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	step("seed 6 topics x 2 groups x 5 messages -- more topics than TopicConcurrency")
-	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	consumers, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 
 	topicNames := make([]string, 0, topicCount)

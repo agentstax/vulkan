@@ -24,8 +24,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -86,9 +86,9 @@ func run() (err error) {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	wpInstance, err := client.RegisterProducer[RankedRecord](ctx, tp.Name, nil)
 	must(err)
@@ -175,7 +175,7 @@ func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, arg
 	return v
 }
 
-func ids(msgs []messageconsumergroupcontroller.Message) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id

@@ -10,7 +10,7 @@ import (
 
 // GetGroup resolves a consumer group by its owning topic and name.
 // Returns (nil, nil) if the group is not registered on that topic.
-func (c *ConsumerGroupController) GetGroup(ctx context.Context, topicId int64, name string) (*consume.GroupData, error) {
+func (c *ConsumeController) GetGroup(ctx context.Context, topicId int64, name string) (*consume.GroupData, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -26,7 +26,7 @@ func (c *ConsumerGroupController) GetGroup(ctx context.Context, topicId int64, n
 }
 
 // ListGroups lists the topic's consumer groups, ordered by name.
-func (c *ConsumerGroupController) ListGroups(ctx context.Context, topicId int64) ([]*consume.GroupData, error) {
+func (c *ConsumeController) ListGroups(ctx context.Context, topicId int64) ([]*consume.GroupData, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -45,7 +45,7 @@ func (c *ConsumerGroupController) ListGroups(ctx context.Context, topicId int64)
 
 // RegisterGroup creates the group and its cursor at start; an existing group
 // is returned untouched, its position kept.
-func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int64, name string, start consume.CursorPosition) (*consume.GroupData, error) {
+func (c *ConsumeController) RegisterGroup(ctx context.Context, topicId int64, name string, start consume.CursorPosition) (*consume.GroupData, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -66,7 +66,7 @@ func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int
 // DeleteGroup deletes the group and every row it owns in one transaction.
 // A running consumer stops itself: its worker rows vanish with the group,
 // so its next heartbeat fails.
-func (c *ConsumerGroupController) DeleteGroup(ctx context.Context, topicId int64, groupId int64, name string) error {
+func (c *ConsumeController) DeleteGroup(ctx context.Context, topicId int64, groupId int64, name string) error {
 	if topicId <= 0 {
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}

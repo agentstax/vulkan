@@ -36,7 +36,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
@@ -703,7 +703,7 @@ func startScheduler(ctx context.Context) func() {
 // registerGroup creates the consumer group on the lab's target topic, bound
 // to the given schedule names (none = bindingless), and returns its id.
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
-	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	controller, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 	group, err := controller.RegisterGroup(ctx, target.Id, name, consume.Beginning())
 	must(err)

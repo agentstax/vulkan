@@ -11,7 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -35,7 +35,7 @@ type Consumer struct {
 	declared *ConsumerConfig
 
 	topicController *topiccontroller.TopicController
-	consumers       *consumergroupcontroller.ConsumerGroupController
+	consumers       *consumecontroller.ConsumeController
 	workers         *workercontroller.WorkerController
 	evaluators      []alert.Evaluator
 }
@@ -67,7 +67,7 @@ func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consume
 		return nil, err
 	}
 
-	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
+	consumers, err := consumecontroller.NewConsumeController(ds, &consumecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

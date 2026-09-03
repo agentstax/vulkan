@@ -5,7 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/consume/cursoradvancer"
 	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer"
-	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consume/janitor"
+	consumejanitor "github.com/agentstax/vulkan/pkg/consume/janitor"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
@@ -84,7 +84,7 @@ func (i *ConsumerInstance[Message]) newTopicProvisioners() ([]worker.Provisioner
 		return nil, err
 	}
 
-	consumerGroupJanitorProvisioner, err := consumergroupjanitor.NewJanitorProvisioner(i.ds, &consumergroupjanitor.JanitorConfig{
+	consumerGroupJanitorProvisioner, err := consumejanitor.NewJanitorProvisioner(i.ds, &consumejanitor.JanitorConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,
 	})

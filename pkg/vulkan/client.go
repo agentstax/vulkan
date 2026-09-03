@@ -12,7 +12,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
@@ -30,7 +30,7 @@ type Client struct {
 	admin     *admin.MessageAdmin
 	scheduler *scheduler.Scheduler
 	manager   *systemmanager.SystemManager
-	groups    *consumergroupcontroller.ConsumerGroupController
+	groups    *consumecontroller.ConsumeController
 	heads     *compactioncontroller.CompactionController
 }
 
@@ -85,7 +85,7 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, cfg *ClientConfig) (*Cli
 		return nil, err
 	}
 
-	groupController, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
+	groupController, err := consumecontroller.NewConsumeController(ds, &consumecontroller.ControllerConfig{
 		Logger: logger,
 		Retry:  cfg.Retry,
 	})

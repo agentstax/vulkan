@@ -9,7 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
-type ProducerDatastore struct {
+type ProduceDatastore struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *common.RetryDatastore // default Wrap classification covers everything except Commit -- classified inline at that call site
 	Logger         logging.Logger
@@ -20,12 +20,12 @@ type ProducerDatastore struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducerDatastore(ds *datastore.PostgresDatastore, cfg *ProducerDatastoreConfig) (*ProducerDatastore, error) {
+func NewProduceDatastore(ds *datastore.PostgresDatastore, cfg *ProduceDatastoreConfig) (*ProduceDatastore, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
 	if cfg == nil {
-		cfg = &ProducerDatastoreConfig{}
+		cfg = &ProduceDatastoreConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -48,7 +48,7 @@ func NewProducerDatastore(ds *datastore.PostgresDatastore, cfg *ProducerDatastor
 	createAheadTimeout := datastoreRetry.CalculateTotalDelay() +
 		time.Duration(datastoreRetry.MaxRetries)*createAheadAttemptAllowance
 
-	return &ProducerDatastore{
+	return &ProduceDatastore{
 		Datastore:          ds,
 		DatastoreRetry:     datastoreRetry,
 		Logger:             cfg.Logger,

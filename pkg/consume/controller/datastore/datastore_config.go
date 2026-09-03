@@ -8,12 +8,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/common/logging"
 )
 
-type ConsumerGroupDatastoreConfig struct {
+type ConsumeDatastoreConfig struct {
 	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this datastore's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 }
 
-func (c *ConsumerGroupDatastoreConfig) WithDefaults() *ConsumerGroupDatastoreConfig {
+func (c *ConsumeDatastoreConfig) WithDefaults() *ConsumeDatastoreConfig {
 	if c.Logger == nil {
 		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
@@ -24,7 +24,7 @@ func (c *ConsumerGroupDatastoreConfig) WithDefaults() *ConsumerGroupDatastoreCon
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *ConsumerGroupDatastoreConfig) Validate() error {
+func (c *ConsumeDatastoreConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}

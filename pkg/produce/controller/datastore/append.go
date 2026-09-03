@@ -12,7 +12,7 @@ import (
 // missing partition and retrying transient errors. The caller resolves
 // data.IdempotencyKey once, outside the retry -- that's what makes a retried
 // attempt safe after an ambiguous commit instead of a double-publish.
-func (d *ProducerDatastore) AppendMessage[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
+func (d *ProduceDatastore) AppendMessage[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
 	var appended *Appended[Message]
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -25,7 +25,7 @@ func (d *ProducerDatastore) AppendMessage[Message common.Versioned](ctx context.
 // appendMessage runs the append's transaction until a partition covers it.
 // Rerunning produceFunc is safe because its writes all go through the tx
 // that just rolled back.
-func (d *ProducerDatastore) appendMessage[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
+func (d *ProduceDatastore) appendMessage[Message common.Versioned](ctx context.Context, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
 	var appended *Appended[Message]
 	err := d.insertUntilCovered(ctx, topicId, partitionSize, func() error {
 		var err error
@@ -44,7 +44,7 @@ func (d *ProducerDatastore) appendMessage[Message common.Versioned](ctx context.
 
 // appendMessageTransaction opens the append's own transaction: produceFunc +
 // the claim-protected insert, committed together.
-func (d *ProducerDatastore) appendMessageTransaction[Message common.Versioned](ctx context.Context, topicId int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
+func (d *ProduceDatastore) appendMessageTransaction[Message common.Versioned](ctx context.Context, topicId int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
 	var appended *Appended[Message]
 
 	// the one genuinely ambiguous point -- a blip AT Commit loses the commit
@@ -67,7 +67,7 @@ func (d *ProducerDatastore) appendMessageTransaction[Message common.Versioned](c
 // (runInsertSavepoint), so the rerun can't undo an earlier target's insert
 // or rerun a caller side effect between calls. No transient retry: the tx
 // owns its own error handling.
-func (d *ProducerDatastore) AppendMessageInTx[Message common.Versioned](ctx context.Context, tx iDatastore.Tx, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
+func (d *ProduceDatastore) AppendMessageInTx[Message common.Versioned](ctx context.Context, tx iDatastore.Tx, topicId int64, partitionSize int64, produceFunc produce.ProducerFunc[Message], data *Append[Message]) (*Appended[Message], error) {
 	var appended *Appended[Message]
 	err := d.insertUntilCovered(ctx, topicId, partitionSize, func() error {
 		var err error

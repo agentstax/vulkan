@@ -6,8 +6,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
-	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consume/janitor"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumejanitor "github.com/agentstax/vulkan/pkg/consume/janitor"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
@@ -30,7 +30,7 @@ type MessageAdmin struct {
 	systemController   *systemcontroller.SystemController
 	topicController    *topiccontroller.TopicController
 	scheduleController *schedulecontroller.ScheduleController
-	consumerController *consumergroupcontroller.ConsumerGroupController
+	consumerController *consumecontroller.ConsumeController
 	scheduleProducer   *producer.Producer
 	scheduler          *scheduler.Scheduler
 	heads              *compactioncontroller.CompactionController
@@ -66,7 +66,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	consumerGroupJanitorProvisioner, err := consumergroupjanitor.NewJanitorProvisioner(ds, &consumergroupjanitor.JanitorConfig{
+	consumerGroupJanitorProvisioner, err := consumejanitor.NewJanitorProvisioner(ds, &consumejanitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -131,7 +131,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	consumerController, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
+	consumerController, err := consumecontroller.NewConsumeController(ds, &consumecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

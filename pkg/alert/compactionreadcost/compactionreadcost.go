@@ -7,7 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -25,7 +25,7 @@ type CompactionReadCostProvisioner struct {
 	ds               *iDatastore.PostgresDatastore
 	workers          *workercontroller.WorkerController
 	topics           *topiccontroller.TopicController
-	consumers        *consumergroupcontroller.ConsumerGroupController
+	consumers        *consumecontroller.ConsumeController
 	controller       *controller.CompactionReadCostController
 	producer         *producer.Producer
 	alertHeads       *compactioncontroller.CompactionController
@@ -64,7 +64,7 @@ func NewCompactionReadCostProvisioner(ds *iDatastore.PostgresDatastore, cfg *Com
 		return nil, err
 	}
 
-	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
+	consumers, err := consumecontroller.NewConsumeController(ds, &consumecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

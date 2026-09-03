@@ -34,7 +34,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consume/base/controller"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
@@ -98,7 +98,7 @@ func run() (err error) {
 	must(err)
 	topicId = tp.Id
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 	keyLeases, err := keyleasecontroller.NewKeyLeaseController(ds, nil)
 	must(err)

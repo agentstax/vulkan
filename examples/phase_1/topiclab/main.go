@@ -33,9 +33,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
@@ -102,9 +102,9 @@ func run() (err error) {
 		}
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
@@ -317,7 +317,7 @@ func partitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId i
 	return got
 }
 
-func ids(msgs []messageconsumergroupcontroller.Message) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id

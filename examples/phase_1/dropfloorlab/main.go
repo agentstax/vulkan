@@ -32,8 +32,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
@@ -96,9 +96,9 @@ func run() (err error) {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
@@ -184,7 +184,7 @@ func createPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 	must(err)
 }
 
-func reset(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
+func reset(ctx context.Context, cd *consumecontroller.ConsumeController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
 	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group, consume.Beginning()))
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ClaimLeaseTable(topicId)), groupId)
 	must(err)
@@ -200,7 +200,7 @@ func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId in
 	must(err)
 }
 
-func freshClaim(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, topicId int64, group string, limit int) *messageconsumergroupcontroller.ClaimedRange {
+func freshClaim(ctx context.Context, cd *messageconsumercontroller.MessageConsumerGroupController, topicId int64, group string, limit int) *messageconsumercontroller.ClaimedRange {
 	claim, err := cd.ClaimMessagesWithCursor(ctx, topicId, groupId, 1, limit, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {

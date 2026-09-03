@@ -8,15 +8,15 @@ import (
 	"github.com/agentstax/vulkan/pkg/produce/controller/datastore"
 )
 
-type ProducerController struct {
+type ProduceController struct {
 	Logger logging.Logger
 
-	datastore *datastore.ProducerDatastore
+	datastore *datastore.ProduceDatastore
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*ProducerController, error) {
+func NewProduceController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*ProduceController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -28,7 +28,7 @@ func NewProducerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConf
 		return nil, err
 	}
 
-	producerDatastore, err := datastore.NewProducerDatastore(ds, &datastore.ProducerDatastoreConfig{
+	produceDatastore, err := datastore.NewProduceDatastore(ds, &datastore.ProduceDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -36,8 +36,8 @@ func NewProducerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConf
 		return nil, err
 	}
 
-	return &ProducerController{
+	return &ProduceController{
 		Logger:    cfg.Logger,
-		datastore: producerDatastore,
+		datastore: produceDatastore,
 	}, nil
 }

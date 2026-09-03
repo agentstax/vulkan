@@ -23,23 +23,23 @@ type ProducerInstance[Message common.Versioned] struct {
 	Topic  *topic.TopicData
 	Config *ProducerConfig
 
-	controller *controller.ProducerController
+	controller *controller.ProduceController
 	batcher    *batcher.Batcher[Message]
 }
 
 // cfg is already resolved (WithDefaults + Validate) by NewProducer.
-func NewProducerInstance[Message common.Versioned](resolvedTopic *topic.TopicData, producerController *controller.ProducerController, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
+func NewProducerInstance[Message common.Versioned](resolvedTopic *topic.TopicData, produceController *controller.ProduceController, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
 	if resolvedTopic == nil {
 		return nil, errors.New("topic must not be nil")
 	}
-	if producerController == nil {
+	if produceController == nil {
 		return nil, errors.New("controller must not be nil")
 	}
 	if cfg == nil {
 		return nil, errors.New("config must not be nil")
 	}
 
-	topicBatcher, err := batcher.NewBatcher[Message](producerController, resolvedTopic.Id, resolvedTopic.PartitionSize, &cfg.Batch)
+	topicBatcher, err := batcher.NewBatcher[Message](produceController, resolvedTopic.Id, resolvedTopic.PartitionSize, &cfg.Batch)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func NewProducerInstance[Message common.Versioned](resolvedTopic *topic.TopicDat
 	return &ProducerInstance[Message]{
 		Topic:      resolvedTopic,
 		Config:     cfg,
-		controller: producerController,
+		controller: produceController,
 		batcher:    topicBatcher,
 	}, nil
 }

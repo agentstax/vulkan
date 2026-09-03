@@ -28,10 +28,10 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
-	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -87,11 +87,11 @@ func run() (err error) {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	deliveryConsumers, err := deliveryconsumergroupcontroller.NewDeliveryConsumerGroupController(ds, nil)
+	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -184,7 +184,7 @@ func publish(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Wor
 // resets all three groups to a clean slate and fast-forwards their cursors to
 // the current log head, so a fresh CURSOR claim only ever sees messages this
 // lab itself publishes.
-func reset(ctx context.Context, ds *iDatastore.PostgresDatastore, cd *consumergroupcontroller.ConsumerGroupController, topicId int64, groups ...string) (int64, map[string]int64) {
+func reset(ctx context.Context, ds *iDatastore.PostgresDatastore, cd *consumecontroller.ConsumeController, topicId int64, groups ...string) (int64, map[string]int64) {
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId)))
 	gids := map[string]int64{}
 	for _, g := range groups {
@@ -217,7 +217,7 @@ func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, arg
 	return v
 }
 
-func ids(msgs []messageconsumergroupcontroller.Message) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id
@@ -225,7 +225,7 @@ func ids(msgs []messageconsumergroupcontroller.Message) []int64 {
 	return out
 }
 
-func deliveryIDs(rows []deliveryconsumergroupcontroller.Delivery) []int64 {
+func deliveryIDs(rows []deliveryconsumercontroller.Delivery) []int64 {
 	out := make([]int64, len(rows))
 	for i, r := range rows {
 		out[i] = r.MessageId

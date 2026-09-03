@@ -17,7 +17,7 @@ import (
 type Batcher[Message common.Versioned] struct {
 	Config *BatcherConfig
 
-	controller    *controller.ProducerController
+	controller    *controller.ProduceController
 	topicId       int64
 	partitionSize int64
 
@@ -26,8 +26,8 @@ type Batcher[Message common.Versioned] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewBatcher[Message common.Versioned](producerController *controller.ProducerController, topicId int64, partitionSize int64, cfg *BatcherConfig) (*Batcher[Message], error) {
-	if producerController == nil {
+func NewBatcher[Message common.Versioned](produceController *controller.ProduceController, topicId int64, partitionSize int64, cfg *BatcherConfig) (*Batcher[Message], error) {
+	if produceController == nil {
 		return nil, errors.New("controller must not be nil")
 	}
 	if topicId <= 0 {
@@ -43,7 +43,7 @@ func NewBatcher[Message common.Versioned](producerController *controller.Produce
 
 	return &Batcher[Message]{
 		Config:        cfg,
-		controller:    producerController,
+		controller:    produceController,
 		topicId:       topicId,
 		partitionSize: partitionSize,
 	}, nil

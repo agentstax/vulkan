@@ -20,7 +20,7 @@ type Producer struct {
 	Config *ProducerConfig
 	Logger logging.Logger
 
-	controller      *controller.ProducerController
+	controller      *controller.ProduceController
 	topicController *topiccontroller.TopicController
 	evaluators      []alert.Evaluator
 }
@@ -41,7 +41,7 @@ func NewProducer(ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Produc
 
 	cfg.Logger = logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Buffer: true, Suppress: true})
 
-	producerController, err := controller.NewProducerController(ds, &controller.ControllerConfig{
+	produceController, err := controller.NewProduceController(ds, &controller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -83,7 +83,7 @@ func NewProducer(ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Produc
 	return &Producer{
 		Config:          cfg,
 		Logger:          cfg.Logger,
-		controller:      producerController,
+		controller:      produceController,
 		topicController: topicController,
 		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController, workerLivenessController},
 	}, nil

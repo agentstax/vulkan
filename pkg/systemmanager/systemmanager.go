@@ -11,7 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consume/cursoradvancer"
-	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consume/janitor"
+	consumejanitor "github.com/agentstax/vulkan/pkg/consume/janitor"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
@@ -59,7 +59,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	consumerGroupJanitorProvisioner, err := consumergroupjanitor.NewJanitorProvisioner(ds, &consumergroupjanitor.JanitorConfig{
+	consumerGroupJanitorProvisioner, err := consumejanitor.NewJanitorProvisioner(ds, &consumejanitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

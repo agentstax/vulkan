@@ -24,9 +24,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
-	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -75,11 +75,11 @@ func run() (err error) {
 	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	deliveryConsumers, err := deliveryconsumergroupcontroller.NewDeliveryConsumerGroupController(ds, nil)
+	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerGroupController(ds, nil)
 	must(err)
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)

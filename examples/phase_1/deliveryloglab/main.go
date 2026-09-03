@@ -38,9 +38,9 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
-	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
@@ -125,7 +125,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, pool *pgxpool.Pool) {
 	}
 	failingId, successId := claim.Messages[0].Id, claim.Messages[1].Id
 
-	exceptions := []messageconsumergroupcontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumergroupcontroller.OutcomeException, Err: "simulated processing failure"}}
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "simulated processing failure"}}
 	must(cd.Commit(ctx, tp.Id, groupId, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DeliveryLogMode))
 
 	assertDeliveryLogRow(ctx, ds, tp.Id, groupId, failingId, 0, "simulated processing failure", true)
@@ -142,7 +142,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, pool *pgxpool.Pool) {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds := client.Datastore()
-	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
 
 	defer func() {
@@ -157,7 +157,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, pool *pgxpool.Pool) {
 	}
 	failingId := claim.Messages[0].Id
 
-	exceptions := []messageconsumergroupcontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumergroupcontroller.OutcomeException, Err: "attempt 0 failure"}}
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "attempt 0 failure"}}
 	must(cd.Commit(ctx, tp.Id, groupId, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DeliveryLogMode))
 	assertDeliveryLogRow(ctx, ds, tp.Id, groupId, failingId, 0, "attempt 0 failure", true)
 
@@ -203,7 +203,7 @@ func scenarioDeliveryLogOff(ctx context.Context, pool *pgxpool.Pool) {
 		die("expected a fresh claim")
 	}
 	failingId := claim.Messages[0].Id
-	exceptions := []messageconsumergroupcontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumergroupcontroller.OutcomeException, Err: "should never be logged"}}
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "should never be logged"}}
 	must(cd.Commit(ctx, tp.Id, groupId, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DeliveryLogMode))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupId, failingId, 0) // the failure was never logged
@@ -220,7 +220,7 @@ func scenarioDeliveryLogAll(ctx context.Context, pool *pgxpool.Pool) {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds := client.Datastore()
-	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
 
 	defer func() {
@@ -238,9 +238,9 @@ func scenarioDeliveryLogAll(ctx context.Context, pool *pgxpool.Pool) {
 	// one failure and one success in the same Commit -- the success rides the
 	// outcome list as OutcomeSuccess, the shape the consumer runner uses
 	// under this mode
-	outcomes := []messageconsumergroupcontroller.MessageOutcome{
-		{MessageId: failingId, Kind: messageconsumergroupcontroller.OutcomeException, Err: "scenario 4 failure"},
-		{MessageId: successId, Kind: messageconsumergroupcontroller.OutcomeSuccess},
+	outcomes := []messageconsumercontroller.MessageOutcome{
+		{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "scenario 4 failure"},
+		{MessageId: successId, Kind: messageconsumercontroller.OutcomeSuccess},
 	}
 	must(cd.Commit(ctx, tp.Id, groupId, claim.Lease.Token, outcomes, 300*time.Millisecond, tp.DeliveryLogMode))
 
@@ -331,7 +331,7 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, pool *pgxpool.Pool) {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds := client.Datastore()
-	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
 
 	defer func() {
@@ -367,7 +367,7 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, pool *pgxpool.Pool) {
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan.TopicConfig) (*topic.TopicData, *messageconsumergroupcontroller.MessageConsumerGroupController, *vulkan.ProducerInstance[common.Work], int64) {
+func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan.TopicConfig) (*topic.TopicData, *messageconsumercontroller.MessageConsumerGroupController, *vulkan.ProducerInstance[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
@@ -376,10 +376,10 @@ func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan
 	tp, err := client.RegisterTopic(ctx, name, &cfg)
 	must(err)
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
-	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
 	must(err)
@@ -398,7 +398,7 @@ func seed(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work],
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, wpInstance *vulkan.ProducerInstance[common.Work], tp *topic.TopicData, groupId int64, n int) int64 {
+func failOne(ctx context.Context, cd *messageconsumercontroller.MessageConsumerGroupController, wpInstance *vulkan.ProducerInstance[common.Work], tp *topic.TopicData, groupId int64, n int) int64 {
 	seed(ctx, wpInstance, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, n, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
@@ -406,7 +406,7 @@ func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageCons
 		die("expected a fresh claim")
 	}
 	failingId := claim.Messages[0].Id
-	exceptions := []messageconsumergroupcontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumergroupcontroller.OutcomeException, Err: "retention scenario failure"}}
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "retention scenario failure"}}
 	must(cd.Commit(ctx, tp.Id, groupId, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DeliveryLogMode))
 	return failingId
 }

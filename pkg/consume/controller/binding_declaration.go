@@ -17,7 +17,7 @@ import (
 // whole topic, '*' in a pattern matches any run of characters.
 // declaredAt is when the declarer first stated the set, fixed across its
 // retries; callers retry on BindingWaiting.
-func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredAt time.Time) (consume.BindingOutcome, error) {
+func (c *ConsumeController) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredAt time.Time) (consume.BindingOutcome, error) {
 	if topicId <= 0 {
 		return "", fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -37,7 +37,7 @@ func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, topicId i
 
 // ListBindingDeclarations returns every group's effective declaration followed by
 // its still-waiting declarers, ordered by topic then group.
-func (c *ConsumerGroupController) ListBindingDeclarations(ctx context.Context) ([]*consume.BindingDeclaration, error) {
+func (c *ConsumeController) ListBindingDeclarations(ctx context.Context) ([]*consume.BindingDeclaration, error) {
 	data, err := c.datastore.ListBindingLog(ctx)
 	if err != nil {
 		return nil, err

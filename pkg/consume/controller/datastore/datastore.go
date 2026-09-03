@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
-type ConsumerGroupDatastore struct {
+type ConsumeDatastore struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *common.RetryDatastore
 	Logger         logging.Logger
@@ -16,12 +16,12 @@ type ConsumerGroupDatastore struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewConsumerGroupDatastore(ds *datastore.PostgresDatastore, cfg *ConsumerGroupDatastoreConfig) (*ConsumerGroupDatastore, error) {
+func NewConsumeDatastore(ds *datastore.PostgresDatastore, cfg *ConsumeDatastoreConfig) (*ConsumeDatastore, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
 	if cfg == nil {
-		cfg = &ConsumerGroupDatastoreConfig{}
+		cfg = &ConsumeDatastoreConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -33,7 +33,7 @@ func NewConsumerGroupDatastore(ds *datastore.PostgresDatastore, cfg *ConsumerGro
 		return nil, err
 	}
 
-	return &ConsumerGroupDatastore{
+	return &ConsumeDatastore{
 		Datastore:      ds,
 		DatastoreRetry: datastoreRetry,
 		Logger:         cfg.Logger,

@@ -33,7 +33,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -84,7 +84,7 @@ func run() (err error) {
 	must(err)
 	ds := client.Datastore()
 
-	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	cd, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 
 	suffix := time.Now().UnixNano()
@@ -217,7 +217,7 @@ func run() (err error) {
 	return nil
 }
 
-func destroySection(ctx context.Context, pool *pgxpool.Pool, client *vulkan.Client, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.TopicData, suffix int64) {
+func destroySection(ctx context.Context, pool *pgxpool.Pool, client *vulkan.Client, cd *consumecontroller.ConsumeController, topicA *topic.TopicData, suffix int64) {
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)

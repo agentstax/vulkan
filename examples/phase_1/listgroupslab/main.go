@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
@@ -60,7 +60,7 @@ func run() (err error) {
 	registered, err := client.RegisterTopic(ctx, name, nil)
 	must(err)
 
-	groupController, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	groupController, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 
 	step("seed two groups on the topic")

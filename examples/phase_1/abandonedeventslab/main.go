@@ -12,7 +12,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
@@ -91,7 +91,7 @@ func run() (err error) {
 		Message:            &iCommon.MessageOptions{Timeout: 300 * time.Millisecond},
 		TimeoutGrace:       50 * time.Millisecond,
 	}
-	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	consumerDatastore, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consume.Beginning())
 	must(err)

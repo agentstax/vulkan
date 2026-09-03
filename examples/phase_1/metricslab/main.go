@@ -28,7 +28,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumermessage "github.com/agentstax/vulkan/pkg/consume"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
@@ -112,7 +112,7 @@ func run() (err error) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
+	consumerDatastore, err := consumecontroller.NewConsumeController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consumermessage.Beginning())
 	must(err)
