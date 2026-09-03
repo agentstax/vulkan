@@ -150,7 +150,7 @@ func (m *Metrics) newInstrument(measurement *metrics.Measurement) (metric.Float6
 	unit := metric.WithUnit(string(measurement.Unit))
 	declared, ok := diagnostic.GetMetric(measurement.Name)
 
-	if measurement.Kind == metrics.KindCounter {
+	if measurement.Kind == metrics.MetricKindCounter {
 		if ok {
 			return m.meter.Float64ObservableCounter(measurement.Name, unit, metric.WithDescription(declared.Description))
 		}

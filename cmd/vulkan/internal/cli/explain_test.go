@@ -8,14 +8,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 )
 
-var errTestTopicMissing = diagnostic.NewError("VK9803", diagnostic.Permanent,
+var errTestTopicMissing = diagnostic.NewDiagnosticError("VK9803", diagnostic.RecoveryPermanent,
 	"test topic not found", "register it first").
 	Diagnose(
-		diagnostic.NewQuery("the topic rows registered under that name", `
+		diagnostic.NewDiagnosticQuery("the topic rows registered under that name", `
 SELECT id
 FROM topic
 WHERE name = '{topic}';`),
-		diagnostic.NewQuery("the migration steps this database recorded", `
+		diagnostic.NewDiagnosticQuery("the migration steps this database recorded", `
 SELECT migration_version
 FROM migration_log;`),
 	)
@@ -39,8 +39,8 @@ func TestRenderDiagnoseQueriesNamesEveryValueOnce(t *testing.T) {
 
 func TestRenderDiagnoseQueriesDropsTheSubstitutionLineWithNothingToFillIn(t *testing.T) {
 	var builder strings.Builder
-	renderDiagnoseQueries(&builder, []*diagnostic.Query{
-		diagnostic.NewQuery("every registered topic", "SELECT name FROM topic_config;"),
+	renderDiagnoseQueries(&builder, []*diagnostic.DiagnosticQuery{
+		diagnostic.NewDiagnosticQuery("every registered topic", "SELECT name FROM topic_config;"),
 	})
 
 	want := "\ndiagnose:\n" +

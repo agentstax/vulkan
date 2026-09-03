@@ -3,10 +3,8 @@ package admin
 import (
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
-	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
-	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
-	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
+	"github.com/agentstax/vulkan/pkg/alert"
+	"github.com/agentstax/vulkan/pkg/system"
 )
 
 // RegisterSystemConfig is RegisterSystem's spec -- the system's own settings
@@ -15,37 +13,37 @@ import (
 type RegisterSystemConfig struct {
 	// System - the control-plane settings scoped to no single topic.
 	// Default: SystemConfig's own defaults.
-	System *systemcontroller.SystemConfig
+	System *system.SystemConfig
 
 	// PartitionCount - the schedule the partition_count alert is evaluated on.
-	// Default: JobConfig's own defaults.
-	PartitionCount *partitioncount.JobConfig
+	// Default: its own defaults.
+	PartitionCount *alert.PartitionCountJobConfig
 
 	// CompactionReadCost - the schedule the compaction_read_cost alert is
 	// evaluated on.
-	// Default: JobConfig's own defaults.
-	CompactionReadCost *compactionreadcost.JobConfig
+	// Default: its own defaults.
+	CompactionReadCost *alert.CompactionReadCostJobConfig
 
 	// WorkerLiveness - the schedule the worker_liveness alert is evaluated on.
-	// Default: JobConfig's own defaults.
-	WorkerLiveness *workerliveness.JobConfig
+	// Default: its own defaults.
+	WorkerLiveness *alert.WorkerLivenessJobConfig
 }
 
 func (c *RegisterSystemConfig) WithDefaults() *RegisterSystemConfig {
 	if c.System == nil {
-		c.System = &systemcontroller.SystemConfig{}
+		c.System = &system.SystemConfig{}
 	}
 	c.System.WithDefaults()
 	if c.PartitionCount == nil {
-		c.PartitionCount = &partitioncount.JobConfig{}
+		c.PartitionCount = &alert.PartitionCountJobConfig{}
 	}
 	c.PartitionCount.WithDefaults()
 	if c.CompactionReadCost == nil {
-		c.CompactionReadCost = &compactionreadcost.JobConfig{}
+		c.CompactionReadCost = &alert.CompactionReadCostJobConfig{}
 	}
 	c.CompactionReadCost.WithDefaults()
 	if c.WorkerLiveness == nil {
-		c.WorkerLiveness = &workerliveness.JobConfig{}
+		c.WorkerLiveness = &alert.WorkerLivenessJobConfig{}
 	}
 	c.WorkerLiveness.WithDefaults()
 	return c

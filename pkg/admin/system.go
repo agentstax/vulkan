@@ -35,6 +35,19 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 		return err
 	}
 
+	// the built-in schedules are parsed before the first write
+	partitionCountJob, err := partitioncount.NewJob(cfg.PartitionCount)
+	if err != nil {
+		return err
+	}
+	compactionReadCostJob, err := compactionreadcost.NewJob(cfg.CompactionReadCost)
+	if err != nil {
+		return err
+	}
+	workerLivenessJob, err := workerliveness.NewJob(cfg.WorkerLiveness)
+	if err != nil {
+		return err
+	}
 	registered, err := a.systemController.Register(ctx, cfg.System)
 	if err != nil {
 		return err
@@ -51,18 +64,6 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 		return err
 	}
 
-	partitionCountJob, err := partitioncount.NewJob(cfg.PartitionCount)
-	if err != nil {
-		return err
-	}
-	compactionReadCostJob, err := compactionreadcost.NewJob(cfg.CompactionReadCost)
-	if err != nil {
-		return err
-	}
-	workerLivenessJob, err := workerliveness.NewJob(cfg.WorkerLiveness)
-	if err != nil {
-		return err
-	}
 	for _, job := range []*alertcontroller.Job{partitionCountJob, compactionReadCostJob, workerLivenessJob} {
 		if _, err := a.scheduler.Register[alert.JobPayload](ctx, job.Spec, job.Payload, job.Config); err != nil {
 			return err

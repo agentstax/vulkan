@@ -24,7 +24,7 @@ func newCompactionReadCostAlert(owner *common.Owner, count int64, threshold int6
 		"partition_count": count,
 		"threshold":       threshold,
 	}
-	return alert.NewAlert(AlertCompactionReadCost, owner, alert.StatusActive, alert.SeverityWarn, message, &alert.AlertOptions{
+	return alert.NewAlert(AlertCompactionReadCost, owner, alert.AlertStatusActive, alert.AlertSeverityWarn, message, &alert.AlertOptions{
 		Detail: detail,
 		Hint:   hint,
 		Data:   data,

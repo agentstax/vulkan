@@ -101,10 +101,21 @@ func (c *Client) Datastore() *datastore.PostgresDatastore {
 // RegisterConsumer resolves the named topic and registers the consumer
 // group on it, returning an instance that consumes Message from it.
 // cfg is the group's declaration -- nil or sparse for the defaults, with
-// cfg.Bindings the group's full pattern set (nil = the whole topic).
+// cfg.Bindings the group's full pattern set (nil = the whole topic). A
+// Logger or Retry left nil takes the client's.
 // ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
 func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consumerGroup string, topicName string, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
-	messageConsumer, err := consumer.NewConsumer(c.ds, toConsumerConfig(cfg, c.Config.Retry, c.Logger))
+	if cfg == nil {
+		cfg = &ConsumerConfig{}
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = c.Logger
+	}
+	if cfg.Retry == nil {
+		cfg.Retry = c.Config.Retry
+	}
+
+	messageConsumer, err := consumer.NewConsumer(c.ds, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -117,13 +128,29 @@ func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consum
 }
 
 // RegisterProducer resolves the named topic and returns an instance that
-// produces Message to it. cfg may be nil or a sparse struct.
+// produces Message to it. cfg may be nil or a sparse struct; a Logger or
+// Retry left nil takes the client's.
 func (c *Client) RegisterProducer[Message Versioned](ctx context.Context, topicName string, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
-	messageProducer, err := producer.NewProducer(c.ds, toProducerConfig(cfg, c.Config.Retry, c.Logger))
+	if cfg == nil {
+		cfg = &ProducerConfig{}
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = c.Logger
+	}
+	if cfg.Retry == nil {
+		cfg.Retry = c.Config.Retry
+	}
+
+	messageProducer, err := producer.NewProducer(c.ds, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return messageProducer.Register[Message](ctx, topicName)
+
+	instance, err := messageProducer.Register[Message](ctx, topicName)
+	if err != nil {
+		return nil, err
+	}
+	return newProducerInstance(instance)
 }
 
 // RegisterSchedule declares the schedule spec names on its target topic and
@@ -181,4 +208,16 @@ func (c *Client) MigrateTopics(ctx context.Context, targetVersion int64) error {
 // N-way -- the row admits one reconcile loop at a time.
 func (c *Client) RunManager(ctx context.Context) error {
 	return c.manager.Run(ctx)
+}
+
+// InTransaction opens one transaction, runs transactionFunc against it, and
+// commits -- the way to publish to multiple targets atomically via ProduceInTx.
+//
+// It does not retry -- a transient blip or an ambiguous commit failure
+// surfaces to you as-is. Wrap your own retry loop around it if you want one;
+// only you know what's safe to rerun in your closure. Rerunning the whole
+// closure is dedup-safe ONLY under caller-supplied IdempotencyKeys -- unset
+// keys mint fresh per call, so a rerun double-publishes.
+func (c *Client) InTransaction(ctx context.Context, transactionFunc TransactionFunc) error {
+	return datastore.InTransaction(ctx, c.ds, transactionFunc)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
+	"github.com/agentstax/vulkan/pkg/system"
 	topicjanitor "github.com/agentstax/vulkan/pkg/topic/janitor"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
@@ -172,8 +173,8 @@ func (s *SystemManager) Run(ctx context.Context) error {
 		jitter := 1 + s.Config.JitterFraction*(2*rand.Float64()-1)
 		delay := time.Duration(float64(s.Config.RunRetry.CalculateDelay(min(attempt, s.Config.RunRetry.MaxRetries))) * jitter)
 		if err != nil {
-			s.Logger.ErrorContext(ctx, eventSystemManagerStopped.Message,
-				"code", eventSystemManagerStopped.Code,
+			s.Logger.ErrorContext(ctx, system.EventSystemManagerStopped.Message,
+				"code", system.EventSystemManagerStopped.Code,
 				"attempt", attempt+1,
 				"delay", delay,
 				"error", err)

@@ -13,16 +13,16 @@ const docsBaseURL = "https://vulkan-5ss.pages.dev/errors/"
 // kind's own lister (Errors, Events).
 type Declaration interface {
 	GetCode() string
-	GetKind() Kind
+	GetKind() DiagnosticKind
 }
 
-// Kind names a Declaration's kind.
-type Kind string
+// DiagnosticKind names a Declaration's kind.
+type DiagnosticKind string
 
 const (
-	KindError  Kind = "error"
-	KindEvent  Kind = "event"
-	KindMetric Kind = "metric"
+	DiagnosticKindError  DiagnosticKind = "error"
+	DiagnosticKindEvent  DiagnosticKind = "event"
+	DiagnosticKindMetric DiagnosticKind = "metric"
 )
 
 // The VK code registry: every declaration kind shares one serial space, so

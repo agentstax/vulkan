@@ -14,7 +14,7 @@ const (
 	minRateHorizon        = 400 * 24 * time.Hour
 )
 
-type Expression struct {
+type ScheduleExpression struct {
 	// the parsed form can't turn back into text -- this is what schedule stores
 	expr     string
 	schedule robfig.Schedule
@@ -26,7 +26,7 @@ type Expression struct {
 //   - spec: "30 4 * * 1" -- 04:30 every Monday
 //   - descriptor: "@hourly", "@every 90m"
 //   - zoned: "TZ=America/New_York 0 9 * * *" -- 09:00 New York time
-func ParseExpression(expr string) (*Expression, error) {
+func ParseExpression(expr string) (*ScheduleExpression, error) {
 	schedule, err := robfig.ParseStandard(expr)
 	if err != nil {
 		return nil, err
@@ -38,22 +38,22 @@ func ParseExpression(expr string) (*Expression, error) {
 	if rate < time.Minute {
 		return nil, fmt.Errorf("expression %q recurs every %v -- more often than the 1m schedule producer resolution", expr, rate)
 	}
-	return &Expression{expr: expr, schedule: schedule, minRate: rate}, nil
+	return &ScheduleExpression{expr: expr, schedule: schedule, minRate: rate}, nil
 }
 
 // Next is the next scheduled time strictly after the given time; zero = none remains.
-func (s *Expression) Next(after time.Time) time.Time {
+func (s *ScheduleExpression) Next(after time.Time) time.Time {
 	return s.schedule.Next(after)
 }
 
-func (s *Expression) String() string {
+func (s *ScheduleExpression) String() string {
 	return s.expr
 }
 
 // MinRate is the shortest gap between consecutive scheduled times over the
 // next 1000 scheduled times or 400 days.
 // Fewer than two scheduled times in that window (Feb-29-style) -> math.MaxInt64.
-func (s *Expression) MinRate() time.Duration {
+func (s *ScheduleExpression) MinRate() time.Duration {
 	return s.minRate
 }
 

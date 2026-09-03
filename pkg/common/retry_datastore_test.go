@@ -14,9 +14,9 @@ import (
 )
 
 var (
-	errTestConnection = diagnostic.NewError("VK9905", diagnostic.Transient,
+	errTestConnection = diagnostic.NewDiagnosticError("VK9905", diagnostic.RecoveryTransient,
 		"could not reach the test database", "")
-	errTestTopicMissing = diagnostic.NewError("VK9906", diagnostic.Permanent,
+	errTestTopicMissing = diagnostic.NewDiagnosticError("VK9906", diagnostic.RecoveryPermanent,
 		"test topic not found", "")
 )
 

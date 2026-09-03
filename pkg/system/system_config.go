@@ -1,4 +1,4 @@
-package controller
+package system
 
 // SystemConfig is Register's spec -- control-plane settings scoped to no
 // single topic. No settings exist today; the surface stays for future

@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -57,7 +58,7 @@ func (d *MigrateDatastore) runStep(ctx context.Context, conn *pgxpool.Conn, owne
 
 	err := d.runStepWithTx(ctx, conn, owner, step)
 	if isLockNotAvailable(err) {
-		return errStepLockTimeout.With("version", step.Version).Wrap(err)
+		return migrate.ErrStepLockTimeout.With("version", step.Version).Wrap(err)
 	}
 	return err
 }

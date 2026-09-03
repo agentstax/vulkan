@@ -10,7 +10,7 @@ import (
 // classify compares the alert a run built (nil when it built none) against
 // the compaction head it last published, and returns what to publish now.
 func classify(found *alert.Alert, head *common.MessageData[alert.Alert], repeat time.Duration, now time.Time) (*alert.Alert, error) {
-	activeHead := head != nil && head.Message.Status == alert.StatusActive
+	activeHead := head != nil && head.Message.Status == alert.AlertStatusActive
 
 	if found != nil {
 		switch {
@@ -30,7 +30,7 @@ func classify(found *alert.Alert, head *common.MessageData[alert.Alert], repeat 
 
 	// no new alert, head (previous) still active        -> publish the head resolved
 	if activeHead {
-		return alert.NewAlert(head.Message.Name, head.Message.Owner, alert.StatusResolved, head.Message.Severity, "resolved: "+head.Message.Message, nil)
+		return alert.NewAlert(head.Message.Name, head.Message.Owner, alert.AlertStatusResolved, head.Message.Severity, "resolved: "+head.Message.Message, nil)
 	}
 	return nil, nil
 }

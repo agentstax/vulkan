@@ -16,7 +16,7 @@ type Export struct {
 // NewExport builds the export from the three registry listers. Passing them
 // in rather than reading the registry directly is what lets a test declare
 // its own.
-func NewExport(errors []*diagnostic.Error, events []*diagnostic.Event, metrics []*diagnostic.Metric) (*Export, error) {
+func NewExport(errors []*diagnostic.DiagnosticError, events []*diagnostic.DiagnosticEvent, metrics []*diagnostic.DiagnosticMetric) (*Export, error) {
 	codes := make(map[string]CodeRecord, len(errors)+len(events)+len(metrics))
 
 	for _, declared := range errors {
@@ -59,10 +59,10 @@ type CodeRecord struct {
 	Queries []QueryRecord `json:"queries,omitempty"`
 }
 
-func newErrorRecord(declared *diagnostic.Error) CodeRecord {
+func newErrorRecord(declared *diagnostic.DiagnosticError) CodeRecord {
 	return CodeRecord{
 		Code:            declared.Code,
-		Kind:            string(diagnostic.KindError),
+		Kind:            string(diagnostic.DiagnosticKindError),
 		Problem:         declared.Problem,
 		Recovery:        string(declared.Recovery),
 		Fix:             declared.Fix,
@@ -71,19 +71,19 @@ func newErrorRecord(declared *diagnostic.Error) CodeRecord {
 	}
 }
 
-func newEventRecord(declared *diagnostic.Event) CodeRecord {
+func newEventRecord(declared *diagnostic.DiagnosticEvent) CodeRecord {
 	return CodeRecord{
 		Code:    declared.Code,
-		Kind:    string(diagnostic.KindEvent),
+		Kind:    string(diagnostic.DiagnosticKindEvent),
 		Message: declared.Message,
 		Queries: newQueryRecords(declared.Queries),
 	}
 }
 
-func newMetricRecord(declared *diagnostic.Metric) CodeRecord {
+func newMetricRecord(declared *diagnostic.DiagnosticMetric) CodeRecord {
 	return CodeRecord{
 		Code:        declared.Code,
-		Kind:        string(diagnostic.KindMetric),
+		Kind:        string(diagnostic.DiagnosticKindMetric),
 		Name:        declared.Name,
 		MetricKind:  declared.Kind,
 		Unit:        declared.Unit,
@@ -100,7 +100,7 @@ type QueryRecord struct {
 	Placeholders []string `json:"placeholders"`
 }
 
-func newQueryRecords(queries []*diagnostic.Query) []QueryRecord {
+func newQueryRecords(queries []*diagnostic.DiagnosticQuery) []QueryRecord {
 	records := make([]QueryRecord, 0, len(queries))
 	for _, query := range queries {
 		records = append(records, QueryRecord{

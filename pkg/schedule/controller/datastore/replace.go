@@ -47,7 +47,7 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleCo
 		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, schedule.ErrDeclarationInterrupted.With("schedule", found.Name)
+		return nil, schedule.ErrScheduleDeclarationInterrupted.With("schedule", found.Name)
 	}
 
 	if next != nil {
@@ -65,7 +65,7 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleCo
 		return nil, err
 	}
 	if updated == nil {
-		return nil, schedule.ErrDeclarationInterrupted.With("schedule", found.Name)
+		return nil, schedule.ErrScheduleDeclarationInterrupted.With("schedule", found.Name)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

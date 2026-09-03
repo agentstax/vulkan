@@ -152,7 +152,7 @@ func literalNames(pairs []ast.Expr) []string {
 	return names
 }
 
-// declaredErrorVariables maps each `var ErrX = diagnostic.NewError("VKnnnn"` to
+// declaredErrorVariables maps each `var ErrX = diagnostic.NewDiagnosticError("VKnnnn"` to
 // its code. The registry knows the codes but not the variable name a raise
 // site spells.
 func declaredErrorVariables(t *testing.T) map[string]string {
@@ -209,7 +209,7 @@ func declaredErrorCode(expression ast.Expr) string {
 	if selector.Sel.Name == "Diagnose" {
 		return declaredErrorCode(selector.X)
 	}
-	if selector.Sel.Name != "NewError" || len(call.Args) == 0 {
+	if selector.Sel.Name != "NewDiagnosticError" || len(call.Args) == 0 {
 		return ""
 	}
 

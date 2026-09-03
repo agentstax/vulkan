@@ -7,11 +7,11 @@ import (
 // ErrGroupNotFound means the named group has no row on that topic.
 //
 // Diagnose queries: vulkan explain VK0014
-var ErrGroupNotFound = diagnostic.NewError("VK0014", diagnostic.Permanent,
+var ErrGroupNotFound = diagnostic.NewDiagnosticError("VK0014", diagnostic.RecoveryPermanent,
 	"consumer group not found",
 	"register a consumer with this group name to create it").
 	Diagnose(
-		diagnostic.NewQuery("every group registered on this topic", `
+		diagnostic.NewDiagnosticQuery("every group registered on this topic", `
 SELECT
 	consumer_group_config.id,
 	consumer_group_config.name,
@@ -20,7 +20,7 @@ FROM {schema}.consumer_group_config
 JOIN {schema}.topic_config ON topic_config.id = consumer_group_config.topic_id
 WHERE topic_config.name = '{topic}'
 ORDER BY consumer_group_config.name;`),
-		diagnostic.NewQuery("the group row behind an id, if that is what the line carried", `
+		diagnostic.NewDiagnosticQuery("the group row behind an id, if that is what the line carried", `
 SELECT
 	id,
 	topic_id,
@@ -34,11 +34,11 @@ WHERE id = {group_id};`),
 // on the group, without a force override.
 //
 // Diagnose queries: vulkan explain VK0015
-var ErrGroupLive = diagnostic.NewError("VK0015", diagnostic.Permanent,
+var ErrGroupLive = diagnostic.NewDiagnosticError("VK0015", diagnostic.RecoveryPermanent,
 	"consumer group still has a live consumer",
 	"stop the group's consumers, or pass DestroyOptions.Force").
 	Diagnose(
-		diagnostic.NewQuery("the instances still heartbeating on this group", `
+		diagnostic.NewDiagnosticQuery("the instances still heartbeating on this group", `
 SELECT
 	worker_config.name AS worker,
 	worker_instance.id,
@@ -57,16 +57,16 @@ ORDER BY worker_instance.expires_at;`),
 //   - dead rows                    -> the dead-letter record
 //
 // Diagnose queries: vulkan explain VK0016
-var ErrGroupDeliveriesPending = diagnostic.NewError("VK0016", diagnostic.Permanent,
+var ErrGroupDeliveriesPending = diagnostic.NewDiagnosticError("VK0016", diagnostic.RecoveryPermanent,
 	"consumer group still has delivery rows",
 	"pass DestroyOptions.Force to delete them").
 	Diagnose(
-		diagnostic.NewQuery("what the delivery rows would discard, by status", `
+		diagnostic.NewDiagnosticQuery("what the delivery rows would discard, by status", `
 SELECT status, count(*) AS row_count
 FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 GROUP BY status;`),
-		diagnostic.NewQuery("the dead ones, whose dead-letter record goes with them", `
+		diagnostic.NewDiagnosticQuery("the dead ones, whose dead-letter record goes with them", `
 SELECT
 	message_id,
 	attempts,
@@ -80,12 +80,12 @@ ORDER BY message_id;`),
 
 // ErrDeliveryTerminal is what Terminal returns: the handler declared that no
 // retry could succeed, so the delivery dead-letters on this attempt.
-var ErrDeliveryTerminal = diagnostic.NewError("VK0055", diagnostic.Permanent,
+var ErrDeliveryTerminal = diagnostic.NewDiagnosticError("VK0055", diagnostic.RecoveryPermanent,
 	"delivery cannot succeed",
 	"")
 
 // ErrDeliveryDelayed is what Delay returns: the handler asked for a later
 // run, so the delivery waits out the delay and no failure is counted.
-var ErrDeliveryDelayed = diagnostic.NewError("VK0054", diagnostic.Transient,
+var ErrDeliveryDelayed = diagnostic.NewDiagnosticError("VK0054", diagnostic.RecoveryTransient,
 	"could not complete the delivery yet, the handler asked to run it later",
 	"")

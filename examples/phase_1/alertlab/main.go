@@ -38,6 +38,7 @@ import (
 	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -221,7 +222,7 @@ func seedingSection(ctx context.Context) {
 // the same call a user changing it would make.
 func declareThreshold(ctx context.Context, threshold int64) {
 	must(client.RegisterSystem(ctx, &vulkan.RegisterSystemConfig{
-		PartitionCount: &partitioncount.JobConfig{Threshold: threshold},
+		PartitionCount: &alert.PartitionCountJobConfig{Threshold: threshold},
 	}))
 }
 
@@ -234,7 +235,11 @@ func classifySection(ctx context.Context) {
 	labTopicOwner, err = common.NewTopicOwner(labTopic.SystemId, labTopic.Id, labTopic.Name)
 	must(err)
 
-	instance, err := client.RegisterProducer[alert.Alert](ctx, alert.TopicName, nil)
+	// the alert controller takes the producer package's instance, not the
+	// client's wrapper
+	alertProducer, err := producer.NewProducer(ds, nil)
+	must(err)
+	instance, err := alertProducer.Register[alert.Alert](ctx, alert.TopicName)
 	must(err)
 	heads, err := compactioncontroller.NewCompactionController(ds, nil)
 	must(err)
@@ -244,7 +249,7 @@ func classifySection(ctx context.Context) {
 
 	key, err := alert.MessageKey(labCheckName, labTopicOwner)
 	must(err)
-	found, err := alert.NewAlert(labCheckName, labTopicOwner, alert.StatusActive, alert.SeverityWarn, "labcheck condition holds", nil)
+	found, err := alert.NewAlert(labCheckName, labTopicOwner, alert.AlertStatusActive, alert.AlertSeverityWarn, "labcheck condition holds", nil)
 	must(err)
 
 	record := func(found *alert.Alert, want alert.RecordOutcome, arm string) {
@@ -260,7 +265,7 @@ func classifySection(ctx context.Context) {
 	if got := alertMessageCount(ctx, key); got != 1 {
 		die(fmt.Sprintf("active edge: want 1 published message, got %d", got))
 	}
-	if got := headStatus(ctx, key); got != string(alert.StatusActive) {
+	if got := headStatus(ctx, key); got != string(alert.AlertStatusActive) {
 		die(fmt.Sprintf("active edge: want head status active, got %q", got))
 	}
 	if got := capture.count("warn", labCheckName, labTopic.Name); got != 1 {
@@ -310,7 +315,7 @@ func classifySection(ctx context.Context) {
 	if got := alertMessageCount(ctx, key); got != 4 {
 		die(fmt.Sprintf("resolve edge: want a resolve publish, got %d messages", got))
 	}
-	if got := headStatus(ctx, key); got != string(alert.StatusResolved) {
+	if got := headStatus(ctx, key); got != string(alert.AlertStatusResolved) {
 		die(fmt.Sprintf("resolve edge: want head status resolved, got %q", got))
 	}
 	if got := capture.count("info", labCheckName, labTopic.Name); got != 1 {
@@ -363,10 +368,10 @@ func executorSection(ctx context.Context) {
 	schedulesOwner, err := common.NewTopicOwner(schedulesTopic.SystemId, schedulesTopic.Id, schedulesTopic.Name)
 	must(err)
 	schedulesKey := partitionCountKey(schedulesOwner)
-	if got := headStatus(ctx, labKey); got != string(alert.StatusActive) {
+	if got := headStatus(ctx, labKey); got != string(alert.AlertStatusActive) {
 		die(fmt.Sprintf("threshold-1 run: want the lab topic's head active, got %q", got))
 	}
-	if got := headStatus(ctx, schedulesKey); got != string(alert.StatusActive) {
+	if got := headStatus(ctx, schedulesKey); got != string(alert.AlertStatusActive) {
 		die(fmt.Sprintf("threshold-1 run: want the schedules topic's head active, got %q", got))
 	}
 	if got := executorCapture.count("warn", partitioncountcontroller.AlertPartitionCount, labTopic.Name); got != 1 {
@@ -442,7 +447,7 @@ func isolationSection(ctx context.Context) {
 	// the attempt fails on the corrupted owner -- but the same attempt
 	// already resolved every healthy topic
 	waitDelivered(ctx, resolveRun.Id, "failure")
-	if got := headStatus(ctx, schedulesKey); got != string(alert.StatusResolved) {
+	if got := headStatus(ctx, schedulesKey); got != string(alert.AlertStatusResolved) {
 		die(fmt.Sprintf("isolation: healthy topics must resolve beside the failure, got %q", got))
 	}
 	if got := executorCapture.count("info", partitioncountcontroller.AlertPartitionCount, schedulesTopic.Name); got != 1 {
@@ -465,7 +470,7 @@ func isolationSection(ctx context.Context) {
 	// fixing the head lets the request's retry resolve the last owner
 	exec(ctx, fmt.Sprintf(`UPDATE %s.%s SET payload = $1::jsonb WHERE id = $2;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), saved, corruptedHead)
 	waitDelivered(ctx, resolveRun.Id, "success")
-	if got := headStatus(ctx, labKey); got != string(alert.StatusResolved) {
+	if got := headStatus(ctx, labKey); got != string(alert.AlertStatusResolved) {
 		die(fmt.Sprintf("isolation: want the fixed owner resolved on retry, got %q", got))
 	}
 	if got := executorCapture.count("info", partitioncountcontroller.AlertPartitionCount, labTopic.Name); got != 1 {

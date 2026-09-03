@@ -9,16 +9,16 @@ import (
 
 // Status is an alert's lifecycle state -- an active alert and its later
 // resolution are versions of one compacted message key.
-type Status string
+type AlertStatus string
 
 const (
-	StatusActive   Status = "active"
-	StatusResolved Status = "resolved"
+	AlertStatusActive   AlertStatus = "active"
+	AlertStatusResolved AlertStatus = "resolved"
 )
 
-type Severity string
+type AlertSeverity string
 
-const SeverityWarn Severity = "warn"
+const AlertSeverityWarn AlertSeverity = "warn"
 
 // RecordOutcome is what one AlertController.Record call published.
 type RecordOutcome string
@@ -35,8 +35,8 @@ type Alert struct {
 	// identity
 	Name     string        `json:"name"`  // e.g. "partition_count"
 	Owner    *common.Owner `json:"owner"` // the resource the alert is about
-	Status   Status        `json:"status"`
-	Severity Severity      `json:"severity"`
+	Status   AlertStatus   `json:"status"`
+	Severity AlertSeverity `json:"severity"`
 
 	// prose -- Postgres MESSAGE/DETAIL/HINT
 	Message string `json:"message"`
@@ -58,7 +58,7 @@ type AlertOptions struct {
 	Metadata map[string]any
 }
 
-func NewAlert(name string, owner *common.Owner, status Status, severity Severity, message string, options *AlertOptions) (*Alert, error) {
+func NewAlert(name string, owner *common.Owner, status AlertStatus, severity AlertSeverity, message string, options *AlertOptions) (*Alert, error) {
 	if name == "" {
 		return nil, errors.New("alert name is required")
 	}
@@ -72,13 +72,13 @@ func NewAlert(name string, owner *common.Owner, status Status, severity Severity
 	}
 
 	switch status {
-	case StatusActive, StatusResolved:
+	case AlertStatusActive, AlertStatusResolved:
 	default:
-		return nil, fmt.Errorf("alert %q: status must be one of %q, %q, got %q", name, StatusActive, StatusResolved, status)
+		return nil, fmt.Errorf("alert %q: status must be one of %q, %q, got %q", name, AlertStatusActive, AlertStatusResolved, status)
 	}
 
-	if severity != SeverityWarn {
-		return nil, fmt.Errorf("alert %q: severity must be %q, got %q", name, SeverityWarn, severity)
+	if severity != AlertSeverityWarn {
+		return nil, fmt.Errorf("alert %q: severity must be %q, got %q", name, AlertSeverityWarn, severity)
 	}
 
 	if options == nil {

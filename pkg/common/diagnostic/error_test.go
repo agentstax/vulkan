@@ -11,10 +11,10 @@ import (
 // walked by the tense and banned-word tests below alongside every other
 // registered error.
 var (
-	errTestTopicMissing = NewError("VK9901", Permanent,
+	errTestTopicMissing = NewDiagnosticError("VK9901", RecoveryPermanent,
 		"test topic not found",
 		"register it with RegisterTopic first")
-	errTestConnection = NewError("VK9902", Transient,
+	errTestConnection = NewDiagnosticError("VK9902", RecoveryTransient,
 		"could not reach the test broker", "")
 )
 
@@ -126,27 +126,27 @@ func TestLogValueRendersPartsAsFields(t *testing.T) {
 
 func TestNewErrorRejectsDuplicateCode(t *testing.T) {
 	expectPanic(t, func() {
-		NewError("VK9901", Permanent, "duplicate registration attempt", "")
+		NewDiagnosticError("VK9901", RecoveryPermanent, "duplicate registration attempt", "")
 	})
 }
 
 func TestNewErrorRejectsMalformedCode(t *testing.T) {
 	for _, code := range []string{"", "VK1", "VK12345", "XX0001", "VK00a1", "vk0001"} {
 		expectPanic(t, func() {
-			NewError(code, Permanent, "malformed code attempt", "")
+			NewDiagnosticError(code, RecoveryPermanent, "malformed code attempt", "")
 		})
 	}
 }
 
 func TestNewErrorRejectsUnrecognizedRecovery(t *testing.T) {
 	expectPanic(t, func() {
-		NewError("VK9903", Recovery("maybe"), "unrecognized recovery attempt", "")
+		NewDiagnosticError("VK9903", DiagnosticRecovery("maybe"), "unrecognized recovery attempt", "")
 	})
 }
 
 func TestNewErrorRejectsEmptyProblem(t *testing.T) {
 	expectPanic(t, func() {
-		NewError("VK9904", Permanent, "", "")
+		NewDiagnosticError("VK9904", RecoveryPermanent, "", "")
 	})
 }
 

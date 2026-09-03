@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -37,7 +38,7 @@ func (d *ProduceDatastore) insertUntilCovered(ctx context.Context, topicId int64
 			return err
 		}
 		if heals > d.DatastoreRetry.MaxRetries {
-			return errPartitionCreationBehind.Wrap(err).With("topic_id", topicId)
+			return produce.ErrPartitionCreationBehind.Wrap(err).With("topic_id", topicId)
 		}
 
 		if err := d.createNextIdPartition(ctx, topicId, partitionSize); err != nil {
@@ -61,7 +62,7 @@ func (d *ProduceDatastore) createNextIdPartition(ctx context.Context, topicId in
 	}
 
 	next := lastValue + 1
-	d.Logger.WarnContext(ctx, eventPartitionCreatedOnInsert.Message, "code", eventPartitionCreatedOnInsert.Code, "topic_id", topicId, "message_id", next)
+	d.Logger.WarnContext(ctx, produce.EventPartitionCreatedOnInsert.Message, "code", produce.EventPartitionCreatedOnInsert.Code, "topic_id", topicId, "message_id", next)
 
 	return d.ensureCoveringPartition(ctx, topicId, partitionSize, next)
 }
@@ -135,7 +136,7 @@ func (d *ProduceDatastore) createPartitionAhead(topicId int64, partitionSize int
 		err := d.DatastoreRetry.Wrap(ctx, func() error {
 			err := d.ensureCoveringPartition(ctx, topicId, partitionSize, next)
 			if isLockNotAvailable(err) {
-				return errPartitionLockTimeout.Wrap(err)
+				return produce.ErrPartitionLockTimeout.Wrap(err)
 			}
 			return err
 		})
@@ -146,7 +147,7 @@ func (d *ProduceDatastore) createPartitionAhead(topicId int64, partitionSize int
 				d.createAheadGate.delete(topicId)
 				return
 			}
-			d.Logger.WarnContext(ctx, eventPartitionNotCreatedAhead.Message, "code", eventPartitionNotCreatedAhead.Code, "topic_id", topicId, "error", err)
+			d.Logger.WarnContext(ctx, produce.EventPartitionNotCreatedAhead.Message, "code", produce.EventPartitionNotCreatedAhead.Code, "topic_id", topicId, "error", err)
 		}
 	}()
 }

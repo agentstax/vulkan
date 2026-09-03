@@ -49,17 +49,17 @@ func TestMeasurementKeyDistinctAttributeSets(t *testing.T) {
 func TestNewMeasurementValidation(t *testing.T) {
 	at := time.Now()
 
-	if _, err := NewMeasurement("", KindGauge, 1, "", nil, at); err == nil {
+	if _, err := NewMeasurement("", MetricKindGauge, 1, "", nil, at); err == nil {
 		t.Fatal("empty name accepted")
 	}
-	if _, err := NewMeasurement("lag", Kind("histogram"), 1, "", nil, at); err == nil {
+	if _, err := NewMeasurement("lag", MetricKind("histogram"), 1, "", nil, at); err == nil {
 		t.Fatal("unknown kind accepted")
 	}
-	if _, err := NewMeasurement("lag", KindGauge, 1, "", nil, time.Time{}); err == nil {
+	if _, err := NewMeasurement("lag", MetricKindGauge, 1, "", nil, time.Time{}); err == nil {
 		t.Fatal("zero at accepted")
 	}
 
-	measurement, err := NewMeasurement("lag", KindGauge, 42, "{message}", map[string]string{"topic": "orders"}, at)
+	measurement, err := NewMeasurement("lag", MetricKindGauge, 42, "{message}", map[string]string{"topic": "orders"}, at)
 	if err != nil {
 		t.Fatalf("valid measurement rejected: %v", err)
 	}
@@ -69,12 +69,12 @@ func TestNewMeasurementValidation(t *testing.T) {
 }
 
 func TestUnitValidate(t *testing.T) {
-	for _, unit := range []Unit{"", "ms", "By", UnitMilliseconds, UnitCount("worker"), "By/{request}"} {
+	for _, unit := range []MetricUnit{"", "ms", "By", MetricUnitMilliseconds, MetricUnitCount("worker"), "By/{request}"} {
 		if err := unit.Validate(); err != nil {
 			t.Fatalf("unit %q rejected: %v", unit, err)
 		}
 	}
-	for _, unit := range []Unit{"per worker", "{worker", "worker}", "{}", "{{worker}}", "{a} b"} {
+	for _, unit := range []MetricUnit{"per worker", "{worker", "worker}", "{}", "{{worker}}", "{a} b"} {
 		if err := unit.Validate(); err == nil {
 			t.Fatalf("unit %q accepted", unit)
 		}
@@ -82,19 +82,19 @@ func TestUnitValidate(t *testing.T) {
 }
 
 func TestNewMeasurementRejectsMalformedUnit(t *testing.T) {
-	if _, err := NewMeasurement("lag", KindGauge, 1, "{", nil, time.Now()); err == nil {
+	if _, err := NewMeasurement("lag", MetricKindGauge, 1, "{", nil, time.Now()); err == nil {
 		t.Fatal("malformed unit accepted")
 	}
 }
 
 func TestKindValidate(t *testing.T) {
-	if err := KindGauge.Validate(); err != nil {
+	if err := MetricKindGauge.Validate(); err != nil {
 		t.Fatalf("gauge rejected: %v", err)
 	}
-	if err := KindCounter.Validate(); err != nil {
+	if err := MetricKindCounter.Validate(); err != nil {
 		t.Fatalf("counter rejected: %v", err)
 	}
-	if err := Kind("").Validate(); err == nil {
+	if err := MetricKind("").Validate(); err == nil {
 		t.Fatal("empty kind accepted")
 	}
 }

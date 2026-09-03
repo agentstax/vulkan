@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-var errTestFixSubstitutes = NewError("VK9903", Permanent,
+var errTestFixSubstitutes = NewDiagnosticError("VK9903", RecoveryPermanent,
 	"test schema version is older than this build requires",
 	"migrate the {owner_kind} schema up from {version} to {build_version}")
 
@@ -20,7 +20,7 @@ func TestErrorFillsFixFromAttachedValues(t *testing.T) {
 }
 
 func TestFixSubstitutionKeepsTheValueRaw(t *testing.T) {
-	declared := NewError("VK9904", Permanent,
+	declared := NewDiagnosticError("VK9904", RecoveryPermanent,
 		"test topic not found",
 		`register "{topic}" with RegisterTopic first`)
 	raised := declared.With("topic", "orders")
@@ -57,7 +57,7 @@ func TestLogValueFillsTheFix(t *testing.T) {
 }
 
 func TestFixPlaceholdersListsEachNameOnce(t *testing.T) {
-	declared := NewError("VK9905", Permanent,
+	declared := NewDiagnosticError("VK9905", RecoveryPermanent,
 		"test topic not found",
 		"register {topic} again, or destroy {topic} first")
 

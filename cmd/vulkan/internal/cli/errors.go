@@ -26,8 +26,8 @@ type cliError struct {
 	code       int
 	msg        string
 	printed    bool
-	structured *diagnostic.Error // set when the failure carries the full anatomy; renders as the block
-	fix        string            // the fix line for structured; "" drops it
+	structured *diagnostic.DiagnosticError // set when the failure carries the full anatomy; renders as the block
+	fix        string                      // the fix line for structured; "" drops it
 }
 
 func (e *cliError) Error() string { return e.msg }
@@ -51,7 +51,7 @@ func failPrinted() error {
 
 // failStructured - the operation surfaced a structured error; the handler
 // renders it as the block. fix is the resolved fix line ("" drops it).
-func failStructured(structuredError *diagnostic.Error, fix string) error {
+func failStructured(structuredError *diagnostic.DiagnosticError, fix string) error {
 	return &cliError{code: 1, structured: structuredError, fix: fix}
 }
 
@@ -131,7 +131,7 @@ func exitCode(err error) int {
 // ever migrated hits Postgres 42P01 (undefined_table) deep in a query --
 // surface the fix, not the raw SQLSTATE.
 func translateAdminError(err error) error {
-	if structuredError, ok := errors.AsType[*diagnostic.Error](err); ok {
+	if structuredError, ok := errors.AsType[*diagnostic.DiagnosticError](err); ok {
 		fix := structuredError.Fix
 		if cliFix, ok := cliFixes[structuredError.Code]; ok {
 			fix = cliFix
@@ -153,7 +153,7 @@ func translateAdminError(err error) error {
 // renderErrorBlock is the CLI's one renderer for a structured error: the
 // header line, then one aligned label per fact -- values, cause, the retry
 // line when an unchanged retry can succeed, fix, docs.
-func renderErrorBlock(w io.Writer, structuredError *diagnostic.Error, fix string) {
+func renderErrorBlock(w io.Writer, structuredError *diagnostic.DiagnosticError, fix string) {
 	fmt.Fprintf(w, "error[%s]: %s\n", structuredError.Code, structuredError.Problem)
 
 	rows := make([][2]string, 0, 8)
@@ -163,7 +163,7 @@ func renderErrorBlock(w io.Writer, structuredError *diagnostic.Error, fix string
 	if cause := structuredError.Unwrap(); cause != nil {
 		rows = append(rows, [2]string{"cause", cause.Error()})
 	}
-	if structuredError.Recovery == diagnostic.Transient {
+	if structuredError.Recovery == diagnostic.RecoveryTransient {
 		rows = append(rows, [2]string{"retry", "safe -- an unchanged retry can succeed"})
 	}
 	if fix != "" {
@@ -182,7 +182,7 @@ func renderErrorBlock(w io.Writer, structuredError *diagnostic.Error, fix string
 
 // renderLogEventBlock is renderErrorBlock's sibling for a declared log
 // event: the header line, then the docs row.
-func renderLogEventBlock(w io.Writer, event *diagnostic.Event) {
+func renderLogEventBlock(w io.Writer, event *diagnostic.DiagnosticEvent) {
 	fmt.Fprintf(w, "event[%s]: %s\n", event.Code, event.Message)
 	fmt.Fprintf(w, "  docs: %s\n", event.Docs())
 }
@@ -190,7 +190,7 @@ func renderLogEventBlock(w io.Writer, event *diagnostic.Event) {
 // renderMetricBlock is renderErrorBlock's sibling for a declared metric:
 // the header line, then kind, unit, description, docs -- an empty unit
 // drops its row.
-func renderMetricBlock(w io.Writer, metric *diagnostic.Metric) {
+func renderMetricBlock(w io.Writer, metric *diagnostic.DiagnosticMetric) {
 	fmt.Fprintf(w, "metric[%s]: %s\n", metric.Code, metric.Name)
 
 	rows := make([][2]string, 0, 4)
@@ -212,7 +212,7 @@ func renderMetricBlock(w io.Writer, metric *diagnostic.Metric) {
 
 // toErrorDocument is renderErrorBlock's json sibling: the same parts as one
 // document. fix is the resolved fix line ("" drops it).
-func toErrorDocument(structuredError *diagnostic.Error, fix string) errorDocument {
+func toErrorDocument(structuredError *diagnostic.DiagnosticError, fix string) errorDocument {
 	object := errorObject{
 		Code:     structuredError.Code,
 		Problem:  structuredError.Problem,

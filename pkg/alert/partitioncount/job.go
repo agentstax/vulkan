@@ -13,9 +13,9 @@ const JobName = "alert." + controller.AlertPartitionCount
 // NewJob builds the schedule the partition_count alert is evaluated on.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewJob(cfg *JobConfig) (*alertcontroller.Job, error) {
+func NewJob(cfg *alert.PartitionCountJobConfig) (*alertcontroller.Job, error) {
 	if cfg == nil {
-		cfg = &JobConfig{}
+		cfg = &alert.PartitionCountJobConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {

@@ -4,20 +4,20 @@ import "github.com/agentstax/vulkan/pkg/common/diagnostic"
 
 // ErrAlreadyConsuming means Consume ran twice at once on one instance -- an
 // instance runs one Consume at a time.
-var ErrAlreadyConsuming = diagnostic.NewError("VK0001", diagnostic.Permanent,
+var ErrAlreadyConsuming = diagnostic.NewDiagnosticError("VK0001", diagnostic.RecoveryPermanent,
 	"instance is already consuming",
 	"wait for the running Consume to return, or Register another instance")
 
 // ErrLifecycleContextNotCancellable means Consume's ctx can never be
 // cancelled (e.g. context.Background()), so shutdown could never be
 // requested.
-var ErrLifecycleContextNotCancellable = diagnostic.NewError("VK0002", diagnostic.Permanent,
+var ErrLifecycleContextNotCancellable = diagnostic.NewDiagnosticError("VK0002", diagnostic.RecoveryPermanent,
 	"lifecycle context can never be cancelled",
 	"pass the application's shutdown context, or set ConsumeOptions.DisableGracefulShutdown")
 
 // ErrLeaseLost means the row was reclaimed by another consumer between the
 // claim and the write; the delivery machinery handles the redelivery.
-var ErrLeaseLost = diagnostic.NewError("VK0003", diagnostic.Permanent,
+var ErrLeaseLost = diagnostic.NewDiagnosticError("VK0003", diagnostic.RecoveryPermanent,
 	"lease lost to another consumer", "")
 
 // ErrCommitConfirmationLost means the connection died at Commit with
@@ -25,10 +25,10 @@ var ErrLeaseLost = diagnostic.NewError("VK0003", diagnostic.Permanent,
 // could record duplicates -- the lease's expiry sorts the truth out.
 //
 // Diagnose queries: vulkan explain VK0019
-var ErrCommitConfirmationLost = diagnostic.NewError("VK0019", diagnostic.Permanent,
+var ErrCommitConfirmationLost = diagnostic.NewDiagnosticError("VK0019", diagnostic.RecoveryPermanent,
 	"commit confirmation was lost", "").
 	Diagnose(
-		diagnostic.NewQuery("whether the outcomes landed -- rows updated at the commit", `
+		diagnostic.NewDiagnosticQuery("whether the outcomes landed -- rows updated at the commit", `
 SELECT
 	message_id,
 	status,
@@ -38,7 +38,7 @@ FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 ORDER BY updated_at DESC
 LIMIT 20;`),
-		diagnostic.NewQuery("the range lease whose expiry settles it either way", `
+		diagnostic.NewDiagnosticQuery("the range lease whose expiry settles it either way", `
 SELECT
 	token,
 	low,

@@ -18,11 +18,11 @@ func TestProblemTenseFollowsRecovery(t *testing.T) {
 		startsCouldNot := strings.HasPrefix(registered.Problem, "could not ")
 
 		switch registered.Recovery {
-		case diagnostic.Transient:
+		case diagnostic.RecoveryTransient:
 			if !startsCouldNot {
 				t.Errorf(`%s is Transient but its problem does not start "could not ": %q`, registered.Code, registered.Problem)
 			}
-		case diagnostic.Permanent:
+		case diagnostic.RecoveryPermanent:
 			if startsCouldNot {
 				t.Errorf(`%s is Permanent but its problem starts "could not ": %q`, registered.Code, registered.Problem)
 			}
@@ -74,10 +74,10 @@ func TestMetricDeclarationsCarryMetricsVocabulary(t *testing.T) {
 		if !strings.HasPrefix(registered.Name, metrics.MetricNameReservedPrefix) {
 			t.Errorf("%s name %q must start with %q", registered.Code, registered.Name, metrics.MetricNameReservedPrefix)
 		}
-		if err := metrics.Kind(registered.Kind).Validate(); err != nil {
+		if err := metrics.MetricKind(registered.Kind).Validate(); err != nil {
 			t.Errorf("%s: %v", registered.Code, err)
 		}
-		if err := metrics.Unit(registered.Unit).Validate(); err != nil {
+		if err := metrics.MetricUnit(registered.Unit).Validate(); err != nil {
 			t.Errorf("%s: %v", registered.Code, err)
 		}
 	}

@@ -13,7 +13,7 @@ WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`
 
 func TestNewQueryKeepsWhatItWasGiven(t *testing.T) {
-	query := NewQuery("the delivery row", deliverySql)
+	query := NewDiagnosticQuery("the delivery row", deliverySql)
 	if query.Label != "the delivery row" {
 		t.Errorf("label = %q, want %q", query.Label, "the delivery row")
 	}
@@ -25,7 +25,7 @@ func TestNewQueryKeepsWhatItWasGiven(t *testing.T) {
 // A declaration writes its SQL on the line after the opening backtick, so
 // the leading newline is the literal's shape, not the query's.
 func TestNewQueryTrimsTheLiteralsOwnWhitespace(t *testing.T) {
-	query := NewQuery("the delivery row", "\n"+deliverySql+"\n\t")
+	query := NewDiagnosticQuery("the delivery row", "\n"+deliverySql+"\n\t")
 	if query.Sql != deliverySql {
 		t.Errorf("sql = %q, want it trimmed", query.Sql)
 	}
@@ -44,10 +44,10 @@ func TestNewQueryPanicsOnStructuralMistakes(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			defer func() {
 				if recover() == nil {
-					t.Error("NewQuery returned instead of panicking")
+					t.Error("NewDiagnosticQuery returned instead of panicking")
 				}
 			}()
-			NewQuery(one.label, one.sql)
+			NewDiagnosticQuery(one.label, one.sql)
 		})
 	}
 }
@@ -55,7 +55,7 @@ func TestNewQueryPanicsOnStructuralMistakes(t *testing.T) {
 // A JSONB literal is written '{"key": 1}', so its braces must not read as a
 // placeholder the reader is asked to fill in.
 func TestQueryPlaceholdersSkipsJsonbLiterals(t *testing.T) {
-	query := NewQuery("messages carrying the key", `SELECT id FROM message_log_{topic_id} WHERE payload @> '{"tenant": 1}'`)
+	query := NewDiagnosticQuery("messages carrying the key", `SELECT id FROM message_log_{topic_id} WHERE payload @> '{"tenant": 1}'`)
 	if got := query.Placeholders(); !slices.Equal(got, []string{"topic_id"}) {
 		t.Errorf("placeholders = %v, want [topic_id]", got)
 	}
@@ -72,7 +72,7 @@ func TestQueryPlaceholders(t *testing.T) {
 	}
 	for name, one := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := NewQuery("a query", one.sql).Placeholders()
+			got := NewDiagnosticQuery("a query", one.sql).Placeholders()
 			if !slices.Equal(got, one.want) {
 				t.Errorf("placeholders = %v, want %v", got, one.want)
 			}
@@ -81,9 +81,9 @@ func TestQueryPlaceholders(t *testing.T) {
 }
 
 func TestDiagnoseAttachesToTheRegisteredDeclaration(t *testing.T) {
-	query := NewQuery("the delivery row", deliverySql)
+	query := NewDiagnosticQuery("the delivery row", deliverySql)
 
-	declared := NewError("VK9001", Permanent, "a condition with state to look at", "do the thing").
+	declared := NewDiagnosticError("VK9001", RecoveryPermanent, "a condition with state to look at", "do the thing").
 		Diagnose(query)
 	if len(declared.Queries) != 1 || declared.Queries[0] != query {
 		t.Fatalf("queries = %v, want the declared one", declared.Queries)
@@ -103,8 +103,8 @@ func TestDiagnoseAttachesToTheRegisteredDeclaration(t *testing.T) {
 }
 
 func TestDiagnoseOnAnEvent(t *testing.T) {
-	declared := NewEvent("VK9002", "a thing happened", "").
-		Diagnose(NewQuery("the row it wrote", deliverySql))
+	declared := NewDiagnosticEvent("VK9002", "a thing happened", "").
+		Diagnose(NewDiagnosticQuery("the row it wrote", deliverySql))
 	if len(declared.Queries) != 1 {
 		t.Fatalf("queries = %d, want 1", len(declared.Queries))
 	}
@@ -113,11 +113,11 @@ func TestDiagnoseOnAnEvent(t *testing.T) {
 func TestDiagnosePanics(t *testing.T) {
 	cases := map[string]func(){
 		"with no queries": func() {
-			NewError("VK9003", Permanent, "a condition", "").Diagnose()
+			NewDiagnosticError("VK9003", RecoveryPermanent, "a condition", "").Diagnose()
 		},
 		"when already declared": func() {
-			query := NewQuery("the delivery row", deliverySql)
-			NewError("VK9004", Permanent, "a condition", "").Diagnose(query).Diagnose(query)
+			query := NewDiagnosticQuery("the delivery row", deliverySql)
+			NewDiagnosticError("VK9004", RecoveryPermanent, "a condition", "").Diagnose(query).Diagnose(query)
 		},
 	}
 	for name, declare := range cases {

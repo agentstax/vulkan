@@ -8,11 +8,11 @@ import (
 // a replacement while it was still running.
 //
 // Diagnose queries: vulkan explain VK0034
-var EventInstanceLost = diagnostic.NewEvent("VK0034",
+var EventInstanceLost = diagnostic.NewDiagnosticEvent("VK0034",
 	"worker instance lost",
 	"stopping, a replacement may already be running").
 	Diagnose(
-		diagnostic.NewQuery("the instances holding this worker's rows now", `
+		diagnostic.NewDiagnosticQuery("the instances holding this worker's rows now", `
 SELECT
 	worker_instance.id,
 	worker_instance.token,
@@ -28,11 +28,11 @@ ORDER BY worker_instance.expires_at DESC;`),
 // 0, so its workers stop being reconciled.
 //
 // Diagnose queries: vulkan explain VK0035
-var EventManagerRowSuspended = diagnostic.NewEvent("VK0035",
+var EventManagerRowSuspended = diagnostic.NewDiagnosticEvent("VK0035",
 	"manager row suspended",
 	"its chain goes unreconciled until target_instances is restored").
 	Diagnose(
-		diagnostic.NewQuery("every suspended worker row -- target_instances 0", `
+		diagnostic.NewDiagnosticQuery("every suspended worker row -- target_instances 0", `
 SELECT
 	id,
 	name,
@@ -48,11 +48,11 @@ ORDER BY name;`),
 // its TickRetry cap -- the failure is no longer self-healing.
 //
 // Diagnose queries: vulkan explain VK0036
-var EventTickBackoffCurveExhausted = diagnostic.NewEvent("VK0036",
+var EventTickBackoffCurveExhausted = diagnostic.NewDiagnosticEvent("VK0036",
 	"worker tick backoff curve exhausted",
 	"ticks continue at its cap").
 	Diagnose(
-		diagnostic.NewQuery("this worker's rows and their failure streaks", `
+		diagnostic.NewDiagnosticQuery("this worker's rows and their failure streaks", `
 SELECT
 	worker_config.id,
 	worker_config.target_instances,
@@ -66,7 +66,7 @@ ORDER BY worker_instance.attempts DESC;`),
 
 // EventSlowTick means one tick ran longer than the row's own poll_rate --
 // the worker is behind its own schedule.
-var EventSlowTick = diagnostic.NewEvent("VK0040",
+var EventSlowTick = diagnostic.NewDiagnosticEvent("VK0040",
 	"worker tick exceeded its poll rate",
 	"the next tick is late")
 
@@ -74,11 +74,11 @@ var EventSlowTick = diagnostic.NewEvent("VK0040",
 // differing stored config -- two declarers disagree about the worker.
 //
 // Diagnose queries: vulkan explain VK0059
-var EventWorkerConfigReplaced = diagnostic.NewEvent("VK0059",
+var EventWorkerConfigReplaced = diagnostic.NewDiagnosticEvent("VK0059",
 	"worker config replaced",
 	"the newest declaration wins; if this is unexpected or repeats on every restart, two services declare this worker with different configs and overwrite each other").
 	Diagnose(
-		diagnostic.NewQuery("every declaration this worker row has received, newest first", `
+		diagnostic.NewDiagnosticQuery("every declaration this worker row has received, newest first", `
 SELECT
 	metadata,
 	declared_by,

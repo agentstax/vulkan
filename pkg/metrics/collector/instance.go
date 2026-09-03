@@ -118,7 +118,7 @@ func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 	}
 
 	at := time.Now()
-	measurement, err := metrics.NewMeasurement(metrics.MetricUnclaimedWorkers, metrics.KindGauge, float64(unclaimed), metrics.UnitCount("worker"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricUnclaimedWorkers, metrics.MetricKindGauge, float64(unclaimed), metrics.MetricUnitCount("worker"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricOldestUnclaimedAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricOldestUnclaimedAge, metrics.MetricKindGauge, float64(oldest.Milliseconds()), metrics.MetricUnitMilliseconds, nil, at)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricFailingWorkers, metrics.KindGauge, float64(failing), metrics.UnitCount("worker"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricFailingWorkers, metrics.MetricKindGauge, float64(failing), metrics.MetricUnitCount("worker"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (i *MetricsCollectorInstance) collectSchedules(ctx context.Context) error {
 	}
 
 	at := time.Now()
-	measurement, err := metrics.NewMeasurement(metrics.MetricOverdueSchedules, metrics.KindGauge, float64(overdue), metrics.UnitCount("found"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricOverdueSchedules, metrics.MetricKindGauge, float64(overdue), metrics.MetricUnitCount("found"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (i *MetricsCollectorInstance) collectSchedules(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricOldestDueAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricOldestDueAge, metrics.MetricKindGauge, float64(oldest.Milliseconds()), metrics.MetricUnitMilliseconds, nil, at)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func (i *MetricsCollectorInstance) collectSchedules(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedSchedules, metrics.KindGauge, float64(suspended), metrics.UnitCount("found"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedSchedules, metrics.MetricKindGauge, float64(suspended), metrics.MetricUnitCount("found"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -199,15 +199,15 @@ func (i *MetricsCollectorInstance) collectAlerts(ctx context.Context) error {
 	var active, resolved int64
 	for _, head := range heads {
 		switch head.Message.Status {
-		case alert.StatusActive:
+		case alert.AlertStatusActive:
 			active++
-		case alert.StatusResolved:
+		case alert.AlertStatusResolved:
 			resolved++
 		}
 	}
 
 	at := time.Now()
-	measurement, err := metrics.NewMeasurement(metrics.MetricActiveAlerts, metrics.KindGauge, float64(active), metrics.UnitCount("alert"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricActiveAlerts, metrics.MetricKindGauge, float64(active), metrics.MetricUnitCount("alert"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (i *MetricsCollectorInstance) collectAlerts(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricResolvedAlerts, metrics.KindGauge, float64(resolved), metrics.UnitCount("alert"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricResolvedAlerts, metrics.MetricKindGauge, float64(resolved), metrics.MetricUnitCount("alert"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *to
 	if snapshot.Compacted {
 		compacted = 1
 	}
-	measurement, err := metrics.NewMeasurement(metrics.MetricTopicCompacted, metrics.KindGauge, compacted, "", map[string]string{
+	measurement, err := metrics.NewMeasurement(metrics.MetricTopicCompacted, metrics.MetricKindGauge, compacted, "", map[string]string{
 		"topic": current.Name,
 	}, at)
 	if err != nil {
@@ -282,27 +282,27 @@ func (i *MetricsCollectorInstance) collectConsumerGroup(ctx context.Context, sna
 	points := []struct {
 		name  string
 		value float64
-		unit  metrics.Unit
+		unit  metrics.MetricUnit
 	}{
-		{metrics.MetricCursorHead, float64(snapshot.Cursor.Head), metrics.UnitCount("message")},
-		{metrics.MetricCursorClaimed, float64(snapshot.Cursor.Claimed), metrics.UnitCount("message")},
-		{metrics.MetricCursorCommitted, float64(snapshot.Cursor.Committed), metrics.UnitCount("message")},
-		{metrics.MetricCursorBacklog, float64(snapshot.Cursor.Backlog), metrics.UnitCount("message")},
-		{metrics.MetricCursorInflight, float64(snapshot.Cursor.Inflight), metrics.UnitCount("message")},
-		{metrics.MetricReadyExceptions, float64(snapshot.Exceptions.Ready), metrics.UnitCount("exception")},
-		{metrics.MetricInflightExceptions, float64(snapshot.Exceptions.Inflight), metrics.UnitCount("exception")},
-		{metrics.MetricDeferredExceptions, float64(snapshot.Exceptions.Deferred), metrics.UnitCount("exception")},
-		{metrics.MetricDeadExceptions, float64(snapshot.Exceptions.Dead), metrics.UnitCount("exception")},
-		{metrics.MetricOldestUnresolvedAge, float64(snapshot.Exceptions.OldestUnresolvedAge.Milliseconds()), metrics.UnitMilliseconds},
-		{metrics.MetricOpenLeases, float64(snapshot.OpenLeases), metrics.UnitCount("lease")},
-		{metrics.MetricAbandonedOutstanding, float64(snapshot.AbandonedRoutines.Outstanding), metrics.UnitCount("routine")},
-		{metrics.MetricAbandonedTotal, float64(snapshot.AbandonedRoutines.Total), metrics.UnitCount("routine")},
-		{metrics.MetricAbandonedSelfClearLatencyAvg, float64(snapshot.AbandonedRoutines.SelfClearLatencyAvg.Milliseconds()), metrics.UnitMilliseconds},
+		{metrics.MetricCursorHead, float64(snapshot.Cursor.Head), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorClaimed, float64(snapshot.Cursor.Claimed), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorCommitted, float64(snapshot.Cursor.Committed), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorBacklog, float64(snapshot.Cursor.Backlog), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorInflight, float64(snapshot.Cursor.Inflight), metrics.MetricUnitCount("message")},
+		{metrics.MetricReadyExceptions, float64(snapshot.Exceptions.Ready), metrics.MetricUnitCount("exception")},
+		{metrics.MetricInflightExceptions, float64(snapshot.Exceptions.Inflight), metrics.MetricUnitCount("exception")},
+		{metrics.MetricDeferredExceptions, float64(snapshot.Exceptions.Deferred), metrics.MetricUnitCount("exception")},
+		{metrics.MetricDeadExceptions, float64(snapshot.Exceptions.Dead), metrics.MetricUnitCount("exception")},
+		{metrics.MetricOldestUnresolvedAge, float64(snapshot.Exceptions.OldestUnresolvedAge.Milliseconds()), metrics.MetricUnitMilliseconds},
+		{metrics.MetricOpenLeases, float64(snapshot.OpenLeases), metrics.MetricUnitCount("lease")},
+		{metrics.MetricAbandonedOutstanding, float64(snapshot.AbandonedRoutines.Outstanding), metrics.MetricUnitCount("routine")},
+		{metrics.MetricAbandonedTotal, float64(snapshot.AbandonedRoutines.Total), metrics.MetricUnitCount("routine")},
+		{metrics.MetricAbandonedSelfClearLatencyAvg, float64(snapshot.AbandonedRoutines.SelfClearLatencyAvg.Milliseconds()), metrics.MetricUnitMilliseconds},
 	}
 
 	items := make([]*producer.ProduceItem[metrics.Measurement], 0, len(points))
 	for _, point := range points {
-		measurement, err := metrics.NewMeasurement(point.name, metrics.KindGauge, point.value, point.unit, attributes, at)
+		measurement, err := metrics.NewMeasurement(point.name, metrics.MetricKindGauge, point.value, point.unit, attributes, at)
 		if err != nil {
 			return err
 		}

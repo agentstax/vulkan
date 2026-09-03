@@ -96,8 +96,8 @@ func TestRegisteredAttributesParse(t *testing.T) {
 
 // declaredQueries is every diagnose query in the registry, keyed by code.
 // Metrics declare none.
-func declaredQueries() map[string][]*diagnostic.Query {
-	queries := map[string][]*diagnostic.Query{}
+func declaredQueries() map[string][]*diagnostic.DiagnosticQuery {
+	queries := map[string][]*diagnostic.DiagnosticQuery{}
 	for _, registered := range diagnostic.Errors() {
 		if len(registered.Queries) > 0 {
 			queries[registered.Code] = registered.Queries

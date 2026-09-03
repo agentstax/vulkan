@@ -16,7 +16,7 @@ package main
 //     between the two ProduceInTx calls.
 //   - ambiguousCommitScenario: a Commit-time failure (a deferred FK
 //     violation, so it surfaces at Commit, not at any INSERT) comes back
-//     from InTransaction completely unclassified -- no diagnostic.Error
+//     from InTransaction completely unclassified -- no diagnostic.DiagnosticError
 //     wrapping, no special-casing. InTransaction never retries; whether a
 //     rerun is safe is the caller's call, so the raw error must reach them.
 //   - callerKeyRetryScenario: the sanctioned way to make that rerun safe --
@@ -219,8 +219,8 @@ func ambiguousCommitScenario(ctx context.Context, client *vulkan.Client) {
 	if !ok || pgErr.Code != "23503" {
 		die(fmt.Sprintf("expected the raw foreign_key_violation (23503) from tx.Commit, got %v", err))
 	}
-	if _, ok := errors.AsType[*diagnostic.Error](err); ok {
-		die("InTransaction wrapped the commit error in an diagnostic.Error -- it must never classify, only surface as-is")
+	if _, ok := errors.AsType[*diagnostic.DiagnosticError](err); ok {
+		die("InTransaction wrapped the commit error in an diagnostic.DiagnosticError -- it must never classify, only surface as-is")
 	}
 
 	assertMessageLogCount(ctx, ds, topicA.Id, 0)

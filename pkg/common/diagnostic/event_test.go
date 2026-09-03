@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-var eventTestReclaim = NewEvent("VK9910",
+var eventTestReclaim = NewDiagnosticEvent("VK9910",
 	"test lease reclaimed", "delivery returns to the queue")
 
 func TestNewEventAppendsConsequence(t *testing.T) {
@@ -24,7 +24,7 @@ func TestNewEventRejectsRegisteredErrorCode(t *testing.T) {
 			t.Fatalf("panic message: %v", recovered)
 		}
 	}()
-	NewEvent("VK9901", "duplicate registration attempt", "")
+	NewDiagnosticEvent("VK9901", "duplicate registration attempt", "")
 }
 
 func TestNewErrorRejectsRegisteredEventCode(t *testing.T) {
@@ -33,7 +33,7 @@ func TestNewErrorRejectsRegisteredEventCode(t *testing.T) {
 			t.Fatal("reusing a log event code did not panic")
 		}
 	}()
-	NewError("VK9910", Permanent, "duplicate registration attempt", "")
+	NewDiagnosticError("VK9910", RecoveryPermanent, "duplicate registration attempt", "")
 }
 
 func TestEventsListsOrderedByCode(t *testing.T) {

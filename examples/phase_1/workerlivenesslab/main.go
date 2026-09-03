@@ -182,7 +182,7 @@ func scheduledSection(ctx context.Context) {
 	waitDelivered(ctx, activeRun.Id, "success")
 
 	key := alertKey(labTopicOwner)
-	if got := headStatus(ctx, key); got != string(alert.StatusActive) {
+	if got := headStatus(ctx, key); got != string(alert.AlertStatusActive) {
 		die(fmt.Sprintf("the check must publish an active alert for the topic, got %q", got))
 	}
 
@@ -203,7 +203,7 @@ func scheduledSection(ctx context.Context) {
 	resolveRun, err := client.Schedule(workerliveness.JobName).Run(ctx, nil)
 	must(err)
 	waitDelivered(ctx, resolveRun.Id, "success")
-	if got := headStatus(ctx, key); got != string(alert.StatusResolved) {
+	if got := headStatus(ctx, key); got != string(alert.AlertStatusResolved) {
 		die(fmt.Sprintf("a claimed fleet must resolve the alert, got %q", got))
 	}
 	fmt.Println("  ✓ with the consumer back, the next run resolved it")

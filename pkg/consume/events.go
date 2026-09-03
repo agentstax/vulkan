@@ -8,10 +8,10 @@ import (
 // range went back to the claimable pool.
 //
 // Diagnose queries: vulkan explain VK0026
-var EventLeaseReclaimed = diagnostic.NewEvent("VK0026",
+var EventLeaseReclaimed = diagnostic.NewDiagnosticEvent("VK0026",
 	"lease reclaimed from expired worker", "").
 	Diagnose(
-		diagnostic.NewQuery("the leases this group holds now", `
+		diagnostic.NewDiagnosticQuery("the leases this group holds now", `
 SELECT
 	token,
 	low,
@@ -21,7 +21,7 @@ SELECT
 FROM {schema}.claim_lease_{topic_id}
 WHERE consumer_group_id = {group_id}
 ORDER BY low;`),
-		diagnostic.NewQuery("what the reclaimed range left behind", `
+		diagnostic.NewDiagnosticQuery("what the reclaimed range left behind", `
 SELECT
 	message_id,
 	status,
@@ -37,11 +37,11 @@ ORDER BY message_id;`),
 // poison instead of being handed out again.
 //
 // Diagnose queries: vulkan explain VK0027
-var EventRangeQuarantined = diagnostic.NewEvent("VK0027",
+var EventRangeQuarantined = diagnostic.NewDiagnosticEvent("VK0027",
 	"range quarantined after max reclaims",
 	"messages written as 'ready' exceptions").
 	Diagnose(
-		diagnostic.NewQuery("the exceptions the quarantine wrote", `
+		diagnostic.NewDiagnosticQuery("the exceptions the quarantine wrote", `
 SELECT
 	message_id,
 	status,
@@ -52,7 +52,7 @@ FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id BETWEEN {low} AND {high}
 ORDER BY message_id;`),
-		diagnostic.NewQuery("the messages in the range, to find what kills a consumer", `
+		diagnostic.NewDiagnosticQuery("the messages in the range, to find what kills a consumer", `
 SELECT
 	id,
 	routing_key,
@@ -66,11 +66,11 @@ ORDER BY id;`),
 // a batch of messages.
 //
 // Diagnose queries: vulkan explain VK0028
-var EventMessagesDeadLettered = diagnostic.NewEvent("VK0028",
+var EventMessagesDeadLettered = diagnostic.NewDiagnosticEvent("VK0028",
 	"messages dead-lettered",
 	"unrecoverable, will not be retried").
 	Diagnose(
-		diagnostic.NewQuery("every dead row this group holds, newest first", `
+		diagnostic.NewDiagnosticQuery("every dead row this group holds, newest first", `
 SELECT
 	message_id,
 	attempts,
@@ -80,7 +80,7 @@ FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY updated_at DESC;`),
-		diagnostic.NewQuery("which errors account for them", `
+		diagnostic.NewDiagnosticQuery("which errors account for them", `
 SELECT last_error, count(*) AS dead_count
 FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
@@ -92,11 +92,11 @@ ORDER BY dead_count DESC;`),
 // EventMessageDeadLettered marks one delivery written as terminal.
 //
 // Diagnose queries: vulkan explain VK0029
-var EventMessageDeadLettered = diagnostic.NewEvent("VK0029",
+var EventMessageDeadLettered = diagnostic.NewDiagnosticEvent("VK0029",
 	"message dead-lettered",
 	"unrecoverable, will not be retried").
 	Diagnose(
-		diagnostic.NewQuery("the delivery row the dead-lettering wrote", `
+		diagnostic.NewDiagnosticQuery("the delivery row the dead-lettering wrote", `
 SELECT
 	status,
 	attempts,
@@ -105,7 +105,7 @@ SELECT
 FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`),
-		diagnostic.NewQuery("every attempt it made, oldest first", `
+		diagnostic.NewDiagnosticQuery("every attempt it made, oldest first", `
 SELECT
 	attempt,
 	status,
@@ -115,7 +115,7 @@ FROM {schema}.delivery_log_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id}
 ORDER BY attempt;`),
-		diagnostic.NewQuery("the message itself", `
+		diagnostic.NewDiagnosticQuery("the message itself", `
 SELECT
 	id,
 	routing_key,
@@ -128,11 +128,11 @@ WHERE id = {message_id};`),
 // EventExceptionDeadLettered marks one exception written as terminal.
 //
 // Diagnose queries: vulkan explain VK0030
-var EventExceptionDeadLettered = diagnostic.NewEvent("VK0030",
+var EventExceptionDeadLettered = diagnostic.NewDiagnosticEvent("VK0030",
 	"exception dead-lettered",
 	"unrecoverable, will not be retried").
 	Diagnose(
-		diagnostic.NewQuery("the exception row now recorded dead", `
+		diagnostic.NewDiagnosticQuery("the exception row now recorded dead", `
 SELECT
 	status,
 	attempts,
@@ -141,7 +141,7 @@ SELECT
 FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`),
-		diagnostic.NewQuery("the attempts that exhausted its budget", `
+		diagnostic.NewDiagnosticQuery("the attempts that exhausted its budget", `
 SELECT
 	attempt,
 	status,
@@ -157,11 +157,11 @@ ORDER BY attempt;`),
 // exceptions dead after repeated consumer crashes on the same rows.
 //
 // Diagnose queries: vulkan explain VK0031
-var EventKillBackstopFired = diagnostic.NewEvent("VK0031",
+var EventKillBackstopFired = diagnostic.NewDiagnosticEvent("VK0031",
 	"crash-loop kill backstop fired",
 	"exceptions marked dead").
 	Diagnose(
-		diagnostic.NewQuery("the rows the backstop marked dead", `
+		diagnostic.NewDiagnosticQuery("the rows the backstop marked dead", `
 SELECT
 	message_id,
 	attempts,
@@ -171,7 +171,7 @@ FROM {schema}.exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY updated_at DESC;`),
-		diagnostic.NewQuery("the attempts that crashed without recording an outcome", `
+		diagnostic.NewDiagnosticQuery("the attempts that crashed without recording an outcome", `
 SELECT
 	message_id,
 	attempt,
@@ -186,26 +186,31 @@ LIMIT 50;`),
 
 // EventStoredOptionsClamped means a stored message's options fell outside
 // this consumer's MessageMin/MessageMax bounds.
-var EventStoredOptionsClamped = diagnostic.NewEvent("VK0032",
+var EventStoredOptionsClamped = diagnostic.NewDiagnosticEvent("VK0032",
 	"stored message options outside this consumer's bounds", "clamped")
 
 // EventSlowDispatch means one delivery's dispatch ran past the group's
 // SlowDispatchThreshold, whatever the delivery's outcome.
-var EventSlowDispatch = diagnostic.NewEvent("VK0039",
+var EventSlowDispatch = diagnostic.NewDiagnosticEvent("VK0039",
 	"delivery dispatch exceeded the duration threshold", "")
 
 // EventGroupConfigNotRefreshed means an instance could not read its worker
 // row's stored config back, so it keeps running on the copy it already has.
 //
 // Diagnose queries: vulkan explain VK0060
-var EventGroupConfigNotRefreshed = diagnostic.NewEvent("VK0060",
+var EventGroupConfigNotRefreshed = diagnostic.NewDiagnosticEvent("VK0060",
 	"could not refresh group config",
 	"the last copy stays in use").
 	Diagnose(
-		diagnostic.NewQuery("the config document stored on this group's worker rows", `
+		diagnostic.NewDiagnosticQuery("the config document stored on this group's worker rows", `
 SELECT worker_config.name, worker_config.metadata
 FROM {schema}.worker_config
 JOIN {schema}.consumer_group_config ON consumer_group_config.id = worker_config.consumer_group_id
 WHERE consumer_group_config.name = '{group}'
 ORDER BY worker_config.name;`),
 	)
+
+// EventConsumerStopped is the session summary a consumer instance logs on
+// every exit.
+var EventConsumerStopped = diagnostic.NewDiagnosticEvent("VK0041",
+	"consumer stopped", "")

@@ -137,17 +137,17 @@ func (i *WorkerLivenessInstance) produceCheckSummary(ctx context.Context, evalua
 	counts := []struct {
 		name  string
 		value int64
-		unit  metrics.Unit
+		unit  metrics.MetricUnit
 	}{
-		{metrics.MetricCheckTopicsEvaluated, evaluated, metrics.UnitCount("topic")},
-		{metrics.MetricCheckTopicsFailed, failed, metrics.UnitCount("topic")},
-		{metrics.MetricCheckPublishedAlerts, published, metrics.UnitCount("alert")},
-		{metrics.MetricCheckResolvedAlerts, resolved, metrics.UnitCount("alert")},
+		{metrics.MetricCheckTopicsEvaluated, evaluated, metrics.MetricUnitCount("topic")},
+		{metrics.MetricCheckTopicsFailed, failed, metrics.MetricUnitCount("topic")},
+		{metrics.MetricCheckPublishedAlerts, published, metrics.MetricUnitCount("alert")},
+		{metrics.MetricCheckResolvedAlerts, resolved, metrics.MetricUnitCount("alert")},
 	}
 
 	items := make([]*producer.ProduceItem[metrics.Measurement], 0, len(counts))
 	for _, count := range counts {
-		measurement, err := metrics.NewMeasurement(count.name, metrics.KindGauge, float64(count.value), count.unit, attributes, at)
+		measurement, err := metrics.NewMeasurement(count.name, metrics.MetricKindGauge, float64(count.value), count.unit, attributes, at)
 		if err != nil {
 			return err
 		}

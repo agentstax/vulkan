@@ -74,9 +74,9 @@ func TestNewExportOmitsAbsentParts(t *testing.T) {
 // a page with no data behind it.
 func TestNewExportRefusesACodeTwoKindsClaim(t *testing.T) {
 	declared := diagnostic.Errors()[0]
-	colliding := &diagnostic.Event{Code: declared.Code, Message: "a message"}
+	colliding := &diagnostic.DiagnosticEvent{Code: declared.Code, Message: "a message"}
 
-	_, err := NewExport([]*diagnostic.Error{declared}, []*diagnostic.Event{colliding}, nil)
+	_, err := NewExport([]*diagnostic.DiagnosticError{declared}, []*diagnostic.DiagnosticEvent{colliding}, nil)
 	if err == nil {
 		t.Fatal("NewExport accepted a code declared as two kinds")
 	}

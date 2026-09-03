@@ -13,7 +13,7 @@ import (
 // the deployment's upkeep running: the system manager runs beside the
 // session unless ClientConfig.DisableManager opted out.
 type ConsumerInstance[Message Versioned] struct {
-	*consumer.ConsumerInstance[Message]
+	instance *consumer.ConsumerInstance[Message]
 
 	manager    *systemmanager.SystemManager
 	runManager bool
@@ -26,7 +26,7 @@ func newConsumerInstance[Message Versioned](instance *consumer.ConsumerInstance[
 	if manager == nil {
 		return nil, errors.New("manager must not be nil")
 	}
-	return &ConsumerInstance[Message]{ConsumerInstance: instance, manager: manager, runManager: runManager}, nil
+	return &ConsumerInstance[Message]{instance: instance, manager: manager, runManager: runManager}, nil
 }
 
 // Consume runs the group's session and the system manager beside it. A
@@ -34,14 +34,14 @@ func newConsumerInstance[Message Versioned](instance *consumer.ConsumerInstance[
 // manager failures are logged and retried, never returned (SystemManager.Run).
 func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message], options *ConsumeOptions) error {
 	if !i.runManager {
-		return i.ConsumerInstance.Consume(ctx, consumerFunc, options)
+		return i.instance.Consume(ctx, consumerFunc, options)
 	}
 
 	// if we can't cancel the context then we can't rely on errgroup
 	// to correctly stop manager. So if user has an uncancellable context
 	// AND they have DisabledGracefulShutdown let them run consumer only.
 	if ctx.Done() == nil {
-		return i.ConsumerInstance.Consume(ctx, consumerFunc, options)
+		return i.instance.Consume(ctx, consumerFunc, options)
 	}
 
 	// the session owns the pairing: whenever it returns -- nil included --
@@ -51,7 +51,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	managerCtx, stopManager := context.WithCancel(runCtx)
 	group.Go(func() error {
 		defer stopManager()
-		return i.ConsumerInstance.Consume(runCtx, consumerFunc, options)
+		return i.instance.Consume(runCtx, consumerFunc, options)
 	})
 	group.Go(func() error {
 		return i.manager.Run(managerCtx)

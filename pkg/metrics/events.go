@@ -7,6 +7,6 @@ import (
 // EventGoRoutineEventsDropped means abandoned/cleared routine events were
 // discarded -- the queue filled between flush ticks, or their batch could
 // not land.
-var EventGoRoutineEventsDropped = diagnostic.NewEvent("VK0052",
+var EventGoRoutineEventsDropped = diagnostic.NewDiagnosticEvent("VK0052",
 	"abandoned-routine events dropped",
 	"abandoned-routine snapshots undercount")

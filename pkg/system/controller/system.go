@@ -11,9 +11,9 @@ import (
 // singleton system row, returning it. Idempotent. cfg may be nil or a sparse
 // struct -- WithDefaults fills every field left unset, Validate rejects
 // what's out of range.
-func (c *SystemController) Register(ctx context.Context, cfg *SystemConfig) (*system.SystemData, error) {
+func (c *SystemController) Register(ctx context.Context, cfg *system.SystemConfig) (*system.SystemData, error) {
 	if cfg == nil {
-		cfg = &SystemConfig{}
+		cfg = &system.SystemConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {

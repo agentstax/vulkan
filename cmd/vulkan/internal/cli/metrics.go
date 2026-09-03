@@ -30,7 +30,7 @@ func newMetricsCmd(g *globalFlags) *cobra.Command {
 func measurementValueCell(measurement *metrics.Measurement) string {
 	unit := string(measurement.Unit)
 	switch {
-	case measurement.Unit == metrics.UnitMilliseconds:
+	case measurement.Unit == metrics.MetricUnitMilliseconds:
 		return time.Duration(measurement.Value * float64(time.Millisecond)).Round(time.Millisecond).String()
 	case unit == "" || (strings.HasPrefix(unit, "{") && strings.HasSuffix(unit, "}")):
 		return measurementNumber(measurement.Value)

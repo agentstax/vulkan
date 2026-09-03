@@ -64,39 +64,39 @@ const (
 	MetricAbandonedSelfClearLatencyAvg = "vulkan.consumer.abandoned_routines.self_clear_latency_avg" // mean cleared - abandoned latency over matched pairs, in ms
 )
 
-type Kind string
+type MetricKind string
 
 const (
-	KindGauge   Kind = "gauge"   // a point-in-time level, each measurement replaces the last
-	KindCounter Kind = "counter" // a running total, each measurement carries the new total
+	MetricKindGauge   MetricKind = "gauge"   // a point-in-time level, each measurement replaces the last
+	MetricKindCounter MetricKind = "counter" // a running total, each measurement carries the new total
 )
 
-func (k Kind) Validate() error {
+func (k MetricKind) Validate() error {
 	switch k {
-	case KindGauge, KindCounter:
+	case MetricKindGauge, MetricKindCounter:
 		return nil
 	default:
-		return fmt.Errorf("kind must be %q or %q, got %q", KindGauge, KindCounter, k)
+		return fmt.Errorf("kind must be %q or %q, got %q", MetricKindGauge, MetricKindCounter, k)
 	}
 }
 
-// Unit is a metric's UCUM code. A real unit ("ms", "s", "By") carries a
+// MetricUnit is a metric's UCUM code. A real unit ("ms", "s", "By") carries a
 // dimension a reader may format (47000 ms -> 47s); a braced annotation
-// ("{worker}", via UnitCount) is a dimensionless count whose text is a human
+// ("{worker}", via MetricUnitCount) is a dimensionless count whose text is a human
 // label only. "" is no unit.
-type Unit string
+type MetricUnit string
 
-const UnitMilliseconds Unit = "ms"
+const MetricUnitMilliseconds MetricUnit = "ms"
 
-// UnitCount is the UCUM annotation for a dimensionless count of noun.
-// Ex: UnitCount("worker") -> "{worker}"
-func UnitCount(noun string) Unit {
-	return Unit("{" + noun + "}")
+// MetricUnitCount is the UCUM annotation for a dimensionless count of noun.
+// Ex: MetricUnitCount("worker") -> "{worker}"
+func MetricUnitCount(noun string) MetricUnit {
+	return MetricUnit("{" + noun + "}")
 }
 
 // Validate checks UCUM shape -- the unit set is open, so
 // only whitespace and malformed annotations can be rejected.
-func (u Unit) Validate() error {
+func (u MetricUnit) Validate() error {
 	inAnnotation := false
 	for _, character := range u {
 		switch {
@@ -127,16 +127,16 @@ func (u Unit) Validate() error {
 // topic. Names starting with "vulkan." are reserved for Vulkan's own metrics.
 type Measurement struct {
 	Name       string            `json:"name"`
-	Kind       Kind              `json:"kind"`
+	Kind       MetricKind        `json:"kind"`
 	Value      float64           `json:"value"`
-	Unit       Unit              `json:"unit"`
+	Unit       MetricUnit        `json:"unit"`
 	Attributes map[string]string `json:"attributes"`
 	At         time.Time         `json:"at"`
 }
 
 func (Measurement) SchemaVersion() int { return 1 }
 
-func NewMeasurement(name string, kind Kind, value float64, unit Unit, attributes map[string]string, at time.Time) (*Measurement, error) {
+func NewMeasurement(name string, kind MetricKind, value float64, unit MetricUnit, attributes map[string]string, at time.Time) (*Measurement, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}

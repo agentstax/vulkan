@@ -2,15 +2,15 @@ package diagnostic
 
 // Event is a declared operator-actionable log event: the static message
 // a call site logs and the code that rides in its "code" attribute.
-type Event struct {
+type DiagnosticEvent struct {
 	Code    string
 	Message string
-	Queries []*Query // none when the event has no state to look at
+	Queries []*DiagnosticQuery // none when the event has no state to look at
 }
 
-// NewEvent declares a log event and registers its code. A non-empty
+// NewDiagnosticEvent declares a log event and registers its code. A non-empty
 // consequence is appended to the message after " -- ".
-func NewEvent(code string, message string, consequence string) *Event {
+func NewDiagnosticEvent(code string, message string, consequence string) *DiagnosticEvent {
 	if message == "" {
 		panic("message must not be empty: " + code)
 	}
@@ -19,14 +19,14 @@ func NewEvent(code string, message string, consequence string) *Event {
 		message = message + " -- " + consequence
 	}
 
-	declared := &Event{Code: code, Message: message}
+	declared := &DiagnosticEvent{Code: code, Message: message}
 	register(declared)
 	return declared
 }
 
 // Diagnose attaches the queries that show an operator the state behind this
-// event, and returns the same declaration so it chains onto NewEvent.
-func (e *Event) Diagnose(queries ...*Query) *Event {
+// event, and returns the same declaration so it chains onto NewDiagnosticEvent.
+func (e *DiagnosticEvent) Diagnose(queries ...*DiagnosticQuery) *DiagnosticEvent {
 	if len(queries) == 0 {
 		panic("diagnose queries must not be empty: " + e.Code)
 	}
@@ -39,21 +39,21 @@ func (e *Event) Diagnose(queries ...*Query) *Event {
 }
 
 // Docs returns the event's documentation page, derived from the code.
-func (e *Event) Docs() string {
+func (e *DiagnosticEvent) Docs() string {
 	return docsBaseURL + e.Code
 }
 
 // GetCode and GetKind satisfy Declaration; Get-prefixed because Code is
 // already the field.
-func (e *Event) GetCode() string {
+func (e *DiagnosticEvent) GetCode() string {
 	return e.Code
 }
 
-func (e *Event) GetKind() Kind {
-	return KindEvent
+func (e *DiagnosticEvent) GetKind() DiagnosticKind {
+	return DiagnosticKindEvent
 }
 
 // Events lists every registered log event ordered by code.
-func Events() []*Event {
-	return listRegistered[*Event]()
+func Events() []*DiagnosticEvent {
+	return listRegistered[*DiagnosticEvent]()
 }

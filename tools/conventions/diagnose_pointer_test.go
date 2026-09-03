@@ -59,7 +59,7 @@ type declaration struct {
 	where      string // file:line
 }
 
-// declarationDocComments reads every diagnostic.NewError / NewEvent variable
+// declarationDocComments reads every diagnostic.NewDiagnosticError / NewEvent variable
 // under pkg/ with its doc comment, and whether the initializer chains a
 // Diagnose call.
 func declarationDocComments(t *testing.T) []declaration {
@@ -129,7 +129,7 @@ func declaredCode(value ast.Expr) (string, bool) {
 			return true
 		}
 		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || (selector.Sel.Name != "NewError" && selector.Sel.Name != "NewEvent") {
+		if !ok || (selector.Sel.Name != "NewDiagnosticError" && selector.Sel.Name != "NewDiagnosticEvent") {
 			return true
 		}
 		if len(call.Args) == 0 {

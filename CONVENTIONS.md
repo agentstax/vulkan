@@ -435,7 +435,7 @@ topic's family -- never both.
 ## Errors
 
 Every error is five parts plus a recovery classification, carried by one
-struct (diagnostic.Error) and rendered by one renderer per surface -- raise
+struct (diagnostic.DiagnosticError) and rendered by one renderer per surface -- raise
 sites never format anything. Renderer mechanics live in pkg/common/diagnostic/error.go
 and the CLI errorHandler; the rules here are the choices the mechanism
 cannot make.
@@ -443,7 +443,7 @@ cannot make.
 The whole shape, one example:
 
     // pkg/topic/errors.go -- the declaration owns everything but the values
-    var ErrTopicNotFound = diagnostic.NewError("VK0005", diagnostic.Permanent,
+    var ErrTopicNotFound = diagnostic.NewDiagnosticError("VK0005", diagnostic.RecoveryPermanent,
     	"topic not found",
     	"register it with MessageAdmin.RegisterTopic first")
 
@@ -468,7 +468,7 @@ vulkan command in the CLI).
   signals stay plain errors on the templates below -- promote one to a
   declaration the moment it crosses the boundary.
 - Declare a named Err* variable in the owning pkg/<x>/errors.go via
-  diagnostic.NewError -- code, recovery, problem, and fix fixed at declaration.
+  diagnostic.NewDiagnosticError -- code, recovery, problem, and fix fixed at declaration.
 - Code = "VK" + the next four-digit serial after the current max (same
   scheme as decision records). Never reuse or renumber; a deleted
   condition retires its number.
@@ -633,8 +633,8 @@ exception: a lifecycle summary line whose attribute set needs a docs page
 (the stopped line's session counters) declares despite being Info --
 the code is the line's breadcrumb to its own explanation.
 
-- Declare in the owning vocabulary package's logs.go via
-  diagnostic.NewEvent(code, message, consequence) -- the codes share the
+- Declare in the owning vocabulary package's events.go via
+  diagnostic.NewDiagnosticEvent(code, message, consequence) -- the codes share the
   errors' VK serial space, next four-digit serial after the current max
   across both registries.
 - Call sites log the declaration's Message and attach `"code",
@@ -652,7 +652,7 @@ the code is the line's breadcrumb to its own explanation.
 
       error         the error value itself (never `err`, never
                     stringified first -- .Error() defeats
-                    diagnostic.Error.LogValue)
+                    diagnostic.DiagnosticError.LogValue)
       code          a declared log event's code (Event.Code)
       alert         a built-in alert's name (Alert.Name)
       alert_message the alert's own message clause -- never `message`, which

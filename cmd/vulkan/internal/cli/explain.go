@@ -143,7 +143,7 @@ type explainQuery struct {
 // *** HELPERS ***
 // ***************
 
-func toErrorExplainDocument(declared *diagnostic.Error, fix string) explainDocument {
+func toErrorExplainDocument(declared *diagnostic.DiagnosticError, fix string) explainDocument {
 	return explainDocument{
 		Kind:     "error",
 		Code:     declared.Code,
@@ -155,7 +155,7 @@ func toErrorExplainDocument(declared *diagnostic.Error, fix string) explainDocum
 	}
 }
 
-func toEventExplainDocument(declared *diagnostic.Event) explainDocument {
+func toEventExplainDocument(declared *diagnostic.DiagnosticEvent) explainDocument {
 	return explainDocument{
 		Kind:    "event",
 		Code:    declared.Code,
@@ -165,7 +165,7 @@ func toEventExplainDocument(declared *diagnostic.Event) explainDocument {
 	}
 }
 
-func toMetricExplainDocument(declared *diagnostic.Metric) explainDocument {
+func toMetricExplainDocument(declared *diagnostic.DiagnosticMetric) explainDocument {
 	return explainDocument{
 		Kind:        "metric",
 		Code:        declared.Code,
@@ -177,7 +177,7 @@ func toMetricExplainDocument(declared *diagnostic.Metric) explainDocument {
 	}
 }
 
-func toExplainQueries(queries []*diagnostic.Query) []explainQuery {
+func toExplainQueries(queries []*diagnostic.DiagnosticQuery) []explainQuery {
 	documents := make([]explainQuery, 0, len(queries))
 	for _, query := range queries {
 		documents = append(documents, explainQuery{
@@ -193,7 +193,7 @@ func toExplainQueries(queries []*diagnostic.Query) []explainQuery {
 // block. Only explain renders them -- the error surface stays the tight block
 // that points here. Each label is written as a SQL comment so the section
 // pastes into psql as it stands, once the placeholder values are filled in.
-func renderDiagnoseQueries(w io.Writer, queries []*diagnostic.Query) {
+func renderDiagnoseQueries(w io.Writer, queries []*diagnostic.DiagnosticQuery) {
 	if len(queries) == 0 {
 		return
 	}
@@ -209,7 +209,7 @@ func renderDiagnoseQueries(w io.Writer, queries []*diagnostic.Query) {
 
 // diagnoseSubstitution names every value the reader fills in across the whole
 // set, so the instruction is read once rather than per query.
-func diagnoseSubstitution(queries []*diagnostic.Query) string {
+func diagnoseSubstitution(queries []*diagnostic.DiagnosticQuery) string {
 	names := make([]string, 0, 4)
 	for _, query := range queries {
 		for _, name := range query.Placeholders() {
@@ -226,7 +226,7 @@ func diagnoseSubstitution(queries []*diagnostic.Query) string {
 
 // resolvedCliFix is a declared error's fix with the CLI rewrite applied when
 // cliFixes has one.
-func resolvedCliFix(declared *diagnostic.Error) string {
+func resolvedCliFix(declared *diagnostic.DiagnosticError) string {
 	if cliFix, ok := cliFixes[declared.Code]; ok {
 		return cliFix
 	}
@@ -236,7 +236,7 @@ func resolvedCliFix(declared *diagnostic.Error) string {
 // metricByNameOrAttributeKey resolves a metric by its full name, or by a
 // stop-line counter attribute key: ready_count strips its suffix and matches
 // the declared name whose last segment is ready.
-func metricByNameOrAttributeKey(argument string) (*diagnostic.Metric, bool) {
+func metricByNameOrAttributeKey(argument string) (*diagnostic.DiagnosticMetric, bool) {
 	if declared, ok := diagnostic.GetMetric(argument); ok {
 		return declared, true
 	}

@@ -11,10 +11,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/migrate"
 )
 
-var errTestBroker = diagnostic.NewError("VK9801", diagnostic.Transient,
+var errTestBroker = diagnostic.NewDiagnosticError("VK9801", diagnostic.RecoveryTransient,
 	"could not reach the test broker", "retry the produce call")
 
-var metricTestDepth = diagnostic.NewMetric("VK9802",
+var metricTestDepth = diagnostic.NewDiagnosticMetric("VK9802",
 	"vulkan.test.queue_depth", "gauge", "{message}", "test queue depth")
 
 func TestRenderMetricBlockAlignsAllParts(t *testing.T) {

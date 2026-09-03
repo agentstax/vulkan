@@ -1,120 +1,156 @@
 package vulkan
 
-// Every type a user spells lives in this package; each alias points at the
-// package that owns it.
+// Every type a user spells through this package is an alias into the
+// package that declares it, so a click-through lands on the declaration.
 
 import (
-	"context"
-	"time"
-
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consume"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/produce"
+	"github.com/agentstax/vulkan/pkg/produce/batcher"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
-	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// Versioned is the constraint every payload type satisfies by declaring
-// its own schema version.
-type Versioned = common.Versioned
-
 type (
-	ConsumerFunc[Message Versioned] = consumer.ConsumerFunc[Message]
+	Versioned                      = common.Versioned
+	MessageData[Message Versioned] = common.MessageData[Message]
+	MessageOptions                 = common.MessageOptions
+	RetryPolicy                    = common.RetryPolicy
+	ConcurrencyPolicy              = common.ConcurrencyPolicy
+	Owner                          = common.Owner
+	OwnerKind                      = common.OwnerKind
+	Logger                         = logging.Logger
+	DiagnosticError                = diagnostic.DiagnosticError
+	DiagnosticEvent                = diagnostic.DiagnosticEvent
+	DiagnosticQuery                = diagnostic.DiagnosticQuery
+	DiagnosticRecovery             = diagnostic.DiagnosticRecovery
+	DiagnosticKind                 = diagnostic.DiagnosticKind
+
+	PostgresDatastore = datastore.PostgresDatastore
+	Querier           = datastore.Querier
+	Tx                = datastore.Tx
+	TransactionFunc   = datastore.TransactionFunc
+
+	ProduceOptions                   = produce.ProduceOptions
+	CompactionOptions                = produce.CompactionOptions
+	ProducerFunc[Message Versioned]  = produce.ProducerFunc[Message]
+	BatcherConfig                    = batcher.BatcherConfig
+	ProducerConfig                   = producer.ProducerConfig
+	ProduceItem[Message Versioned]   = producer.ProduceItem[Message]
+	ProduceResult[Message Versioned] = producer.ProduceResult[Message]
+
+	ConsumerConfig                  = consumer.ConsumerConfig
 	ConsumeOptions                  = consumer.ConsumeOptions
+	ConsumerFunc[Message Versioned] = consumer.ConsumerFunc[Message]
+	CursorPosition                  = consume.CursorPosition
+	CursorPositionKind              = consume.CursorPositionKind
+	GroupData                       = consume.GroupData
+	BindingDeclaration              = consume.BindingDeclaration
+	BindingOutcome                  = consume.BindingOutcome
+	MessageMeta                     = consume.MessageMeta
 
-	ProducerInstance[Message Versioned] = producer.ProducerInstance[Message]
-	ProducerFunc[Message Versioned]     = produce.ProducerFunc[Message]
-	ProduceOptions                      = produce.ProduceOptions
-	ProduceResult[Message Versioned]    = producer.ProduceResult[Message]
-	ProduceItem[Message Versioned]      = producer.ProduceItem[Message]
+	TopicConfig     = topic.TopicConfig
+	TopicData       = topic.TopicData
+	DeliveryLogMode = topic.DeliveryLogMode
 
-	SchedulerInstance[Message Versioned] = scheduler.SchedulerInstance[Message]
-	CompactionOptions                    = produce.CompactionOptions
-	CursorPosition                       = consume.CursorPosition
-	ScheduleConfig                       = schedule.ScheduleConfig
-	ScheduleSpec                         = schedule.ScheduleSpec
+	ScheduleSpec   = schedule.ScheduleSpec
+	ScheduleConfig = schedule.ScheduleConfig
+	ScheduleData   = schedule.ScheduleData
+	GroupStatus    = schedule.GroupStatus
+	MessageStatus  = schedule.MessageStatus
+	MessageOutcome = schedule.MessageOutcome
+	StoredMessage  = schedule.StoredMessage
 
-	TopicConfig          = topic.TopicConfig
+	SystemConfig   = system.SystemConfig
+	SystemData     = system.SystemData
+	WorkerData     = worker.WorkerData
+	InstanceTarget = worker.InstanceTarget
+
 	DestroyOptions       = admin.DestroyOptions
 	RegisterSystemConfig = admin.RegisterSystemConfig
 	RunScheduleConfig    = admin.RunScheduleConfig
+	VersionHealth        = admin.VersionHealth
 
-	MessageOptions = common.MessageOptions
-	RetryPolicy    = common.RetryPolicy
+	PartitionCountJobConfig     = alert.PartitionCountJobConfig
+	CompactionReadCostJobConfig = alert.CompactionReadCostJobConfig
+	WorkerLivenessJobConfig     = alert.WorkerLivenessJobConfig
 
-	TopicData                      = topic.TopicData
-	ScheduleData                   = schedule.ScheduleData
-	GroupData                      = consume.GroupData
-	WorkerData                     = worker.WorkerData
-	BindingDeclaration             = consume.BindingDeclaration
-	MessageMeta                    = consume.MessageMeta
-	MessageData[Message Versioned] = common.MessageData[Message]
-	VersionHealth                  = admin.VersionHealth
-	TopicSnapshot                  = metrics.TopicSnapshot
-	SystemData                     = system.SystemData
-	GroupStatus                    = schedule.GroupStatus
-	MessageStatus                  = schedule.MessageStatus
-	StoredMessage                  = schedule.StoredMessage
+	TopicSnapshot            = metrics.TopicSnapshot
+	ConsumerGroupSnapshot    = metrics.ConsumerGroupSnapshot
+	SchemaVersionSnapshot    = metrics.SchemaVersionSnapshot
+	GroupSchemaVersionLag    = metrics.GroupSchemaVersionLag
+	GroupLag                 = metrics.GroupLag
+	CursorSnapshot           = metrics.CursorSnapshot
+	ExceptionSnapshot        = metrics.ExceptionSnapshot
+	AbandonedRoutineSnapshot = metrics.AbandonedRoutineSnapshot
+	Measurement              = metrics.Measurement
+	MetricKind               = metrics.MetricKind
+	MetricUnit               = metrics.MetricUnit
+	Alert                    = alert.Alert
+	AlertStatus              = alert.AlertStatus
+	AlertSeverity            = alert.AlertSeverity
 )
 
-// ConcurrencyPolicy is a message's concurrency policy.
-type ConcurrencyPolicy = common.ConcurrencyPolicy
-
 const (
+	RecoveryTransient = diagnostic.RecoveryTransient
+	RecoveryPermanent = diagnostic.RecoveryPermanent
+
+	DiagnosticKindError  = diagnostic.DiagnosticKindError
+	DiagnosticKindEvent  = diagnostic.DiagnosticKindEvent
+	DiagnosticKindMetric = diagnostic.DiagnosticKindMetric
+
 	ConcurrencyParallel  = common.ConcurrencyParallel
 	ConcurrencyExclusive = common.ConcurrencyExclusive
 	ConcurrencyOrdered   = common.ConcurrencyOrdered
+
+	DeliveryLogModeOff      = topic.DeliveryLogModeOff
+	DeliveryLogModeFailures = topic.DeliveryLogModeFailures
+	DeliveryLogModeAll      = topic.DeliveryLogModeAll
+
+	OwnerAny           = common.OwnerAny
+	OwnerSystem        = common.OwnerSystem
+	OwnerTopic         = common.OwnerTopic
+	OwnerConsumerGroup = common.OwnerConsumerGroup
+
+	CursorPositionBeginning = consume.CursorPositionBeginning
+	CursorPositionHead      = consume.CursorPositionHead
+	BindingInstalled        = consume.BindingInstalled
+	BindingJoined           = consume.BindingJoined
+	BindingWaiting          = consume.BindingWaiting
+
+	MessagePending    = schedule.MessagePending
+	MessageDeferred   = schedule.MessageDeferred
+	MessageSucceeded  = schedule.MessageSucceeded
+	MessageFailed     = schedule.MessageFailed
+	MessageSuperseded = schedule.MessageSuperseded
+
+	NoInstanceTarget = worker.NoInstanceTarget
+
+	MetricKindCounter      = metrics.MetricKindCounter
+	MetricKindGauge        = metrics.MetricKindGauge
+	MetricUnitMilliseconds = metrics.MetricUnitMilliseconds
+	AlertStatusActive      = alert.AlertStatusActive
+	AlertStatusResolved    = alert.AlertStatusResolved
+	AlertSeverityWarn      = alert.AlertSeverityWarn
 )
 
-// LifecycleContext wires SIGINT/SIGTERM into the returned context --
-// the cancellable context Consume requires.
-func LifecycleContext(log logging.Logger) (context.Context, context.CancelFunc) {
-	return common.LifecycleContext(log)
-}
-
-// MetaFromContext reads the delivery's message metadata inside a handler.
-func MetaFromContext(ctx context.Context) (MessageMeta, bool) {
-	return consume.MetaFromContext(ctx)
-}
-
-// Terminal marks a handler error as never retryable -- the delivery goes
-// straight to dead.
-func Terminal(cause error) error {
-	return consume.Terminal(cause)
-}
-
-// Delay asks for the message to run again after delay, without counting a
-// failure.
-func Delay(delay time.Duration) error {
-	return consume.Delay(delay)
-}
-
-// NewProduceItem pairs one message with its options for a multi-message
-// produce call. options may be nil for the defaults.
-func NewProduceItem[Message Versioned](message *Message, options *ProduceOptions) (*ProduceItem[Message], error) {
-	return producer.NewProduceItem[Message](message, options)
-}
-
-// NewCompactionOptions enables compaction for a produced message at rank.
-func NewCompactionOptions(rank int64) (*CompactionOptions, error) {
-	return produce.NewCompactionOptions(rank)
-}
-
-// Beginning positions a new group's cursor at the oldest retained message.
-func Beginning() CursorPosition {
-	return consume.Beginning()
-}
-
-// Head positions a new group's cursor at MAX(id) of the message log when
-// the cursor row is written.
-func Head() CursorPosition {
-	return consume.Head()
-}
+var (
+	LifecycleContext     = common.LifecycleContext
+	MetaFromContext      = consume.MetaFromContext
+	Terminal             = consume.Terminal
+	Delay                = consume.Delay
+	Beginning            = consume.Beginning
+	Head                 = consume.Head
+	NewCompactionOptions = produce.NewCompactionOptions
+)

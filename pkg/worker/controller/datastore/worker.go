@@ -71,7 +71,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	err = tx.QueryRow(ctx, readSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata).
 		Scan(&workerId, &storedMetadata, &unchanged)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return worker.ErrDeclarationInterrupted.With("worker", name)
+		return worker.ErrWorkerDeclarationInterrupted.With("worker", name)
 	}
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	var declaredMetadata json.RawMessage
 	err = tx.QueryRow(ctx, updateSql, workerId, metadata).Scan(&declaredMetadata)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return worker.ErrDeclarationInterrupted.With("worker", name)
+		return worker.ErrWorkerDeclarationInterrupted.With("worker", name)
 	}
 	if err != nil {
 		return err

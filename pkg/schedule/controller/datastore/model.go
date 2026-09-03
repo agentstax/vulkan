@@ -28,7 +28,7 @@ type ScheduleConfigRow struct {
 // takes it. Schedule stays parsed -- next_scheduled_at is computed from it.
 type ScheduleDeclaration struct {
 	Name          string
-	Expression    *schedule.Expression
+	Expression    *schedule.ScheduleExpression
 	SystemId      int64
 	TopicId       int64
 	Concurrency   string

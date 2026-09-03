@@ -8,12 +8,12 @@ import (
 	"strings"
 )
 
-// Recovery states whether an unchanged retry of the operation can succeed.
-type Recovery string
+// DiagnosticRecovery states whether an unchanged retry of the operation can succeed.
+type DiagnosticRecovery string
 
 const (
-	Transient Recovery = "transient" // attempt unchanged -> retry can succeed
-	Permanent Recovery = "permanent" // attempt unchanged -> retry cannot succeed
+	RecoveryTransient DiagnosticRecovery = "transient" // attempt unchanged -> retry can succeed
+	RecoveryPermanent DiagnosticRecovery = "permanent" // attempt unchanged -> retry cannot succeed
 )
 
 // Error is the one error shape:
@@ -24,35 +24,35 @@ const (
 // - diagnose queries fixed at declaration
 // - values
 // - wrapped cause attached per raise via With and Wrap
-type Error struct {
+type DiagnosticError struct {
 	Code     string
-	Recovery Recovery
+	Recovery DiagnosticRecovery
 	Problem  string
-	Fix      string   // "" when the code cannot know the remedy; may carry {attribute} placeholders
-	Queries  []*Query // none when the condition has no state to look at
+	Fix      string             // "" when the code cannot know the remedy; may carry {attribute} placeholders
+	Queries  []*DiagnosticQuery // none when the condition has no state to look at
 	values   []slog.Attr
 	wrapped  error
 }
 
-// NewError declares an error condition and registers its code. Declaration
+// NewDiagnosticError declares an error condition and registers its code. Declaration
 // happens at package init, so structural mistakes panic
 // instead of returning an error nothing would check.
-func NewError(code string, recovery Recovery, problem string, fix string) *Error {
-	if recovery != Transient && recovery != Permanent {
-		panic("recovery must be Transient or Permanent: " + string(recovery))
+func NewDiagnosticError(code string, recovery DiagnosticRecovery, problem string, fix string) *DiagnosticError {
+	if recovery != RecoveryTransient && recovery != RecoveryPermanent {
+		panic("recovery must be RecoveryTransient or RecoveryPermanent: " + string(recovery))
 	}
 	if problem == "" {
 		panic("problem must not be empty: " + code)
 	}
 
-	declared := &Error{Code: code, Recovery: recovery, Problem: problem, Fix: fix}
+	declared := &DiagnosticError{Code: code, Recovery: recovery, Problem: problem, Fix: fix}
 	register(declared)
 	return declared
 }
 
 // Diagnose attaches the queries that show an operator the state behind this
-// condition, and returns the same declaration so it chains onto NewError.
-func (e *Error) Diagnose(queries ...*Query) *Error {
+// condition, and returns the same declaration so it chains onto NewDiagnosticError.
+func (e *DiagnosticError) Diagnose(queries ...*DiagnosticQuery) *DiagnosticError {
 	if len(queries) == 0 {
 		panic("diagnose queries must not be empty: " + e.Code)
 	}
@@ -66,20 +66,20 @@ func (e *Error) Diagnose(queries ...*Query) *Error {
 
 // FixPlaceholders lists each attribute name the fix substitutes, once, in
 // first-appearance order.
-func (e *Error) FixPlaceholders() []string {
+func (e *DiagnosticError) FixPlaceholders() []string {
 	return placeholderNames(e.Fix)
 }
 
 // Fill substitutes text's {attribute} placeholders with the values this raise
 // attached -- the declared fix, or a surface's own rewording of it.
-func (e *Error) Fill(text string) string {
+func (e *DiagnosticError) Fill(text string) string {
 	return fillPlaceholders(text, e.values)
 }
 
 // With returns a copy carrying the given name/value pairs appended to any
 // already attached.
 // Identifier strings render quoted, everything else via its slog value.
-func (e *Error) With(pairs ...any) *Error {
+func (e *DiagnosticError) With(pairs ...any) *DiagnosticError {
 	copied := *e
 	copied.values = append(slices.Clone(e.values), toAttributes(pairs)...)
 	return &copied
@@ -87,18 +87,18 @@ func (e *Error) With(pairs ...any) *Error {
 
 // Wrap returns a copy carrying cause as the wrapped error, reachable through
 // errors.Is/As and rendered after the code in the one-liner.
-func (e *Error) Wrap(cause error) *Error {
+func (e *DiagnosticError) Wrap(cause error) *DiagnosticError {
 	copied := *e
 	copied.wrapped = cause
 	return &copied
 }
 
 // Values returns the attached name/value pairs in attachment order.
-func (e *Error) Values() []slog.Attr {
+func (e *DiagnosticError) Values() []slog.Attr {
 	return slices.Clone(e.values)
 }
 
-func (e *Error) Unwrap() error {
+func (e *DiagnosticError) Unwrap() error {
 	return e.wrapped
 }
 
@@ -107,7 +107,7 @@ func (e *Error) Unwrap() error {
 // No values drops the ":", an empty fix drops the "--",
 // no cause drops the trailing chain.
 // The fix's placeholders fill from the attached values.
-func (e *Error) Error() string {
+func (e *DiagnosticError) Error() string {
 	var builder strings.Builder
 	builder.WriteString(e.Problem)
 
@@ -141,8 +141,8 @@ func (e *Error) Error() string {
 
 // Is matches on code, so errors.Is(raised, pkg.ErrX) holds for every copy
 // With and Wrap produce.
-func (e *Error) Is(target error) bool {
-	targetError, ok := target.(*Error)
+func (e *DiagnosticError) Is(target error) bool {
+	targetError, ok := target.(*DiagnosticError)
 	if !ok {
 		return false
 	}
@@ -150,7 +150,7 @@ func (e *Error) Is(target error) bool {
 }
 
 // LogValue renders the same parts as fields for JSON logs.
-func (e *Error) LogValue() slog.Value {
+func (e *DiagnosticError) LogValue() slog.Value {
 	attributes := []slog.Attr{
 		slog.String("code", e.Code),
 		slog.String("problem", e.Problem),
@@ -170,23 +170,23 @@ func (e *Error) LogValue() slog.Value {
 }
 
 // Docs returns the error's documentation page, derived from the code.
-func (e *Error) Docs() string {
+func (e *DiagnosticError) Docs() string {
 	return docsBaseURL + e.Code
 }
 
 // GetCode and GetKind satisfy Declaration; Get-prefixed because Code is
 // already the field.
-func (e *Error) GetCode() string {
+func (e *DiagnosticError) GetCode() string {
 	return e.Code
 }
 
-func (e *Error) GetKind() Kind {
-	return KindError
+func (e *DiagnosticError) GetKind() DiagnosticKind {
+	return DiagnosticKindError
 }
 
 // Errors lists every registered error ordered by code.
-func Errors() []*Error {
-	return listRegistered[*Error]()
+func Errors() []*DiagnosticError {
+	return listRegistered[*DiagnosticError]()
 }
 
 // ***************

@@ -12,16 +12,14 @@ package conventions
 // test fails until it is).
 
 import (
+	_ "github.com/agentstax/vulkan/pkg/alert"
 	_ "github.com/agentstax/vulkan/pkg/common"
 	_ "github.com/agentstax/vulkan/pkg/consume"
-	_ "github.com/agentstax/vulkan/pkg/consumer"
 	_ "github.com/agentstax/vulkan/pkg/metrics"
 	_ "github.com/agentstax/vulkan/pkg/migrate"
-	_ "github.com/agentstax/vulkan/pkg/produce/controller/datastore"
-	_ "github.com/agentstax/vulkan/pkg/producer"
+	_ "github.com/agentstax/vulkan/pkg/produce"
 	_ "github.com/agentstax/vulkan/pkg/schedule"
 	_ "github.com/agentstax/vulkan/pkg/system"
-	_ "github.com/agentstax/vulkan/pkg/systemmanager"
 	_ "github.com/agentstax/vulkan/pkg/topic"
 	_ "github.com/agentstax/vulkan/pkg/worker"
 )

@@ -34,9 +34,6 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/pkg/alert"
-	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
-	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
-	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
@@ -64,9 +61,9 @@ func run() error {
 
 	// newest declaration wins: every minute instead of the @hourly default
 	if err := client.RegisterSystem(ctx, &vulkan.RegisterSystemConfig{
-		PartitionCount:     &partitioncount.JobConfig{Expression: "* * * * *"},
-		CompactionReadCost: &compactionreadcost.JobConfig{Expression: "* * * * *"},
-		WorkerLiveness:     &workerliveness.JobConfig{Expression: "* * * * *"},
+		PartitionCount:     &alert.PartitionCountJobConfig{Expression: "* * * * *"},
+		CompactionReadCost: &alert.CompactionReadCostJobConfig{Expression: "* * * * *"},
+		WorkerLiveness:     &alert.WorkerLivenessJobConfig{Expression: "* * * * *"},
 	}); err != nil {
 		return err
 	}

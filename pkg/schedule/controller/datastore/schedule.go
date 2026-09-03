@@ -193,7 +193,7 @@ func (d *ScheduleDatastore) dbNow(ctx context.Context, q datastore.Querier) (tim
 // nextScheduledTime is the first scheduled time schedule produces after the db
 // clock. A schedule with none left (a Feb-29 rule past its last leap year)
 // cannot be registered.
-func (d *ScheduleDatastore) nextScheduledTime(ctx context.Context, q datastore.Querier, expression *schedule.Expression) (time.Time, error) {
+func (d *ScheduleDatastore) nextScheduledTime(ctx context.Context, q datastore.Querier, expression *schedule.ScheduleExpression) (time.Time, error) {
 	dbNow, err := d.dbNow(ctx, q)
 	if err != nil {
 		return time.Time{}, err

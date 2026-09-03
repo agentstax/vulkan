@@ -25,7 +25,7 @@ and [0555]'s package-kinds text.
    (two domains read it), a domain root (that domain's machinery reads it),
    or an assembler (only its own verbs read it). Codes are the same law
    with no assembler case: every `diagnostic.NewError` / `NewEvent` /
-   `NewMetric` lives in a domain root's `errors.go`, `logs.go`, or
+   `NewMetric` lives in a domain root's `errors.go`, `events.go`, or
    `metrics.go`, exported, or in `common` when two stacks raise it.
    Machinery and assemblers declare none.
 3. **Roots are named for what they are about.** Thing domains take the
@@ -139,8 +139,8 @@ pkg/vulkan
 - Codes move to their roots and drop the lowercase name (review G11):
   produce/controller/datastore/{errors,logs}.go (VK0018, VK0033, VK0056,
   VK0057) -> pkg/produce; migrate/controller/datastore/errors.go
-  (VK0053) -> pkg/migrate; consumer/logs.go VK0041 -> consume;
-  producer/logs.go VK0038 -> produce; systemmanager/logs.go VK0065 ->
+  (VK0053) -> pkg/migrate; consumer/events.go VK0041 -> consume;
+  producer/events.go VK0038 -> produce; systemmanager/events.go VK0065 ->
   system. pkg/metrics/consumergroup.go (10 metrics) is renamed
   metrics.go. tools/conventions and tools/codeexport then link roots
   only -- the produce/controller/datastore line goes.
@@ -159,7 +159,7 @@ pkg/vulkan
   alias or var.
 - The SQL owner comment's package segment equals the declaring root's
   name (review G5).
-- Every `diagnostic.New*` call site is in `pkg/<x>/{errors,logs,metrics}.go`
+- Every `diagnostic.New*` call site is in `pkg/<x>/{errors,events,metrics}.go`
   or under pkg/common, and the variable it initializes is exported
   (review G11).
 
@@ -199,11 +199,14 @@ next. Path moves are `git mv` plus package clause plus import rewrite.
    schedule_spec.go; client holds assemblers only; producer_instance.go;
    instances hold private fields.
 5. Conventions tests, CONVENTIONS/AGENTS text, decision record, ROADMAP
-   item slimmed.
+   item slimmed. The closure walk exists as a go/types program (go list
+   -export + importer lookup; each reached package imported directly so
+   its consts are visible) and becomes tools/conventions' test here.
 6. Docs: website/src/content/docs/guides/handler-outcomes.mdx (imports
    pkg/consumergroup), errors/VK0054.md and VK0055.md
-   (`consumergroup.Delay`/`Terminal` -> vulkan), guides/client.mdx and
-   guides/schedules.mdx mentions; config doc comments that say "Default:
+   (`consumergroup.Delay`/`Terminal` -> vulkan) and its
+   `diagnostic.Permanent` mention, guides/client.mdx and
+   guides/schedules.mdx mentions (`vulkan.ScheduleSpec{` by value -> `&`); config doc comments that say "Default:
    text lines to stderr" gain "the client's logger when built through
    vulkan.Client".
 
@@ -259,11 +262,48 @@ Full fresh-DB suite at the review-ready checkpoint.
   `topiccontroller.TopicConfig`** (cli/destroy.go, cli/topic_config.go).
   Not this plan's scope -- the CLI sits under the module tree and may
   reach machinery -- but the import path changes in step 1.
+- **G12 The three alert JobConfig types clashed by name** (2026-09-03,
+  found by the closure walk in step 4). RESOLVED in step 4: they live in
+  the alert root as `alert.PartitionCountJobConfig`,
+  `alert.CompactionReadCostJobConfig`, `alert.WorkerLivenessJobConfig` --
+  a root holding the declaration inputs its machinery consumes, the
+  TopicConfig treatment. Their Validate no longer parses the cron (an
+  alert root cannot import the schedule root, and the schedule controller
+  parses it); admin builds the three jobs before its first write so a bad
+  expression still fails up front.
+- **G13 Bare generic nouns collide in a flat namespace** (`metrics.Kind`
+  vs `diagnostic.Kind`, and the same class for Status, Severity, Unit,
+  Error, Expression). RESOLVED in step 4 by the rule: a root type whose
+  bare name is a generic noun takes the root's noun as prefix, consts
+  follow their type's prefix (the DeliveryLogMode pattern), and the
+  rename lands on the declaration so vulkan's alias stays same-named.
+  Renamed: MetricKind/MetricUnit (+MetricKindCounter, MetricKindGauge,
+  MetricUnitCount, MetricUnitMilliseconds), AlertStatus/AlertSeverity
+  (+AlertStatusActive, AlertStatusResolved, AlertSeverityWarn),
+  ScheduleExpression, and the diagnostic set DiagnosticError/Event/
+  Query/Metric/Recovery/Kind with NewDiagnostic* constructors,
+  RecoveryTransient/RecoveryPermanent, DiagnosticKindError/Event/Metric.
+  The step 5 closure test must still compare alias TARGETS, not bare
+  names, so the next clash cannot pass silently. Same rule settled the
+  Err name clash: `ErrScheduleDeclarationInterrupted`,
+  `ErrWorkerDeclarationInterrupted`.
+- **G14 Step 4 also moved `SystemConfig`** from system/controller to
+  pkg/system (the TopicConfig rule) and re-exports non-generic vocabulary
+  funcs as vars (`var Terminal = consume.Terminal`); `NewProduceItem`
+  stays a func because a generic func cannot be a var -- the one wrapper
+  left in vulkan.
+- **G15 pkg/alert was only linked transitively** (2026-09-03): the tools
+  import lists never named it; producer's import reached it. Step 4's
+  list trim dropped VK0063 from codes.json and the completeness test did
+  not notice, because it compares the registry against the same linked
+  set. Resolution: alert added to both lists; the step 5 call-site walk
+  (G11) doubles as the completeness check -- every `diagnostic.New*`
+  site in the tree must appear in the linked registry.
 - **G11 Seven codes are declared below or beside a root** (2026-09-03,
   found closing step 1): four in produce's datastore, one in migrate's
   datastore, three in the assemblers consumer, producer, systemmanager --
   all unexported `err*`/`event*` names, which is why alias.go never saw
-  them. CONVENTIONS already says "the owning pkg/<x>/errors.go / logs.go";
+  them. CONVENTIONS already says "the owning pkg/<x>/errors.go / events.go";
   law 2 restated for codes makes the root the only home. Resolution: the
   moves listed under Lower-package deltas, the exported name, the
   call-site walk above.

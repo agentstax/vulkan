@@ -75,7 +75,7 @@ func toMessageOutcome(data *datastore.MessageStatus) schedule.MessageOutcome {
 	}
 }
 
-func toScheduleDeclaration[Message common.Versioned](systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) *datastore.ScheduleDeclaration {
+func toScheduleDeclaration[Message common.Versioned](systemId int64, name string, expression *schedule.ScheduleExpression, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) *datastore.ScheduleDeclaration {
 	return &datastore.ScheduleDeclaration{
 		Name:          name,
 		Expression:    expression,
