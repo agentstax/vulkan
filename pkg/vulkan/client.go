@@ -135,7 +135,11 @@ func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consum
 	if cfg != nil {
 		bindings = cfg.Bindings
 	}
-	return messageConsumer.Register[Message](ctx, consumerGroup, topicName, bindings)
+	instance, err := messageConsumer.Register[Message](ctx, consumerGroup, topicName, bindings)
+	if err != nil {
+		return nil, err
+	}
+	return newConsumerInstance(instance, c.manager, !c.Config.DisableManager)
 }
 
 // RegisterProducer resolves the named topic and returns an instance that

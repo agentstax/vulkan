@@ -24,6 +24,15 @@ type ClientConfig struct {
 	// create is recoverable, destroy is not.
 	AllowDestroy bool
 
+	// DisableManager - whether Consume skips running the system manager
+	// beside its session; explicit RunManager calls are unaffected.
+	// Default: false.
+	//
+	// Set it where upkeep must not run in this process: a deployment with
+	// dedicated `vulkan manager run` processes, or consumers under a
+	// database role without DDL rights (the topic janitor runs DDL).
+	DisableManager bool
+
 	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for the client's own Postgres calls -- never a message's redelivery. Default: common.NewDefaultRetryPolicy().
 }

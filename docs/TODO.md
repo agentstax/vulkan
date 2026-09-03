@@ -246,38 +246,32 @@ systemmanager transitively into the test binary. The real net is
 `codes.test.ts` ("gives every page a declaration"), which would have
 failed on the orphaned VK0065 page. Both lists now name systemmanager.
 
-### Chunk 4 -- client and consumer wiring
+### Chunk 4 -- client and consumer wiring -- DONE
 
-- `pkg/vulkan/client_config.go`: `DisableManager bool`, doc comment
-  naming the two deployments that set it -- dedicated
-  `vulkan manager run` processes, and consumers under a database role
-  without DDL rights (the topic janitor runs DDL).
-- `pkg/consumer/consumer_config.go`: new optional field
-  `RunSystemManager func(ctx context.Context) error` -- runs beside
-  the session until ctx cancels; nil means this process runs no
-  system manager. Note: the config's doc comment says the config is
-  "the group's declaration"; this field is process-shaped -- amend
-  that comment honestly (session/process fields already exist in
-  spirit via Logger/Retry) or find a better seam; do not silently
-  contradict it.
-- `pkg/vulkan/adapter.go` `toConsumerConfig`: fill it with
-  `c.manager.Run` unless `cfg.DisableManager`; signature grows the
-  needed input. (`toConsumerConfig` takes the client's resolved
-  values, so thread the func through the same way Logger/Retry go.)
-- `pkg/consumer/consumer_instance.go` `Consume`: when the field is
-  non-nil, add `group.Go(func() error { return i.Config.RunSystemManager(runCtx) })`
-  beside the metrics and runner members. Blocks until runCtx cancels,
-  returns nil then; a pre-loop error tears the session down with the
-  real error (wanted). Add the fact to the start line:
-  `"disable_manager", i.Config.RunSystemManager == nil`.
-- `pkg/vulkan/client.go` `RunManager`: body unchanged
-  (`c.manager.Run(ctx)`); rewrite the doc comment -- no refusal;
-  joins the running loop or starts it; claim arbitration across
-  processes.
-- `pkg/vulkan/schedule.go` `Schedule.Schedule`: body unchanged;
-  same comment rewrite.
-- `cmd/vulkan/internal/cli/manager_run.go`: check help text for
-  refusal/second-run wording.
+Built 2026-09-02. Full build, `go test -race ./...` 120 passed,
+conventions tests pass. Live-verified under `-race` (below).
+
+- `ClientConfig.DisableManager bool` -- gates only Consume's auto-run;
+  explicit RunManager is unaffected. Doc comment names the two
+  deployments that set it (dedicated `vulkan manager run` processes,
+  roles without DDL rights).
+- `consumer.ConsumerConfig.RunSystemManager func(ctx context.Context) error`
+  before the ambient tail; the struct doc now names RunSystemManager and
+  the Logger/Retry tail as the process-fact exceptions to "the group's
+  declaration".
+- `toConsumerConfig` grew the param (after cfg, before the ambient
+  tail); `RegisterConsumer` fills it with `c.manager.Run` unless
+  `DisableManager`.
+- `Consume` adds the errgroup member when non-nil and reports
+  `disable_manager` (RunSystemManager == nil) on the start line;
+  registry row added to CONVENTIONS ## Logging.
+- RunManager/Schedule.Schedule doc comments and the CLI help were
+  already rewritten during the chunk-3 strip -- nothing left to fix.
+
+Live verification under `-race` (throwaway schema): a plain Consume has
+1 live system manager beside it, returns nil on cancel, and 0 remain
+after the session; a DisableManager client's Consume runs 0 and still
+ends clean.
 
 ### Chunk 5 -- examples, labs, docs
 
