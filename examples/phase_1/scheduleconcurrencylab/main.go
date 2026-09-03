@@ -1,9 +1,9 @@
 package main
 
-// Schedule permit lab: the client holds ONE SystemManager, so two
-// concurrent Schedule(ctx) runs in one process refuse the second -- today's
-// per-call rival manager is gone. Also proves RegisterSchedule returns the
-// handle whose Get reads the declared row.
+// Schedule concurrency lab: Schedule(ctx) runs the system manager, so two
+// concurrent runs in one process are both admitted and the manager row's
+// claim gate is what admits one reconcile loop between them. Also proves
+// RegisterSchedule returns the handle whose Get reads the declared row.
 
 import (
 	"context"
@@ -57,12 +57,12 @@ func run() (err error) {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
-	topicName := fmt.Sprintf("schedulepermitlab.reports.%d", run)
+	topicName := fmt.Sprintf("scheduleconcurrencylab.reports.%d", run)
 	_, err = client.RegisterTopic(ctx, topicName, nil)
 	must(err)
 
 	step("RegisterSchedule returns the handle; Get reads the row")
-	scheduleName := fmt.Sprintf("schedulepermitlab.nightly.%d", run)
+	scheduleName := fmt.Sprintf("scheduleconcurrencylab.nightly.%d", run)
 	nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx, vulkan.ScheduleSpec{Name: scheduleName, Topic: topicName, Cron: "0 3 * * *"}, &ReportRequestedV1{Kind: "nightly"}, nil)
 	must(err)
 	row, err := nightly.Get(ctx)
@@ -72,7 +72,7 @@ func run() (err error) {
 	}
 	assertString("schedule name", row.Name, scheduleName)
 
-	step("a second concurrent Schedule run is refused")
+	step("two concurrent Schedule runs are both admitted")
 	runCtx, stopRun := context.WithCancel(ctx)
 	defer stopRun()
 	firstDone := make(chan error, 1)
@@ -80,37 +80,58 @@ func run() (err error) {
 		firstDone <- nightly.Schedule(runCtx)
 	}()
 
-	// give the first run its permit -- Run acquires it before any I/O
-	time.Sleep(2 * time.Second)
+	secondCtx, stopSecond := context.WithCancel(ctx)
+	defer stopSecond()
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- client.Schedule(scheduleName).Schedule(secondCtx)
+	}()
+
+	time.Sleep(5 * time.Second)
 	select {
 	case err := <-firstDone:
 		die(fmt.Sprintf("first Schedule run exited early: %v", err))
+	case err := <-secondDone:
+		die(fmt.Sprintf("second Schedule run was refused: %v", err))
 	default:
 	}
-	if err := client.Schedule(scheduleName).Schedule(ctx); err == nil {
-		die("expected the second concurrent Schedule run to be refused, got nil")
-	} else {
-		fmt.Printf("  ✓ second run refused -> %v\n", err)
+	live := scalar(ctx, client, `
+		SELECT count(*)
+		FROM %[1]s.worker_instance i
+		JOIN %[1]s.worker_config w ON w.id = i.worker_id
+		WHERE w.name = 'manager'
+			AND w.system_id IS NOT NULL
+			AND i.expires_at > now()`)
+	if live != 1 {
+		die(fmt.Sprintf("%d live system manager instances, want 1 -- the row's claim gate admits one, so an installation created before the gate (target_instances -1) needs a drop+recreate of its schema", live))
 	}
+	fmt.Println("  ✓ both runs admitted, one live manager instance between them")
 
-	step("the first run stops clean and the permit frees")
+	step("each run stops clean on its own ctx")
+	stopSecond()
+	if err := <-secondDone; err != nil {
+		die(fmt.Sprintf("second Schedule run: expected nil on requested stop, got %v", err))
+	}
 	stopRun()
 	if err := <-firstDone; err != nil {
 		die(fmt.Sprintf("first Schedule run: expected nil on requested stop, got %v", err))
 	}
-	if err := nightly.Schedule(runCtx); err == nil {
-		die("expected the run on the already-cancelled ctx to return nil error immediately, got nil error")
-	} else {
-		// the freed permit admits the call again -- it fails on the dead ctx, not the permit
-		fmt.Printf("  ✓ permit freed, next run admitted (failed on cancelled ctx: %v)\n", err)
-	}
+	fmt.Println("  ✓ both returned nil on a requested stop")
 
 	step("cleanup")
 	must(nightly.Destroy(ctx))
 	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
-	fmt.Println("\n✅ SCHEDULE PERMIT LAB PASSED")
+	fmt.Println("\n✅ SCHEDULE CONCURRENCY LAB PASSED")
 	return nil
+}
+
+// scalar runs a one-value query whose every table name is the client's own
+// schema at verb [1].
+func scalar(ctx context.Context, client *vulkan.Client, sql string) int64 {
+	var value int64
+	must(client.Datastore().Pool.QueryRow(ctx, fmt.Sprintf(sql, client.Datastore().Schema)).Scan(&value))
+	return value
 }
 
 func assertString(label string, got string, want string) {

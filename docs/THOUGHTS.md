@@ -4,12 +4,10 @@
 
 07 looks pretty good
 
-08 SETTLED [0635]: Consume auto-runs the system manager,
-   ClientConfig.DisableManager opts out -- not yet built
-
 11 gonna ignore this one for now, we just don't have a good solution yet but have it on roadmap
 
-Settled/done, removed from the list: ProduceOptions is nil-ok; config lives on
+Settled/done, removed from the list: 08 Consume auto-runs the system manager
+([0638]-[0642], shipped 2026-09-02); ProduceOptions is nil-ok; config lives on
 RegisterConsumer per the client shape; defer Close can't replace
 LifecycleContext (Consume blocks, so the defer never runs -- signal helper is
 the ecosystem norm); scenario 10's errgroup deleted, its atomic kept (8

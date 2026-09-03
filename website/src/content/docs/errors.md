@@ -61,6 +61,7 @@ and the code lands on a page here the same way.
 | [VK0040](/errors/VK0040) | worker tick exceeded its poll rate | warn |
 | [VK0041](/errors/VK0041) | consumer stopped | info |
 | [VK0052](/errors/VK0052) | abandoned-routine events dropped | warn |
+| [VK0065](/errors/VK0065) | system manager stopped | error |
 
 Declared metrics share the code space too: a measurement's name resolves
 to its declaration, and `vulkan explain` accepts the code, the full

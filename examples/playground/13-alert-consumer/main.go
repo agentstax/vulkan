@@ -6,9 +6,10 @@
 // Slack or PagerDuty hook would hang off. The checks are re-declared here
 // at every-minute so a run has any chance of seeing one.
 //
-// Concepts held before domain code (14): the 10 from scenario 08, plus
+// Concepts held before domain code (12): the 7 from scenario 03, plus
 // RegisterSystem, the three check JobConfigs and their cron expressions,
-// and pkg/alert's TopicName and Alert.
+// and pkg/alert's TopicName and Alert. The checks run because Consume runs
+// the manager.
 //
 // Traps hit:
 //   - The default check schedules are @hourly; tightening them means
@@ -37,7 +38,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
-	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -83,14 +83,9 @@ func run() error {
 		return err
 	}
 
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.Go(func() error { return client.RunManager(groupCtx) })
-	group.Go(func() error {
-		return pager.Consume(groupCtx, func(ctx context.Context, foundAlert *alert.Alert) error {
-			fmt.Printf("[%s] %s %s: %s -- %s\n",
-				foundAlert.Severity, foundAlert.Status, foundAlert.Name, foundAlert.Message, foundAlert.Hint)
-			return nil
-		}, nil)
-	})
-	return group.Wait()
+	return pager.Consume(ctx, func(ctx context.Context, foundAlert *alert.Alert) error {
+		fmt.Printf("[%s] %s %s: %s -- %s\n",
+			foundAlert.Severity, foundAlert.Status, foundAlert.Name, foundAlert.Message, foundAlert.Hint)
+		return nil
+	}, nil)
 }

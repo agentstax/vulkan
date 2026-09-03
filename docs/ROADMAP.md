@@ -41,11 +41,9 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     takes the caller's pool, [0636] the client takes the pool, and
     [0634] the value-taking `ProduceInTx` all SHIPPED the same day
     (HISTORY) -- setup is `pool -> NewClient`, the datastore is off the
-    doc site, and the produce surface is four verbs. Still to build:
-    [0635] `Consume` running the system manager so a deployment stops
-    needing to know the concept. It needs its doc-site page first, the
-    way [0633]'s and [0634]'s were written and reviewed before their
-    builds.
+    doc site, and the produce surface is four verbs. [0635] `Consume`
+    running the system manager SHIPPED 2026-09-02 as [0638]-[0642]
+    (HISTORY) -- a deployment no longer needs to know the concept.
     - Closed 2026-09-02 by [0637]: the pool builder moved to
       `pkg/vulkan`, so `datastore` is off the doc site entirely and a
       first program imports one package of ours.
@@ -230,8 +228,10 @@ documentation; the latter want a surface that has stopped moving.
   `client.RegisterSchedule` returns the handle and a handle is not the
   product of one call. The handle cannot carry it; the options are
   returning `*SchedulerInstance` with the client's `SystemManager`
-  passed in (a `Schedule` call builds a rival per call, which
-  schedulepermitlab forbids) or dropping the schedule half. The plumbing
+  passed in (a `Schedule` call builds a manager per call, which
+  scheduleconcurrencylab covers -- rival loops are no longer the
+  objection, since the row's claim gate arbitrates them) or dropping
+  the schedule half. The plumbing
   was built once and reverted in full — a declaration verb returning the
   outcome and the instance carrying it — so the shape is known.
 

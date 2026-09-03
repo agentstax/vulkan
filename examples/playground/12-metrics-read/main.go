@@ -4,9 +4,10 @@
 // measures the fleet, plus a loop printing the group's own gauges from
 // the __system.metrics topic -- the pull side an ops dashboard would use.
 //
-// Concepts held before domain code (13): the 10 from scenario 08, plus
+// Concepts held before domain code (11): the 7 from scenario 03, plus
 // ListMeasurements / ListMeasurementMessages, the MessageData envelope,
-// and pkg/metrics for the metric names.
+// and pkg/metrics for the metric names. The collector runs because Consume
+// runs the manager -- errgroup is here for the print loop, not for it.
 //
 // Traps hit:
 //   - Measurements exist only after the manager's metrics collector ticks
@@ -82,7 +83,6 @@ func run() error {
 	}
 
 	group, groupCtx := errgroup.WithContext(ctx)
-	group.Go(func() error { return client.RunManager(groupCtx) })
 	group.Go(func() error {
 		return ledger.Consume(groupCtx, func(ctx context.Context, order *OrderPlaced) error {
 			fmt.Printf("recording %s\n", order.OrderId)

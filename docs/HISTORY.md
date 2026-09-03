@@ -5,6 +5,55 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-02 — Consume runs the deployment's upkeep [0638]-[0642]
+
+A deployment no longer needs to know the system manager exists. `Consume`
+runs it beside the session, so one live consumer keeps the fleet-wide
+workers running for every topic in the deployment; `ClientConfig.DisableManager`
+is the per-process opt-out, for consumer pods beside a dedicated
+`vulkan manager run` and for consumers under a database role with no DDL
+rights. The composition lives in `pkg/vulkan`: `ConsumerInstance` stops
+being an alias of the consumer package's type and becomes a struct
+embedding it, running the session and `manager.Run` in an errgroup [0642].
+`pkg/consumer` learns nothing -- the func field on its config that [0638]
+first routed this through was rejected on review, since a config holds
+static values and never a runnable, and building the manager inside
+`pkg/consumer` is an import cycle (the alert packages import it; the
+system manager assembles the alerts).
+
+What made it safe is that the manager stopped being the one worker exempt
+from the system's own claim gate. Its row is declared
+`target_instances = 1` [0638], so N reconcile loops across N processes
+arbitrate the way every other worker already does: one claim wins, the
+rest retry on `RetryDelay` and take over when the holder stops. The
+column is the deployment's runtime dial with no code -- 0 suspends upkeep
+everywhere (VK0035), 1 is the default, N runs N copies, -1 restores
+every-process behavior. Declaring the target exposed a hole [0549] left:
+`TargetInstances` arrived by mutating a built `Definition`, so
+`worker.InstanceTarget` became a named type and a required
+`NewDefinition`/`NewManagerProvisioner` parameter, and both post-construction
+pokes are gone [0639].
+
+`SystemManager.Run` lost its permit and refuses nothing. [0638] first made
+it join-and-block over a caller count; review found the count had no users
+-- the scheduler builds a manager per `Schedule` call, `RunManager` is
+called once everywhere, and several `Consume`s on one client are exactly
+what the row arbitrates -- so `Run` is now a per-caller loop and the row is
+the only arbiter [0641]. A life that ends on its own logs the declared
+VK0065 and claims again behind `SystemManagerConfig.RunRetry` [0640],
+because with a shared loop nothing returns to a `Consume` by design: no
+restart would have left one fatal killing a process's upkeep for its
+lifetime, and `vulkan manager run` up doing nothing.
+
+Playground scenarios 08, 12, and 13 dropped their hand-wired
+`RunManager` (08 is now scenario 03's shape, and 13 no longer needs an
+errgroup at all); `schedulepermitlab` -- which asserted the deleted
+refusal -- became `scheduleconcurrencylab`; `managerautorunlab` is the new
+proof, green on all five phases. One upgrade note: re-declaration updates
+only a worker row's metadata, so an installation created before the gate
+still carries `target_instances = -1` on its manager row and needs a
+drop+recreate of its schema to pick up the 1.
+
 ## 2026-09-02 — ProduceInTx takes the message [0634]
 
 The produce surface is four verbs, one per cell of {value, closure} ×

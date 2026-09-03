@@ -236,20 +236,19 @@ if err != nil {
 return nightly.Schedule(ctx)
 ```
 
-`Schedule` runs the system manager, as it does today. The schedule
-producer is a fleet worker and it produces every registered schedule,
-not just this one, so the verb's name is a bit deceptive: a program
-that calls `nightly.Schedule` is running every worker in the fleet
-without having said so. That was weighed against the alternative, a
-handle with no run verb and `client.RunManager` as the only way to
-make a schedule fire, and the symmetry won. A user who has learned
-`Register` then `Consume` and `Register` then `Produce` gets
-`Register` then `Schedule` and nothing new. Two things keep the
-deception in check: the manager's own starting line says which owner
-it runs under, and the deployment that only produces still has
-`client.RunManager` by its real name. A program that registers a
-schedule and exits has registered one that never fires until something
-runs a manager.
+`Schedule` runs the system manager. The schedule producer is a fleet
+worker and it produces every registered schedule, not just this one,
+so the verb's name is a bit deceptive: a program that calls
+`nightly.Schedule` is running every worker in the fleet without having
+said so. `Consume` does the same thing, which is what makes the
+symmetry honest — a user who has learned `Register` then `Consume` and
+`Register` then `Produce` gets `Register` then `Schedule` and nothing
+new, and none of the three is quietly doing more than the others. The
+alternative weighed against it was a handle with no run verb and
+`client.RunManager` as the only way to make a schedule fire. A program
+that registers a schedule and exits has registered one that never
+fires until something in the deployment runs a manager — which any
+consumer does.
 
 `ScheduleSpec` exists because three adjacent strings is where a swap
 stops being caught. `name` and `topic` transposed registers a schedule
@@ -403,18 +402,40 @@ they sit on the client.
 return client.RunManager(ctx)
 ```
 
-The client holds the one `SystemManager`, so the refuse-a-second-Run
-permit holds: a `Schedule` call used to build a fresh manager, and two
-calls in one process ran two rival reconcile loops. Under the client the
-second is refused.
+Most deployments never call this. `Consume` runs the system manager
+beside the session, so a process with one live consumer already keeps
+the fleet-wide workers running — the topic janitor, the schedule
+producer, the metrics collector, the built-in checks — for every topic
+in the deployment, not just its own. `RunManager` is for the process
+with no consumer to hang upkeep on: `vulkan manager run`, or a service
+that wants to carry it explicitly.
 
-Nothing else on this page runs workers or stops running them. A
-`Consume` already runs the fleet-wide workers beside its group's own
-(the topic janitor, the schedule producer, the metrics collector), so
-any process with one live consumer keeps upkeep running and fires
-schedules. Admin verbs run nothing. The producer runs nothing, and
-that is the one gap: a deployment that only produces accumulates
-partitions with no log line saying why.
+Nothing is refused. Every `Consume`, `RunManager`, and `Schedule` call
+in the fleet starts its own reconcile loop, and they all try to claim
+the same row: `manager` under the system's owner, declared
+`target_instances = 1`. One claim wins, the losers retry every 30
+seconds and take over within that window when the holder stops. It is
+the gate the group's own workers already run under, pointed at the
+manager itself.
+
+That column is the deployment's dial and it takes effect with no
+deploy:
+
+| `target_instances` | what runs |
+| --- | --- |
+| `0` | nothing, everywhere — the loop logs [VK0035](/errors/VK0035/) and reconciles no rows |
+| `1` | one process reconciles, the rest wait. The default. |
+| `N` | N processes reconcile |
+| `-1` | every process reconciles, no cap |
+
+`ClientConfig.DisableManager` is the per-process opt-out. Two
+deployments need it: consumer pods beside a dedicated `vulkan manager
+run`, and consumers under a database role with no DDL rights, since
+the topic janitor creates and drops partitions.
+
+Admin verbs run nothing. The producer runs nothing, and that is the
+one gap: a deployment that only produces accumulates partitions with
+no log line saying why.
 
 The `worker_liveness` alert closes it, the third built-in beside
 `partition_count` and `compaction_read_cost`. Its condition is the

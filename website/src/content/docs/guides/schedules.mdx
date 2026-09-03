@@ -86,9 +86,10 @@ actually produces, and it produces every registered schedule, not just
 the one whose instance called `Schedule`. So `Schedule` exists for one
 reason: a program that registers a schedule and exits has registered
 one that never fires unless a manager is running somewhere. Calling
-`Schedule` makes the registering program that somewhere. If a manager
-already runs in the fleet, `Schedule` is one more instance of it, and
-the worker's `target_instances` decides which one holds it.
+`Schedule` makes the registering program that somewhere — and so does
+any `Consume` in the deployment, since a consumer runs the manager
+too. `Schedule` is one more caller of it, and the manager row's
+`target_instances` decides which caller holds the claim.
 
 The produce itself is what a hand-written producer would do, in one
 transaction with the `schedule_cursor` advance:

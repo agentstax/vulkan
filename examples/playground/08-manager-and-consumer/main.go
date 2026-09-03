@@ -2,23 +2,21 @@
 //
 // The deployment most teams actually have: a single service process that
 // consumes and also keeps the system's upkeep running, without a separate
-// `vulkan manager run` process.
+// `vulkan manager run` process. Consume runs the system manager beside the
+// session, so this file is scenario 03 unchanged -- the shape costs nothing
+// to reach.
 //
-// Concepts held before domain code (10): the 7 from scenario 03, plus
-// client.RunManager, errgroup/goroutine wiring, and the knowledge that a
-// consumer already runs its own topic's upkeep so the manager is for
-// everything else.
+// Concepts held before domain code (7): the 7 from scenario 03. The manager
+// is not one of them.
 //
 // Traps hit:
-//   - Two long-running Run/Consume calls, two goroutines, one lifecycle
-//     ctx: the composition is on the user (errgroup is the honest answer
-//     and is not in the library's examples).
-//   - What the manager covers versus what the consumer covers is not
-//     discoverable from the API -- the quickstart's CAUTION aside and the
-//     client guide's manager section are where it is written.
-//   - The manager needs the control-plane tables to exist but registers
-//     no topic itself -- it assumes some producer's RegisterTopic (or
-//     RegisterSystem) already ran.
+//   - What the manager covers versus what the consumer covers is still not
+//     discoverable from the API -- it stops mattering here, because one
+//     Consume covers both, but a produce-only binary still has no long
+//     running call to carry upkeep.
+//   - The opt-out is client-wide and named on the other side of the
+//     question a user asks: a process that must NOT run upkeep sets
+//     ClientConfig.DisableManager, and nothing at Consume says so.
 package main
 
 import (
@@ -27,7 +25,6 @@ import (
 	"os"
 
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
-	"golang.org/x/sync/errgroup"
 )
 
 type OrderPlaced struct {
@@ -63,13 +60,8 @@ func run() error {
 		return err
 	}
 
-	group, ctx := errgroup.WithContext(ctx)
-	group.Go(func() error { return client.RunManager(ctx) })
-	group.Go(func() error {
-		return shipping.Consume(ctx, func(ctx context.Context, order *OrderPlaced) error {
-			fmt.Printf("shipping %s\n", order.OrderId)
-			return nil
-		}, nil)
-	})
-	return group.Wait()
+	return shipping.Consume(ctx, func(ctx context.Context, order *OrderPlaced) error {
+		fmt.Printf("shipping %s\n", order.OrderId)
+		return nil
+	}, nil)
 }

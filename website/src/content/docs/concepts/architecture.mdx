@@ -107,10 +107,11 @@ deferred until polling latency is a *measured* problem.
 ## The maintenance fleet
 
 Upkeep runs as **workers** — rows in the `worker_config` table, claimed and
-executed by whatever processes are around. Every `Consume` embeds a
-manager that runs the fleet; a deployment that only produces runs
-`vulkan manager run` instead. Replicas coordinate through worker
-claims, so running N copies is safe.
+executed by whatever processes are around. Every `Consume` runs the
+system manager, which reconciles the fleet; a deployment that only
+produces runs `vulkan manager run` instead, and
+`ClientConfig.DisableManager` opts a process out. Replicas coordinate
+through worker claims, so running N copies is safe.
 
 | Worker | Maintains |
 | --- | --- |

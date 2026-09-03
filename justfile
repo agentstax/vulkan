@@ -391,6 +391,14 @@ create-ahead-lab:
 worker-claim-lab:
   go run examples/phase_1/workerclaimlab/main.go
 
+# Consume carries the deployment's upkeep: two sessions on one client hold ONE
+# live system manager instance between them, the claim moves to another process
+# when its holder leaves, target_instances = 0 suspends it deployment-wide with
+# VK0035, DisableManager runs none, and an explicit RunManager beside a Consume
+# is still one claim. Registers its own topic, destroys it on exit.
+manager-autorun-lab:
+  go run examples/phase_1/managerautorunlab/main.go
+
 # Phase 14a chunk 7 lab: the end-to-end bridge pattern proof -- a user-space
 # consumer group transforms+re-produces v1's compacted winners into a newly
 # registered v2 at CompactionRank -1 while live producers write straight to

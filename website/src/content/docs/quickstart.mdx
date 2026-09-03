@@ -283,9 +283,10 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
 <ThreadAside label="CAUTION" title="One more thing for real deployments">
 Topic upkeep — creating partitions ahead, enforcing retention, advancing
-the committed cursor — runs while a consumer is running, or under the
-standalone manager: `vulkan manager run`. A deployment that only produces
-should run the manager alongside it.
+the committed cursor — runs while a consumer is running: `Consume` runs
+the deployment's manager beside the session, so there is nothing to wire.
+A deployment that only produces has no consumer to carry it and should
+run the standalone manager alongside: `vulkan manager run`.
 
 </ThreadAside>
 
