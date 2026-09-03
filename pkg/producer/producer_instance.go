@@ -7,16 +7,19 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/producer/batcher"
-	"github.com/agentstax/vulkan/pkg/producer/controller"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/produce"
+	"github.com/agentstax/vulkan/pkg/produce/batcher"
+	"github.com/agentstax/vulkan/pkg/produce/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // ProducerInstance is a registered producer: it appends messages to the topic
 // Register resolved. Shutdown is per call -- a cancelled ctx refuses that
 // call's message, the instance itself never stops accepting work.
-type ProducerInstance[Message topic.Versioned] struct {
+type ProducerInstance[Message common.Versioned] struct {
 	Topic  *topic.TopicData
 	Config *ProducerConfig
 
@@ -25,7 +28,7 @@ type ProducerInstance[Message topic.Versioned] struct {
 }
 
 // cfg is already resolved (WithDefaults + Validate) by NewProducer.
-func NewProducerInstance[Message topic.Versioned](resolvedTopic *topic.TopicData, producerController *controller.ProducerController, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
+func NewProducerInstance[Message common.Versioned](resolvedTopic *topic.TopicData, producerController *controller.ProducerController, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
 	if resolvedTopic == nil {
 		return nil, errors.New("topic must not be nil")
 	}
@@ -60,11 +63,11 @@ func NewProducerInstance[Message topic.Versioned](resolvedTopic *topic.TopicData
 // ProduceResult.Duplicate == true.
 //
 // options may be nil for the defaults.
-func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, options *ProduceOptions) (*ProduceResult[Message], error) {
+func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, options *produce.ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
 	ctx = logging.WithLogBuffer(ctx)
 
-	resolved := ProduceOptions{}
+	resolved := produce.ProduceOptions{}
 	if options != nil {
 		resolved = *options
 	}
@@ -77,7 +80,7 @@ func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Messag
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
 	if resolved.IdempotencyKey != "" {
-		passthrough := func(context.Context, Tx) (*Message, error) { return message, nil }
+		passthrough := func(context.Context, iDatastore.Tx) (*Message, error) { return message, nil }
 		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, resolved)
 		if err != nil {
 			return nil, err
@@ -138,10 +141,10 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
 // options may be nil for the defaults.
-func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], options *ProduceOptions) (*ProduceResult[Message], error) {
+func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc produce.ProducerFunc[Message], options *produce.ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
 
-	resolved := ProduceOptions{}
+	resolved := produce.ProduceOptions{}
 	if options != nil {
 		resolved = *options
 	}
@@ -178,8 +181,8 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // batched Produce sorts the same way, so a consistent order composes.
 //
 // options may be nil for the defaults.
-func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, message *Message, options *ProduceOptions) (*ProduceResult[Message], error) {
-	passthrough := func(context.Context, Tx) (*Message, error) { return message, nil }
+func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx iDatastore.Tx, message *Message, options *produce.ProduceOptions) (*ProduceResult[Message], error) {
+	passthrough := func(context.Context, iDatastore.Tx) (*Message, error) { return message, nil }
 	return p.ProduceFuncInTx(ctx, tx, passthrough, options)
 }
 
@@ -189,10 +192,10 @@ func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, mess
 // here unchanged.
 //
 // options may be nil for the defaults.
-func (p *ProducerInstance[Message]) ProduceFuncInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options *ProduceOptions) (*ProduceResult[Message], error) {
+func (p *ProducerInstance[Message]) ProduceFuncInTx(ctx context.Context, tx iDatastore.Tx, producerFunc produce.ProducerFunc[Message], options *produce.ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
 
-	resolved := ProduceOptions{}
+	resolved := produce.ProduceOptions{}
 	if options != nil {
 		resolved = *options
 	}
@@ -213,7 +216,7 @@ func (p *ProducerInstance[Message]) ProduceFuncInTx(ctx context.Context, tx Tx, 
 // or nil if nothing has been published under it.
 // It does so within the transaction and locks the found row in a FOR UPDATE
 // allowing for race-free compare and set.
-func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, messageKey string) (*MessageData[Message], error) {
+func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx iDatastore.Tx, messageKey string) (*common.MessageData[Message], error) {
 	return p.controller.GetCompactionHeadInTx[Message](ctx, tx, p.Topic.Id, messageKey)
 }
 

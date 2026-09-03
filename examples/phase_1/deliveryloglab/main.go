@@ -37,10 +37,10 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
@@ -378,7 +378,7 @@ func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
@@ -496,4 +496,4 @@ func die(msg string) {
 	panic(labFailure{message: msg})
 }
 
-func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }

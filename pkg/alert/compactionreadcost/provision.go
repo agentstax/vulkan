@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
+	"github.com/agentstax/vulkan/pkg/consume"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -28,7 +28,7 @@ func (d *CompactionReadCostProvisioner) Declare(ctx context.Context, owner *comm
 		return migrate.ErrNotRegistered.With("topic", schedule.TopicName)
 	}
 
-	group, err := d.consumers.RegisterGroup(ctx, jobRequestsTopic.Id, JobName, consumergroup.Beginning())
+	group, err := d.consumers.RegisterGroup(ctx, jobRequestsTopic.Id, JobName, consume.Beginning())
 	if err != nil {
 		return err
 	}

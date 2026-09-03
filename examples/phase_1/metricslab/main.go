@@ -27,9 +27,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
-	consumermessage "github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
+	consumermessage "github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"

@@ -23,8 +23,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -116,7 +116,7 @@ func run() (err error) {
 		}()
 
 		for _, group := range groupNames {
-			_, err := consumers.RegisterGroup(ctx, registered.Id, group, consumergroup.Beginning())
+			_, err := consumers.RegisterGroup(ctx, registered.Id, group, consume.Beginning())
 			must(err)
 		}
 

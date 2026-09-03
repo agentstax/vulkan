@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
+	"github.com/agentstax/vulkan/pkg/consume"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
@@ -56,7 +56,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, groupNa
 		return nil, err
 	}
 	if group == nil {
-		return nil, consumergroup.ErrGroupNotFound.With("group", groupName, "topic", topicName)
+		return nil, consume.ErrGroupNotFound.With("group", groupName, "topic", topicName)
 	}
 
 	return common.NewConsumerGroupOwner(found.SystemId, found.Id, group.Id, group.Name)
@@ -99,7 +99,7 @@ func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, group
 		return err
 	}
 	if group == nil {
-		return consumergroup.ErrGroupNotFound.With("group", groupName, "topic", topicName)
+		return consume.ErrGroupNotFound.With("group", groupName, "topic", topicName)
 	}
 
 	if !options.Force {
@@ -123,7 +123,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	}
 	for _, snapshot := range workers {
 		if snapshot.Owner.ConsumerGroupId == groupId && snapshot.LiveInstances > 0 {
-			return consumergroup.ErrGroupLive.With("group", groupName, "group_id", groupId)
+			return consume.ErrGroupLive.With("group", groupName, "group_id", groupId)
 		}
 	}
 
@@ -135,7 +135,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	exceptions := group.Exceptions
 	total := exceptions.Ready + exceptions.Inflight + exceptions.Deferred + exceptions.Dead
 	if total > 0 {
-		return consumergroup.ErrGroupDeliveriesPending.With("group", groupName, "topic_id", topicId, "group_id", groupId)
+		return consume.ErrGroupDeliveriesPending.With("group", groupName, "topic_id", topicId, "group_id", groupId)
 	}
 	return nil
 }

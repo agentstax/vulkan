@@ -8,7 +8,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
 )
 
@@ -44,7 +43,7 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.TopicData, erro
 //
 // PartitionSize is fixed at creation; passing a different one returns
 // ErrTopicConfigMismatch.
-func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) (*topic.TopicData, error) {
+func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topic.TopicConfig) (*topic.TopicData, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -68,7 +67,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topi
 	return a.registerTopic(ctx, name, cfg)
 }
 
-func (a *MessageAdmin) registerTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) (*topic.TopicData, error) {
+func (a *MessageAdmin) registerTopic(ctx context.Context, name string, cfg *topic.TopicConfig) (*topic.TopicData, error) {
 	// gate -- a topic can't exist without the control-plane tables it rides on;
 	// otherwise RegisterTopic dies with a raw undefined-table error.
 	sys, err := a.systemController.Get(ctx)

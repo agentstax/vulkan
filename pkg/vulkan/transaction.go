@@ -3,14 +3,14 @@ package vulkan
 import (
 	"context"
 
-	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
 // Tx is the surface handed to a ProducerFunc/TransactionFunc closure; the
 // interface and its docs live with the datastore.
-type Tx = producer.Tx
+type Tx = datastore.Tx
 
-type TransactionFunc = producer.TransactionFunc
+type TransactionFunc = datastore.TransactionFunc
 
 // InTransaction opens one transaction, runs transactionFunc against it, and
 // commits -- the way to publish to multiple targets atomically via ProduceInTx.
@@ -21,5 +21,5 @@ type TransactionFunc = producer.TransactionFunc
 // closure is dedup-safe ONLY under caller-supplied IdempotencyKeys -- unset
 // keys mint fresh per call, so a rerun double-publishes.
 func (c *Client) InTransaction(ctx context.Context, transactionFunc TransactionFunc) error {
-	return producer.InTransaction(ctx, c.ds, transactionFunc)
+	return datastore.InTransaction(ctx, c.ds, transactionFunc)
 }

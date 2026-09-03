@@ -23,10 +23,10 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -86,7 +86,7 @@ func run() (err error) {
 
 	step("seed a row in every topic-scoped table")
 
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	_, err = cd.DeclareBindings(ctx, tp.Id, groupId, []string{"orders.*"}, time.Now())
 	must(err)
 
@@ -232,4 +232,4 @@ func die(msg string) {
 	panic(labFailure{message: msg})
 }
 
-func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }

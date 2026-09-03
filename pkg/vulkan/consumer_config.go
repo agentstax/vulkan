@@ -3,7 +3,7 @@ package vulkan
 import (
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/consumergroup"
+	"github.com/agentstax/vulkan/pkg/consume"
 )
 
 // ConsumerConfig is the group's declaration: what the group means, identical
@@ -33,8 +33,8 @@ type ConsumerConfig struct {
 
 	// Start - where a group's cursor is placed when Register creates it;
 	// a group that already has a cursor row keeps its position.
-	// Default: consumergroup.Beginning() -- the oldest retained message.
-	Start consumergroup.CursorPosition
+	// Default: consume.Beginning() -- the oldest retained message.
+	Start consume.CursorPosition
 
 	// Bindings - the group's whole pattern set. Default: nil (the whole topic).
 	Bindings []string

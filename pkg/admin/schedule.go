@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -89,14 +90,14 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 		return nil, err
 	}
 
-	compaction, err := producer.NewCompactionOptions(0)
+	compaction, err := produce.NewCompactionOptions(0)
 	if err != nil {
 		return nil, err
 	}
 
 	// no IdempotencyKey: Produce creates a fresh v7 per call, so every run is
 	// its own message
-	return instance.Produce(ctx, stored, &producer.ProduceOptions{
+	return instance.Produce(ctx, stored, &produce.ProduceOptions{
 		RoutingKey: found.Name,
 		MessageKey: found.Name,
 		Compaction: compaction,

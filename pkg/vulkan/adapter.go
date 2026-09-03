@@ -4,8 +4,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	"github.com/agentstax/vulkan/pkg/produce/batcher"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/producer/batcher"
 )
 
 // toProducerConfig copies the declaration onto the producer package's

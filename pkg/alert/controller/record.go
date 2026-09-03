@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/produce"
 )
 
 // Record classifies found against the owner's compaction head and produces
@@ -36,11 +36,11 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 		return alert.RecordOutcomeNothing, nil
 	}
 
-	compaction, err := producer.NewCompactionOptions(0)
+	compaction, err := produce.NewCompactionOptions(0)
 	if err != nil {
 		return "", err
 	}
-	if _, err := c.alerts.Produce(ctx, published, &producer.ProduceOptions{
+	if _, err := c.alerts.Produce(ctx, published, &produce.ProduceOptions{
 		RoutingKey: published.RoutingKey(),
 		MessageKey: messageKey,
 		Compaction: compaction,

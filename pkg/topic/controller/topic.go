@@ -56,7 +56,7 @@ func (c *TopicController) List(ctx context.Context) ([]*topic.TopicData, error) 
 // topic if it doesn't exist, and returns the registered topic. cfg may be nil
 // or a sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func (c *TopicController) Register(ctx context.Context, systemId int64, name string, cfg *TopicConfig) (*topic.TopicData, error) {
+func (c *TopicController) Register(ctx context.Context, systemId int64, name string, cfg *topic.TopicConfig) (*topic.TopicData, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
@@ -64,7 +64,7 @@ func (c *TopicController) Register(ctx context.Context, systemId int64, name str
 		return nil, fmt.Errorf("name must match %s, got %q", topic.SlugPattern, name)
 	}
 	if cfg == nil {
-		cfg = &TopicConfig{}
+		cfg = &topic.TopicConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {

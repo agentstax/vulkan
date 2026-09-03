@@ -4,11 +4,10 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
-func TopicConfig() *topiccontroller.TopicConfig {
-	return &topiccontroller.TopicConfig{
+func TopicConfig() *topic.TopicConfig {
+	return &topic.TopicConfig{
 		PartitionSize: 10_000,
 
 		// retention is the measurement history window: how far back a series

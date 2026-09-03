@@ -34,8 +34,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/schedule"
@@ -170,7 +170,7 @@ func seedingSection(ctx context.Context) {
 		declared := false
 		for _, declaration := range declarations {
 			if declaration.GroupName == jobName && declaration.TopicName == schedule.TopicName &&
-				declaration.Status == consumergroup.BindingInstalled &&
+				declaration.Status == consume.BindingInstalled &&
 				len(declaration.Patterns) == 1 && declaration.Patterns[0] == jobName {
 				declared = true
 			}
@@ -349,7 +349,7 @@ func executorSection(ctx context.Context) {
 	declared := false
 	for _, declaration := range declarations {
 		if declaration.GroupName == partitioncount.JobName && declaration.TopicName == schedule.TopicName &&
-			declaration.Status == consumergroup.BindingInstalled &&
+			declaration.Status == consume.BindingInstalled &&
 			len(declaration.Patterns) == 1 && declaration.Patterns[0] == partitioncount.JobName {
 			declared = true
 		}
@@ -528,7 +528,7 @@ func startExecutor(ctx context.Context) func() {
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	group, err := controller.RegisterGroup(ctx, schedulesTopic.Id, name, consumergroup.Beginning())
+	group, err := controller.RegisterGroup(ctx, schedulesTopic.Id, name, consume.Beginning())
 	must(err)
 	_, err = controller.DeclareBindings(ctx, schedulesTopic.Id, group.Id, bindings, time.Now())
 	must(err)

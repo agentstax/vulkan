@@ -3,10 +3,10 @@ package consumer
 import (
 	"context"
 
-	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer"
-	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
-	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
-	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/consume/cursoradvancer"
+	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer"
+	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consume/janitor"
+	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
 	topicjanitor "github.com/agentstax/vulkan/pkg/topic/janitor"

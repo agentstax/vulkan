@@ -10,10 +10,10 @@ import (
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer"
+	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -22,7 +22,7 @@ import (
 )
 
 // should be idempotent -- redelivery after a crash or timeout is normal
-type ConsumerFunc[Message topic.Versioned] func(ctx context.Context, message *Message) error
+type ConsumerFunc[Message common.Versioned] func(ctx context.Context, message *Message) error
 
 // Consumer runs a consumer group on one topic. Failed messages retry with
 // backoff, and the topic's upkeep (partitions, retention, committed advance) runs
@@ -116,7 +116,7 @@ func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consume
 // instance.
 // bindings is the group's full set; nil = the whole topic.
 // ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Consumer) Register[Message topic.Versioned](ctx context.Context, consumerGroup string, topicName string, bindings []string) (*ConsumerInstance[Message], error) {
+func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consumerGroup string, topicName string, bindings []string) (*ConsumerInstance[Message], error) {
 	if consumerGroup == "" {
 		return nil, errors.New("consumer group is required")
 	}
@@ -162,7 +162,7 @@ func (c *Consumer) Register[Message topic.Versioned](ctx context.Context, consum
 	if err != nil {
 		return nil, err
 	}
-	if outcome == consumergroup.BindingWaiting {
+	if outcome == consume.BindingWaiting {
 		c.Logger.InfoContext(ctx, "binding declaration waiting -- a live instance still declares a different set; Consume retries until installed",
 			"group", group.Name, "patterns", bindings)
 	}
@@ -177,5 +177,5 @@ func (c *Consumer) Register[Message topic.Versioned](ctx context.Context, consum
 		return nil, err
 	}
 
-	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, topic.SchemaVersionOf[Message](), bindings, declaredAt, c.Config)
+	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, common.SchemaVersionOf[Message](), bindings, declaredAt, c.Config)
 }

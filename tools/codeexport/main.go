@@ -16,12 +16,12 @@ import (
 	// declaring packages, linked so the registry this binary sees is
 	// complete. tools/conventions holds the walk that proves it.
 	_ "github.com/agentstax/vulkan/pkg/common"
+	_ "github.com/agentstax/vulkan/pkg/consume"
 	_ "github.com/agentstax/vulkan/pkg/consumer"
-	_ "github.com/agentstax/vulkan/pkg/consumergroup"
 	_ "github.com/agentstax/vulkan/pkg/metrics"
 	_ "github.com/agentstax/vulkan/pkg/migrate"
+	_ "github.com/agentstax/vulkan/pkg/produce/controller/datastore"
 	_ "github.com/agentstax/vulkan/pkg/producer"
-	_ "github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 	_ "github.com/agentstax/vulkan/pkg/schedule"
 	_ "github.com/agentstax/vulkan/pkg/system"
 	_ "github.com/agentstax/vulkan/pkg/systemmanager"

@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/agentstax/vulkan/pkg/consumergroup"
+	"github.com/agentstax/vulkan/pkg/consume"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
@@ -117,11 +117,11 @@ type groupDestroyedDocument struct {
 // groupDestroyError maps a DestroyGroup failure to CLI output.
 func groupDestroyError(topicName string, groupName string, err error) error {
 	switch {
-	case errors.Is(err, consumergroup.ErrGroupNotFound):
+	case errors.Is(err, consume.ErrGroupNotFound):
 		return failOp("consumer group %q not found on topic %q", groupName, topicName)
-	case errors.Is(err, consumergroup.ErrGroupLive):
+	case errors.Is(err, consume.ErrGroupLive):
 		return failOp("consumer group %q still has a live consumer -- stop it, or pass --force to destroy anyway", groupName)
-	case errors.Is(err, consumergroup.ErrGroupDeliveriesPending):
+	case errors.Is(err, consume.ErrGroupDeliveriesPending):
 		return failOp("consumer group %q still has delivery rows (failures awaiting retry, or dead-letters) -- pass --force to discard them", groupName)
 	case errors.Is(err, topic.ErrTopicNotFound):
 		return errTopicNotFound(topicName)

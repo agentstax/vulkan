@@ -3,9 +3,9 @@ package admin
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -25,7 +25,7 @@ func (a *MessageAdmin) TopicMetrics(ctx context.Context, name string) (*metrics.
 // ListMeasurements returns the current head per (name, attributes)
 // series on __system.metrics.
 // Returns migrate.ErrNotRegistered until RegisterSystem has run.
-func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*producer.MessageData[metrics.Measurement], error) {
+func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*common.MessageData[metrics.Measurement], error) {
 	found, err := a.topicController.Get(ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*producer.Messag
 // ListMeasurementMessages returns one series' retained measurements, newest first.
 // messageKey is metrics.MeasurementKey(name, attributes); limit is required.
 // Returns migrate.ErrNotRegistered until RegisterSystem has run.
-func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, messageKey string, limit int) ([]*producer.MessageData[metrics.Measurement], error) {
+func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, messageKey string, limit int) ([]*common.MessageData[metrics.Measurement], error) {
 	found, err := a.topicController.Get(ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err

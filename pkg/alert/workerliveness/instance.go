@@ -11,6 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -150,11 +151,11 @@ func (i *WorkerLivenessInstance) produceCheckSummary(ctx context.Context, evalua
 		if err != nil {
 			return err
 		}
-		compaction, err := producer.NewCompactionOptions(0)
+		compaction, err := produce.NewCompactionOptions(0)
 		if err != nil {
 			return err
 		}
-		item, err := producer.NewProduceItem(measurement, &producer.ProduceOptions{
+		item, err := producer.NewProduceItem(measurement, &produce.ProduceOptions{
 			RoutingKey: measurement.Name,
 			MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 			Compaction: compaction,

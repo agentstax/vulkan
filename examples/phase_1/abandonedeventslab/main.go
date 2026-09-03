@@ -5,19 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -93,7 +93,7 @@ func run() (err error) {
 	}
 	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consume.Beginning())
 	must(err)
 	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
 	must(err)

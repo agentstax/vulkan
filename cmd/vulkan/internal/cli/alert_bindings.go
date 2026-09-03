@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/agentstax/vulkan/pkg/consumergroup"
+	"github.com/agentstax/vulkan/pkg/consume"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +33,7 @@ func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
 
 			if g.jsonOutput() {
 				if declarations == nil {
-					declarations = make([]*consumergroup.BindingDeclaration, 0)
+					declarations = make([]*consume.BindingDeclaration, 0)
 				}
 				writeJSON(out, declarations)
 				return nil
@@ -46,7 +46,7 @@ func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printBindingDeclarationsTable(w io.Writer, declarations []*consumergroup.BindingDeclaration) {
+func printBindingDeclarationsTable(w io.Writer, declarations []*consume.BindingDeclaration) {
 	if len(declarations) == 0 {
 		fmt.Fprintln(w, "no binding declarations -- every group matches all events on its topic")
 		return

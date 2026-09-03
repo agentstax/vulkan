@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/spf13/cobra"
 )
 
@@ -107,7 +106,7 @@ type topicConfigKeyDocument struct {
 }
 
 func toTopicConfigDocument(found *topic.TopicData, entries []topicConfigKey) topicConfigDocument {
-	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
+	defaults := (&topic.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
 
 	keys := make([]topicConfigKeyDocument, 0, len(entries))
 	for _, entry := range entries {
@@ -125,7 +124,7 @@ func toTopicConfigDocument(found *topic.TopicData, entries []topicConfigKey) top
 }
 
 func printTopicConfigLines(w io.Writer, found *topic.TopicData, entries []topicConfigKey) {
-	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
+	defaults := (&topic.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  KEY\tDEFAULT\tVALUE")
 	for _, entry := range entries {

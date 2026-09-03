@@ -26,17 +26,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"sync"
 	"time"
 	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	keyleasecontroller "github.com/agentstax/vulkan/pkg/consume/base/controller"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
@@ -106,7 +106,7 @@ func run() (err error) {
 	must(err)
 	wpInstance, err := client.RegisterProducer[Rec](ctx, tp.Name, nil)
 	must(err)
-	g, err := cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
+	g, err := cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning())
 	must(err)
 	groupId = g.Id
 
@@ -152,7 +152,7 @@ func run() (err error) {
 	step("a release inside a rolled-back txn leaves the lease held")
 	tx, err := ds.Pool.Begin(ctx)
 	must(err)
-	// mirrors consumerbase.release's SQL (pkg/consumergroup/base/controller/datastore/keylease.go) -- keep in sync
+	// mirrors consumerbase.release's SQL (pkg/consume/base/controller/datastore/keylease.go) -- keep in sync
 	tag, err := tx.Exec(ctx, fmt.Sprintf(`
 		DELETE FROM %s.%s
 		WHERE consumer_group_id = $1

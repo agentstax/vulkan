@@ -20,13 +20,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupjanitorcontroller "github.com/agentstax/vulkan/pkg/consumergroup/janitor/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupjanitorcontroller "github.com/agentstax/vulkan/pkg/consume/janitor/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 )
 
@@ -298,26 +298,26 @@ func bindingDisplays(ctx context.Context) string {
 
 // labDeclarations reads the listing surface and returns the lab group's
 // installed row and open waiting row (nil when absent).
-func labDeclarations(ctx context.Context) (*consumergroup.BindingDeclaration, *consumergroup.BindingDeclaration) {
+func labDeclarations(ctx context.Context) (*consume.BindingDeclaration, *consume.BindingDeclaration) {
 	declarations, err := client.ListBindingDeclarations(ctx)
 	must(err)
-	var installed *consumergroup.BindingDeclaration
-	var waiter *consumergroup.BindingDeclaration
+	var installed *consume.BindingDeclaration
+	var waiter *consume.BindingDeclaration
 	for _, declaration := range declarations {
 		if declaration.TopicName != topicName || declaration.GroupName != groupName {
 			continue
 		}
 		switch declaration.Status {
-		case consumergroup.BindingInstalled:
+		case consume.BindingInstalled:
 			installed = declaration
-		case consumergroup.BindingWaiting:
+		case consume.BindingWaiting:
 			waiter = declaration
 		}
 	}
 	return installed, waiter
 }
 
-func patterns(declaration *consumergroup.BindingDeclaration) string {
+func patterns(declaration *consume.BindingDeclaration) string {
 	joined := ""
 	for i, pattern := range declaration.Patterns {
 		if i > 0 {

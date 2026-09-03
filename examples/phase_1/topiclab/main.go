@@ -32,10 +32,10 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller/datastore"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
@@ -136,11 +136,11 @@ func run() (err error) {
 	time.Sleep(ttl + ttlMargin)
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
-	groupAID := mustGroupID(cd.RegisterGroup(ctx, topicA.Id, groupA, consumergroup.Beginning()))
+	groupAID := mustGroupID(cd.RegisterGroup(ctx, topicA.Id, groupA, consume.Beginning()))
 	setCursor(ctx, ds, topicA.Id, groupAID, 5, 5)
 
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
-	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB, consumergroup.Beginning()))
+	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB, consume.Beginning()))
 
 	must(janitorDatastore.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DeliveryLogMode))
 	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1})
@@ -151,7 +151,7 @@ func run() (err error) {
 	wpCInstance, err := client.RegisterProducer[common.Work](ctx, topicC.Name, nil)
 	must(err)
 	groupRoute := "topiclab.route"
-	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute, consumergroup.Beginning()))
+	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute, consume.Beginning()))
 
 	headBefore := head(ctx, ds, topicC.Id)      // topicC is fresh, this is 0
 	publish(ctx, wpCInstance, "orders.created") // id headBefore+1, published BEFORE any binding exists
@@ -179,8 +179,8 @@ func run() (err error) {
 	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
-	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX, consumergroup.Beginning()))
-	groupYID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupY, consumergroup.Beginning()))
+	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX, consume.Beginning()))
+	groupYID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupY, consume.Beginning()))
 	_, err = cd.DeclareBindings(ctx, topicD.Id, groupXID, []string{"sliceX.*"}, time.Now())
 	must(err)
 	_, err = cd.DeclareBindings(ctx, topicD.Id, groupYID, []string{"sliceY.*"}, time.Now())
@@ -352,4 +352,4 @@ func assertInt64s(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }

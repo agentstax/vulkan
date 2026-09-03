@@ -35,11 +35,10 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/schedule"
-	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
 	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -154,7 +153,7 @@ func validationSection(ctx context.Context) {
 	if _, err := schedule.ParseExpression("0 0 30 2 *"); err == nil {
 		die("a expression with no upcoming scheduled time must be rejected at parse")
 	}
-	if _, err := registerSchedule(ctx, prefix+".validate", "@hourly", target.Name, payload, &schedulecontroller.ScheduleConfig{Timeout: 2 * time.Hour}); err == nil {
+	if _, err := registerSchedule(ctx, prefix+".validate", "@hourly", target.Name, payload, &schedule.ScheduleConfig{Timeout: 2 * time.Hour}); err == nil {
 		die("timeout above the expression's min rate must be rejected")
 	}
 	fmt.Println("  ✓ rejections: empty/uppercase/star name, sub-minute, no-upcoming, timeout > min rate")
@@ -380,7 +379,7 @@ func deferSection(ctx context.Context) {
 	step("exclusive (spot): a scheduler request waits behind a running one, then runs")
 
 	job, err := registerSchedule(ctx, prefix+".defer", "@every 1m", target.Name, payload,
-		&schedulecontroller.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
+		&schedule.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(client.Schedule(prefix + ".defer").Destroy(ctx)) }()
 
@@ -424,7 +423,7 @@ func runNowOverrideSection(ctx context.Context) {
 	step("run-now beside a running request: default 'parallel' runs alongside it, cfg exclusive waits for it")
 
 	job, err := registerSchedule(ctx, prefix+".runnow", "@hourly", target.Name, payload,
-		&schedulecontroller.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
+		&schedule.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(client.Schedule(prefix + ".runnow").Destroy(ctx)) }()
 
@@ -575,7 +574,7 @@ func statusSection(ctx context.Context) {
 	attempts := map[time.Time]int{}
 	var firstScheduledTime time.Time
 	stop := startConsumer(ctx, boundName, []string{jobName}, 1, func(ctx context.Context, _ *labMessage) error {
-		meta, _ := consumergroup.MetaFromContext(ctx)
+		meta, _ := consume.MetaFromContext(ctx)
 		mu.Lock()
 		defer mu.Unlock()
 		if firstScheduledTime.IsZero() {
@@ -706,7 +705,7 @@ func startScheduler(ctx context.Context) func() {
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	group, err := controller.RegisterGroup(ctx, target.Id, name, consumergroup.Beginning())
+	group, err := controller.RegisterGroup(ctx, target.Id, name, consume.Beginning())
 	must(err)
 	_, err = controller.DeclareBindings(ctx, target.Id, group.Id, bindings, time.Now())
 	must(err)
@@ -815,7 +814,7 @@ func exec(ctx context.Context, sql string, args ...any) {
 
 // registerSchedule is the handle's Register for the lab's message type,
 // returning the row like admin's reads do.
-func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedulecontroller.ScheduleConfig) (*schedule.ScheduleData, error) {
+func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedule.ScheduleConfig) (*schedule.ScheduleData, error) {
 	instance, err := labScheduler.Register[labMessage](ctx, name, expression, topicName, payload, cfg)
 	if err != nil {
 		return nil, err

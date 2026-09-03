@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
+	"github.com/agentstax/vulkan/pkg/consume"
 )
 
 // ConsumerConfig is the group's declaration: what the group means, identical
@@ -36,8 +36,8 @@ type ConsumerConfig struct {
 
 	// Start - where a group's cursor is placed when Register creates it;
 	// a group that already has a cursor row keeps its position.
-	// Default: consumergroup.Beginning() -- the oldest retained message.
-	Start consumergroup.CursorPosition
+	// Default: consume.Beginning() -- the oldest retained message.
+	Start consume.CursorPosition
 
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
 	MaxRangeReclaims        int           // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again

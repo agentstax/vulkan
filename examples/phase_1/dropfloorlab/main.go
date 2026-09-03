@@ -31,9 +31,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
@@ -185,7 +185,7 @@ func createPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 }
 
 func reset(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
-	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group, consumergroup.Beginning()))
+	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group, consume.Beginning()))
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ClaimLeaseTable(topicId)), groupId)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ExceptionQueueTable(topicId)), groupId)
@@ -260,4 +260,4 @@ func assertPartitions(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }

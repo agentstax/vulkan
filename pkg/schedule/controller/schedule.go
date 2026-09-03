@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // Register resolves name to its schedule, creating it under systemId if it
@@ -15,7 +15,7 @@ import (
 // Message's schema version; every produce carries both. cfg may be nil or a
 // sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func (c *ScheduleController) Register[Message topic.Versioned](ctx context.Context, systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) (*schedule.ScheduleData, error) {
+func (c *ScheduleController) Register[Message common.Versioned](ctx context.Context, systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) (*schedule.ScheduleData, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
@@ -32,7 +32,7 @@ func (c *ScheduleController) Register[Message topic.Versioned](ctx context.Conte
 		return nil, errors.New("payload must not be nil")
 	}
 	if cfg == nil {
-		cfg = &ScheduleConfig{}
+		cfg = &schedule.ScheduleConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {

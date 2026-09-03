@@ -32,11 +32,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller/datastore"
-	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
+	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -115,7 +115,7 @@ func run() (err error) {
 	must(err)
 	wpInstance, err := client.RegisterProducer[KeyedRecord](ctx, tp.Name, nil)
 	must(err)
-	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup, consumergroup.Beginning()))
+	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup, consume.Beginning()))
 
 	const lease = 2 * time.Second
 	const maxRangeReclaims = 3 // never exhausted in this lab -- exactly one reclaim happens
@@ -218,8 +218,8 @@ func run() (err error) {
 	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed", committed, 11)
 
-	publish(ctx, wpInstance, "user:6", 1, true)                                                              // id 12, LIFECYCLE path
-	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup, consumergroup.Beginning())) // fresh group scans from mark 0 -> the whole log
+	publish(ctx, wpInstance, "user:6", 1, true)                                                        // id 12, LIFECYCLE path
+	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup, consume.Beginning())) // fresh group scans from mark 0 -> the whole log
 	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 1, 100))
 	delivered, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, 20)
 	must(err)
@@ -388,4 +388,4 @@ func assertTrue(label string, cond bool) {
 	fmt.Printf("  ✓ %s\n", label)
 }
 
-func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }

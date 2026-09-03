@@ -10,39 +10,38 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	"github.com/agentstax/vulkan/pkg/consume"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
-	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 // Versioned is the constraint every payload type satisfies by declaring
 // its own schema version.
-type Versioned = topic.Versioned
+type Versioned = common.Versioned
 
 type (
 	ConsumerFunc[Message Versioned] = consumer.ConsumerFunc[Message]
 	ConsumeOptions                  = consumer.ConsumeOptions
 
 	ProducerInstance[Message Versioned] = producer.ProducerInstance[Message]
-	ProducerFunc[Message Versioned]     = producer.ProducerFunc[Message]
-	ProduceOptions                      = producer.ProduceOptions
+	ProducerFunc[Message Versioned]     = produce.ProducerFunc[Message]
+	ProduceOptions                      = produce.ProduceOptions
 	ProduceResult[Message Versioned]    = producer.ProduceResult[Message]
 	ProduceItem[Message Versioned]      = producer.ProduceItem[Message]
 
 	SchedulerInstance[Message Versioned] = scheduler.SchedulerInstance[Message]
-	CompactionOptions                    = producer.CompactionOptions
-	CursorPosition                       = consumergroup.CursorPosition
-	ScheduleConfig                       = schedulecontroller.ScheduleConfig
+	CompactionOptions                    = produce.CompactionOptions
+	CursorPosition                       = consume.CursorPosition
+	ScheduleConfig                       = schedule.ScheduleConfig
 
-	TopicConfig          = topiccontroller.TopicConfig
+	TopicConfig          = topic.TopicConfig
 	DestroyOptions       = admin.DestroyOptions
 	RegisterSystemConfig = admin.RegisterSystemConfig
 	RunScheduleConfig    = admin.RunScheduleConfig
@@ -52,11 +51,11 @@ type (
 
 	TopicData                      = topic.TopicData
 	ScheduleData                   = schedule.ScheduleData
-	GroupData                      = consumergroup.GroupData
+	GroupData                      = consume.GroupData
 	WorkerData                     = worker.WorkerData
-	BindingDeclaration             = consumergroup.BindingDeclaration
-	MessageMeta                    = consumergroup.MessageMeta
-	MessageData[Message Versioned] = producer.MessageData[Message]
+	BindingDeclaration             = consume.BindingDeclaration
+	MessageMeta                    = consume.MessageMeta
+	MessageData[Message Versioned] = common.MessageData[Message]
 	VersionHealth                  = admin.VersionHealth
 	TopicSnapshot                  = metrics.TopicSnapshot
 	SystemData                     = system.SystemData
@@ -82,19 +81,19 @@ func LifecycleContext(log logging.Logger) (context.Context, context.CancelFunc) 
 
 // MetaFromContext reads the delivery's message metadata inside a handler.
 func MetaFromContext(ctx context.Context) (MessageMeta, bool) {
-	return consumergroup.MetaFromContext(ctx)
+	return consume.MetaFromContext(ctx)
 }
 
 // Terminal marks a handler error as never retryable -- the delivery goes
 // straight to dead.
 func Terminal(cause error) error {
-	return consumergroup.Terminal(cause)
+	return consume.Terminal(cause)
 }
 
 // Delay asks for the message to run again after delay, without counting a
 // failure.
 func Delay(delay time.Duration) error {
-	return consumergroup.Delay(delay)
+	return consume.Delay(delay)
 }
 
 // NewProduceItem pairs one message with its options for a multi-message
@@ -105,16 +104,16 @@ func NewProduceItem[Message Versioned](message *Message, options *ProduceOptions
 
 // NewCompactionOptions enables compaction for a produced message at rank.
 func NewCompactionOptions(rank int64) (*CompactionOptions, error) {
-	return producer.NewCompactionOptions(rank)
+	return produce.NewCompactionOptions(rank)
 }
 
 // Beginning positions a new group's cursor at the oldest retained message.
 func Beginning() CursorPosition {
-	return consumergroup.Beginning()
+	return consume.Beginning()
 }
 
 // Head positions a new group's cursor at MAX(id) of the message log when
 // the cursor row is written.
 func Head() CursorPosition {
-	return consumergroup.Head()
+	return consume.Head()
 }

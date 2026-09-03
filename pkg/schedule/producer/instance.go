@@ -7,6 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	scheduleproducercontroller "github.com/agentstax/vulkan/pkg/schedule/producer/controller"
@@ -98,7 +99,7 @@ func (i *ScheduleProducerInstance) scan(ctx context.Context) error {
 // transaction, so an ambiguous-commit replay rolls all three back together
 // and the schedule.IdempotencyKey dedupe covers exactly that replay.
 func (i *ScheduleProducerInstance) produceDue(ctx context.Context, id int64) error {
-	return producer.InTransaction(ctx, i.ds, func(ctx context.Context, tx producer.Tx) error {
+	return iDatastore.InTransaction(ctx, i.ds, func(ctx context.Context, tx iDatastore.Tx) error {
 		row, err := i.controller.ClaimDue(ctx, tx, id)
 		if err != nil || row == nil {
 			return err
@@ -130,12 +131,12 @@ func (i *ScheduleProducerInstance) produceDue(ctx context.Context, id int64) err
 			return err
 		}
 
-		compaction, err := producer.NewCompactionOptions(0)
+		compaction, err := produce.NewCompactionOptions(0)
 		if err != nil {
 			return err
 		}
 
-		produced, err := target.ProduceInTx(ctx, tx, stored, &producer.ProduceOptions{
+		produced, err := target.ProduceInTx(ctx, tx, stored, &produce.ProduceOptions{
 			RoutingKey:     row.Name,
 			MessageKey:     row.Name,
 			Compaction:     compaction,

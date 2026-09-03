@@ -27,11 +27,11 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller/datastore"
-	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consume/cursoradvancer/controller/datastore"
+	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -188,7 +188,7 @@ func reset(ctx context.Context, ds *iDatastore.PostgresDatastore, cd *consumergr
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM %s.%s`, ds.Schema, topic.MessageLogTable(topicId)))
 	gids := map[string]int64{}
 	for _, g := range groups {
-		gID := mustGroupID(cd.RegisterGroup(ctx, topicId, g, consumergroup.Beginning()))
+		gID := mustGroupID(cd.RegisterGroup(ctx, topicId, g, consume.Beginning()))
 		gids[g] = gID
 		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id=$1`, ds.Schema, topic.ClaimLeaseTable(topicId)), gID)
 		must(err)
@@ -260,4 +260,4 @@ func assertIDs(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }

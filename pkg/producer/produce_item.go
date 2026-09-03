@@ -2,24 +2,26 @@ package producer
 
 import (
 	"errors"
-	"github.com/agentstax/vulkan/pkg/topic"
+
+	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/produce"
 )
 
 // ProduceItem is one message plus its options -- the unit ProduceBatch takes.
-type ProduceItem[Message topic.Versioned] struct {
+type ProduceItem[Message common.Versioned] struct {
 	Message *Message
-	Options ProduceOptions
+	Options produce.ProduceOptions
 }
 
 // A set Options.IdempotencyKey is rejected: one hot key would stall the
 // batch's whole shared transaction, so keyed messages go through Produce.
 // options may be nil for the defaults.
-func NewProduceItem[Message topic.Versioned](message *Message, options *ProduceOptions) (*ProduceItem[Message], error) {
+func NewProduceItem[Message common.Versioned](message *Message, options *produce.ProduceOptions) (*ProduceItem[Message], error) {
 	if message == nil {
 		return nil, errors.New("message must not be nil")
 	}
 
-	resolved := ProduceOptions{}
+	resolved := produce.ProduceOptions{}
 	if options != nil {
 		resolved = *options
 	}

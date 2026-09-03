@@ -5,7 +5,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/schedule"
-	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 )
 
 // Job is one built-in alert's schedule, as RegisterSystem declares it.
@@ -13,12 +12,12 @@ type Job struct {
 	Name       string
 	Expression string
 	Payload    *alert.JobPayload
-	Config     *schedulecontroller.ScheduleConfig
+	Config     *schedule.ScheduleConfig
 }
 
 // NewJob parses expression so a bad one fails here, not at register.
 // cfg may be nil.
-func NewJob(name string, expression string, payload *alert.JobPayload, cfg *schedulecontroller.ScheduleConfig) (*Job, error) {
+func NewJob(name string, expression string, payload *alert.JobPayload, cfg *schedule.ScheduleConfig) (*Job, error) {
 	if name == "" {
 		return nil, errors.New("job name is required")
 	}

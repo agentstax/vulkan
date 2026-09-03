@@ -23,7 +23,11 @@ and [0555]'s package-kinds text.
    batcher) declares nothing a user spells except its own Config and `*Row`
    structs. So every user-spelled name lives in exactly one of: `common`
    (two domains read it), a domain root (that domain's machinery reads it),
-   or an assembler (only its own verbs read it).
+   or an assembler (only its own verbs read it). Codes are the same law
+   with no assembler case: every `diagnostic.NewError` / `NewEvent` /
+   `NewMetric` lives in a domain root's `errors.go`, `logs.go`, or
+   `metrics.go`, exported, or in `common` when two stacks raise it.
+   Machinery and assemblers declare none.
 3. **Roots are named for what they are about.** Thing domains take the
    resource: topic, system, worker, alert, metrics. Activity domains take
    the verb: schedule, migrate, compaction, consume, produce. An activity
@@ -132,6 +136,14 @@ pkg/vulkan
   `ProduceFunc` declaration is deleted and it reads produce's.
 - SQL owner comments follow the rename: `-- vulkan: consume.getGroup`,
   `-- vulkan: produce.createNextIdPartition` (review G5).
+- Codes move to their roots and drop the lowercase name (review G11):
+  produce/controller/datastore/{errors,logs}.go (VK0018, VK0033, VK0056,
+  VK0057) -> pkg/produce; migrate/controller/datastore/errors.go
+  (VK0053) -> pkg/migrate; consumer/logs.go VK0041 -> consume;
+  producer/logs.go VK0038 -> produce; systemmanager/logs.go VK0065 ->
+  system. pkg/metrics/consumergroup.go (10 metrics) is renamed
+  metrics.go. tools/conventions and tools/codeexport then link roots
+  only -- the produce/controller/datastore line goes.
 
 ### Machine checks (tools/conventions)
 
@@ -147,6 +159,9 @@ pkg/vulkan
   alias or var.
 - The SQL owner comment's package segment equals the declaring root's
   name (review G5).
+- Every `diagnostic.New*` call site is in `pkg/<x>/{errors,logs,metrics}.go`
+  or under pkg/common, and the variable it initializes is exported
+  (review G11).
 
 ### Rule text
 
@@ -179,9 +194,10 @@ next. Path moves are `git mv` plus package clause plus import rewrite.
 3. Signature changes: ScheduleSpec at the controller, scheduler, and
    vulkan; ConsumerConfig.Bindings; admin's five verbs (GetGroup ->
    ListGroupWorkers rename first, then the new GetGroup).
-4. vulkan rewrite: alias.go, errors.go, events.go; delete adapter.go and
-   the three config twins and schedule_spec.go; client holds assemblers
-   only; producer_instance.go; instances hold private fields.
+4. Codes to roots (review G11), then the vulkan rewrite: alias.go,
+   errors.go, events.go; delete adapter.go and the three config twins and
+   schedule_spec.go; client holds assemblers only; producer_instance.go;
+   instances hold private fields.
 5. Conventions tests, CONVENTIONS/AGENTS text, decision record, ROADMAP
    item slimmed.
 6. Docs: website/src/content/docs/guides/handler-outcomes.mdx (imports
@@ -243,3 +259,11 @@ Full fresh-DB suite at the review-ready checkpoint.
   `topiccontroller.TopicConfig`** (cli/destroy.go, cli/topic_config.go).
   Not this plan's scope -- the CLI sits under the module tree and may
   reach machinery -- but the import path changes in step 1.
+- **G11 Seven codes are declared below or beside a root** (2026-09-03,
+  found closing step 1): four in produce's datastore, one in migrate's
+  datastore, three in the assemblers consumer, producer, systemmanager --
+  all unexported `err*`/`event*` names, which is why alias.go never saw
+  them. CONVENTIONS already says "the owning pkg/<x>/errors.go / logs.go";
+  law 2 restated for codes makes the root the only home. Resolution: the
+  moves listed under Lower-package deltas, the exported name, the
+  call-site walk above.

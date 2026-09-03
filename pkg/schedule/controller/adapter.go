@@ -7,7 +7,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/schedule/controller/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func toScheduleData(data *datastore.ScheduleConfigRow) (*schedule.ScheduleData, error) {
@@ -76,7 +75,7 @@ func toMessageOutcome(data *datastore.MessageStatus) schedule.MessageOutcome {
 	}
 }
 
-func toScheduleDeclaration[Message topic.Versioned](systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) *datastore.ScheduleDeclaration {
+func toScheduleDeclaration[Message common.Versioned](systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) *datastore.ScheduleDeclaration {
 	return &datastore.ScheduleDeclaration{
 		Name:          name,
 		Expression:    expression,
@@ -85,7 +84,7 @@ func toScheduleDeclaration[Message topic.Versioned](systemId int64, name string,
 		Concurrency:   string(cfg.Concurrency),
 		TimeoutNs:     int64(cfg.Timeout),
 		Payload:       payload,
-		SchemaVersion: topic.SchemaVersionOf[Message](),
+		SchemaVersion: common.SchemaVersionOf[Message](),
 		Metadata:      cfg.Metadata,
 	}
 }

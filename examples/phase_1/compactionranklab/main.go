@@ -23,9 +23,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
@@ -92,7 +92,7 @@ func run() (err error) {
 	must(err)
 	wpInstance, err := client.RegisterProducer[RankedRecord](ctx, tp.Name, nil)
 	must(err)
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 
 	const lease = 5 * time.Second
 	const maxRangeReclaims = 3 // never exhausted in this lab -- no crashes/reclaims here
@@ -216,4 +216,4 @@ func assertTrue(label string, cond bool) {
 	fmt.Printf("  ✓ %s\n", label)
 }
 
-func mustGroupID(g *consumergroup.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }

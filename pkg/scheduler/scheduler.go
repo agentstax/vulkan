@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -83,7 +84,7 @@ func NewScheduler(ds *datastore.PostgresDatastore, cfg *SchedulerConfig) (*Sched
 // one; a suspended schedule stays suspended. The name is the message key of
 // every produce. cfg may be nil or sparse.
 // ctx bounds only this call's I/O; the instance's lifetime is Schedule's ctx.
-func (s *Scheduler) Register[Message topic.Versioned](ctx context.Context, name string, expression string, topicName string, payload *Message, cfg *schedulecontroller.ScheduleConfig) (*SchedulerInstance[Message], error) {
+func (s *Scheduler) Register[Message common.Versioned](ctx context.Context, name string, expression string, topicName string, payload *Message, cfg *schedule.ScheduleConfig) (*SchedulerInstance[Message], error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}

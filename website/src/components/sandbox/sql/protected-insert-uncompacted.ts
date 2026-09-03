@@ -1,10 +1,10 @@
-// verbatim from pkg/producer/controller/datastore/insert.go protectedInsertSQL -- the
+// verbatim from pkg/produce/controller/datastore/insert.go protectedInsertSQL -- the
 // template is drift-checked byte-exact; the function mirrors the fmt.Sprintf call
 import { interpolate } from './interpolate';
 import { idempotencyKeyTable, messageLogTable } from './table-names';
 
 export const protectedInsertUncompactedSqlTemplate = `
-			-- vulkan: producer.protectedInsert
+			-- vulkan: produce.protectedInsert
 			WITH claim AS (
 				INSERT INTO %[1]s.%[2]s (idempotency_key)
 				VALUES ($1)

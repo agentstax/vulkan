@@ -1,4 +1,4 @@
-// verbatim from pkg/consumergroup/messageconsumer/controller/datastore/freshclaim.go
+// verbatim from pkg/consume/messageconsumer/controller/datastore/freshclaim.go
 // freshClaimMessagesWithCursor -- the template is drift-checked byte-exact; the
 // function mirrors the fmt.Sprintf call
 import { interpolate } from './interpolate';

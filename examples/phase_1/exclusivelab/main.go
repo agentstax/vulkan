@@ -46,12 +46,12 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consume"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/controller"
+	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer"
+	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup"
-	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
-	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
-	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -129,7 +129,7 @@ func run() (err error) {
 	publish(ctx, wpInstance, "u:1", 1, common.ConcurrencyExclusive)
 	g1 := groupId(ctx, cd, "exclusivelab.g1")
 	var heldDuringRun int
-	consume(ctx, tp.Name, "exclusivelab.g1", nil, 3, func(ctx context.Context, message *Rec) error {
+	consumeGroup(ctx, tp.Name, "exclusivelab.g1", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:1" {
 			heldDuringRun = leaseCount(ctx, g1)
 		}
@@ -151,7 +151,7 @@ func run() (err error) {
 	publish(ctx, wpInstance, "u:2", 1, "")
 	g2 := groupId(ctx, cd, "exclusivelab.g2")
 	allowHeld := -1
-	consume(ctx, tp.Name, "exclusivelab.g2", nil, 3, func(ctx context.Context, message *Rec) error {
+	consumeGroup(ctx, tp.Name, "exclusivelab.g2", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:2" {
 			allowHeld = leaseCount(ctx, g2)
 		}
@@ -167,7 +167,7 @@ func run() (err error) {
 	publishUnkeyed(ctx, wpInstance, 1)
 	g3 := groupId(ctx, cd, "exclusivelab.g3")
 	unkeyedHeld := -1
-	consume(ctx, tp.Name, "exclusivelab.g3", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyExclusive}, 3, func(ctx context.Context, message *Rec) error {
+	consumeGroup(ctx, tp.Name, "exclusivelab.g3", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyExclusive}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "" {
 			unkeyedHeld = leaseCount(ctx, g3)
 		}
@@ -183,7 +183,7 @@ func run() (err error) {
 	publish(ctx, wpInstance, "u:3", 1, common.ConcurrencyExclusive)
 	g4 := groupId(ctx, cd, "exclusivelab.g4")
 	overrideHeld := -1
-	consume(ctx, tp.Name, "exclusivelab.g4", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyParallel}, 3, func(ctx context.Context, message *Rec) error {
+	consumeGroup(ctx, tp.Name, "exclusivelab.g4", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyParallel}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:3" {
 			overrideHeld = leaseCount(ctx, g4)
 		}
@@ -206,7 +206,7 @@ func run() (err error) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		consume(ctx, tp.Name, "exclusivelab.g5", nil, 3, func(ctx context.Context, message *Rec) error {
+		consumeGroup(ctx, tp.Name, "exclusivelab.g5", nil, 3, func(ctx context.Context, message *Rec) error {
 			if message.Key == "u:4" {
 				startOnce.Do(func() { close(started) })
 				<-release
@@ -264,7 +264,7 @@ func run() (err error) {
 	done6 := make(chan struct{})
 	go func() {
 		defer close(done6)
-		consume(ctx, tp.Name, "exclusivelab.g6", nil, 1, func(ctx context.Context, message *Rec) error {
+		consumeGroup(ctx, tp.Name, "exclusivelab.g6", nil, 1, func(ctx context.Context, message *Rec) error {
 			if message.Key == "" && message.Version == 2 {
 				blockOnce.Do(func() { close(blockStarted) })
 				<-blockRelease
@@ -294,7 +294,7 @@ func run() (err error) {
 	g7 := groupId(ctx, cd, "exclusivelab.g7")
 	publish(ctx, wpInstance, "u:6", 1, common.ConcurrencyExclusive)
 	v6 := messageId(ctx, "u:6", 1)
-	consume(ctx, tp.Name, "exclusivelab.g7", nil, 3, func(ctx context.Context, message *Rec) error {
+	consumeGroup(ctx, tp.Name, "exclusivelab.g7", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
 		if message.Key == "u:6" {
 			return errors.New("exclusivelab: synthetic failure")
@@ -490,7 +490,7 @@ func run() (err error) {
 	done12 := make(chan struct{})
 	go func() {
 		defer close(done12)
-		consume(ctx, tp.Name, "exclusivelab.g12", nil, 3, func(ctx context.Context, message *Rec) error {
+		consumeGroup(ctx, tp.Name, "exclusivelab.g12", nil, 3, func(ctx context.Context, message *Rec) error {
 			if message.Key == "uc:1" && message.Version == 1 {
 				once12.Do(func() { close(started12) })
 				<-release12
@@ -633,9 +633,9 @@ func run() (err error) {
 	return nil
 }
 
-// consume runs a MessageConsumer for group until done() (10s cap), with pool
+// consumeGroup runs a MessageConsumer for group until done() (10s cap), with pool
 // concurrent processors.
-func consume(ctx context.Context, topicName, group string, cfg *messageconsumer.MessageConsumerConfig, pool int, consumerFunc consumer.ConsumerFunc[Rec], done func() bool) {
+func consumeGroup(ctx context.Context, topicName, group string, cfg *messageconsumer.MessageConsumerConfig, pool int, consumerFunc consumer.ConsumerFunc[Rec], done func() bool) {
 	if cfg == nil {
 		cfg = &messageconsumer.MessageConsumerConfig{}
 	}
@@ -729,7 +729,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 
 	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consume.Beginning())
 	must(err)
 
 	owner, err := common.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
@@ -818,7 +818,7 @@ func publishUnkeyed(ctx context.Context, wpInstance *vulkan.ProducerInstance[Rec
 }
 
 func groupId(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, name string) int64 {
-	g, err := cd.RegisterGroup(ctx, topicId, name, consumergroup.Beginning())
+	g, err := cd.RegisterGroup(ctx, topicId, name, consume.Beginning())
 	must(err)
 	return g.Id
 }

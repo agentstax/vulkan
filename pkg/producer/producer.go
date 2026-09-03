@@ -8,16 +8,13 @@ import (
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	workerlivenesscontroller "github.com/agentstax/vulkan/pkg/alert/workerliveness/controller"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer/controller"
+	"github.com/agentstax/vulkan/pkg/produce/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
-
-// ProducerFunc runs inside the append's transaction; the type and its docs
-// live with the datastore.
-type ProducerFunc[Message topic.Versioned] = controller.ProduceFunc[Message]
 
 type Producer struct {
 	Config *ProducerConfig
@@ -96,7 +93,7 @@ func NewProducer(ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Produc
 // instance that produces Message to it. Callable many times, with a
 // different Message per call -- each call returns an independent instance.
 // ctx bounds only this call's I/O.
-func (p *Producer) Register[Message topic.Versioned](ctx context.Context, topicName string) (*ProducerInstance[Message], error) {
+func (p *Producer) Register[Message common.Versioned](ctx context.Context, topicName string) (*ProducerInstance[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}

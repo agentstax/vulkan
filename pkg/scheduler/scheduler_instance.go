@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/systemmanager"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // SchedulerInstance is a registered schedule: Schedule keeps the system producing it.
-type SchedulerInstance[Message topic.Versioned] struct {
+type SchedulerInstance[Message common.Versioned] struct {
 	Registered *schedule.ScheduleData
 	Payload    *Message
 	Config     *SchedulerConfig
@@ -22,7 +22,7 @@ type SchedulerInstance[Message topic.Versioned] struct {
 }
 
 // cfg arrives already resolved by NewScheduler -- Register is the only caller.
-func newSchedulerInstance[Message topic.Versioned](registered *schedule.ScheduleData, payload *Message, ds *datastore.PostgresDatastore, cfg *SchedulerConfig) (*SchedulerInstance[Message], error) {
+func newSchedulerInstance[Message common.Versioned](registered *schedule.ScheduleData, payload *Message, ds *datastore.PostgresDatastore, cfg *SchedulerConfig) (*SchedulerInstance[Message], error) {
 	if registered == nil {
 		return nil, errors.New("schedule must not be nil")
 	}

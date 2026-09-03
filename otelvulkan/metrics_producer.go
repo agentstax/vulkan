@@ -8,6 +8,7 @@ import (
 
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/producer"
 )
 
@@ -63,12 +64,12 @@ func (p *MetricsProducerInstance) Produce(ctx context.Context, measurement *metr
 		return nil, fmt.Errorf("metric name %q uses the %q prefix, reserved for Vulkan's own metrics", measurement.Name, metrics.MetricNameReservedPrefix)
 	}
 
-	compaction, err := producer.NewCompactionOptions(0)
+	compaction, err := produce.NewCompactionOptions(0)
 	if err != nil {
 		return nil, err
 	}
 
-	return p.instance.Produce(ctx, measurement, &producer.ProduceOptions{
+	return p.instance.Produce(ctx, measurement, &produce.ProduceOptions{
 		RoutingKey: measurement.Name,
 		MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 		Compaction: compaction,

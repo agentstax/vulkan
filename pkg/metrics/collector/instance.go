@@ -11,6 +11,7 @@ import (
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
+	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -305,11 +306,11 @@ func (i *MetricsCollectorInstance) collectConsumerGroup(ctx context.Context, sna
 		if err != nil {
 			return err
 		}
-		compaction, err := producer.NewCompactionOptions(0)
+		compaction, err := produce.NewCompactionOptions(0)
 		if err != nil {
 			return err
 		}
-		item, err := producer.NewProduceItem(measurement, &producer.ProduceOptions{
+		item, err := producer.NewProduceItem(measurement, &produce.ProduceOptions{
 			RoutingKey: measurement.Name,
 			MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 			Compaction: compaction,
@@ -325,12 +326,12 @@ func (i *MetricsCollectorInstance) collectConsumerGroup(ctx context.Context, sna
 }
 
 func (i *MetricsCollectorInstance) produceMeasurement(ctx context.Context, measurement *metrics.Measurement) error {
-	compaction, err := producer.NewCompactionOptions(0)
+	compaction, err := produce.NewCompactionOptions(0)
 	if err != nil {
 		return err
 	}
 
-	_, err = i.producerInstance.Produce(ctx, measurement, &producer.ProduceOptions{
+	_, err = i.producerInstance.Produce(ctx, measurement, &produce.ProduceOptions{
 		RoutingKey: measurement.Name,
 		MessageKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 		Compaction: compaction,

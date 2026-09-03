@@ -1,8 +1,8 @@
 package consumer
 
 import (
-	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
-	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer"
+	"github.com/agentstax/vulkan/pkg/consume/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )

@@ -26,7 +26,7 @@ func toTopicData(data *datastore.TopicConfigRow) (*topic.TopicData, error) {
 	}, nil
 }
 
-func toTopicConfigRow(systemId int64, name string, cfg *TopicConfig) *datastore.TopicConfigRow {
+func toTopicConfigRow(systemId int64, name string, cfg *topic.TopicConfig) *datastore.TopicConfigRow {
 	return &datastore.TopicConfigRow{
 		SystemId:               systemId,
 		Name:                   name,

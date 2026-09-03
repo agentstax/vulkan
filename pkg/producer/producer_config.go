@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/producer/batcher"
+	"github.com/agentstax/vulkan/pkg/produce/batcher"
 )
 
 type ProducerConfig struct {
