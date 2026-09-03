@@ -47,8 +47,8 @@ type ConsumerConfig struct {
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
 	MaxRangeReclaims        int           // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
 
-	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
-	Retry  *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().
+	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up; the client's logger when built through vulkan.Client.
+	Retry  *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy(); the client's policy when built through vulkan.Client.
 }
 
 func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {

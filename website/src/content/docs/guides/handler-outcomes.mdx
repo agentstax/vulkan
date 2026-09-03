@@ -23,7 +23,7 @@ third and fourth are the two things a retry-only handler cannot say:
 The `charge-cards` group on `payments.requested` (topic id `1`):
 
 ```go
-import "github.com/agentstax/vulkan/pkg/consumergroup"
+import "github.com/agentstax/vulkan/pkg/vulkan"
 
 err := payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequested) error {
 	result, err := gateway.Charge(ctx, payment)
@@ -60,8 +60,8 @@ Say messages 41, 42, 43 and 44 hit each branch in turn, with
 `vulkan.Terminal(err)` wraps your cause in a declared Permanent
 error ([VK0055](/errors/VK0055/)); the cause stays reachable through
 `errors.Is` and is rendered after the code in `last_error`. The runner
-asks the returned error one question: does its chain carry a
-`diagnostic.Permanent` classification? It uses `errors.As`, so
+asks the returned error one question: does its chain carry the
+`vulkan.RecoveryPermanent` classification? It uses `errors.As`, so
 `fmt.Errorf("charge: %w", vulkan.Terminal(err))` classifies the
 same as the bare value. A plain `errors.New` stays a retry: an
 unclassified error is treated as transient, because the wrong default

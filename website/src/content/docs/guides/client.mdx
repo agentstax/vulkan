@@ -210,10 +210,8 @@ if err != nil {
 produced, err := requests.Produce(ctx, &PaymentRequestedV1{OrderId: "order-812"}, nil)
 ```
 
-`nil` options means the defaults, on `Produce` and `Consume` alike. Today
-every `cfg` accepts `nil` but `ProduceOptions` is a value, so every
-produce in the codebase carries `producer.ProduceOptions{}`; one rule
-for every optional parameter. `ProducerConfig` declares nothing durable
+`nil` options means the defaults, on `Produce` and `Consume` alike -- one
+rule for every optional parameter. `ProducerConfig` declares nothing durable
 (a producer has no row of its own) and is just this process's message
 defaults and batching.
 
@@ -224,7 +222,7 @@ what you run, the same three calls as a consumer or a producer.
 
 ```go
 nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx,
-	vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
+	&vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
 	&ReportRequestedV1{Kind: "nightly"}, &vulkan.ScheduleConfig{
 		Timeout:     time.Minute,
 		Concurrency: vulkan.ConcurrencyExclusive,

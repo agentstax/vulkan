@@ -240,7 +240,7 @@ beside it.
 
 ```go
 nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx,
-	vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
+	&vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
 	&ReportRequestedV1{Kind: "nightly"}, &vulkan.ScheduleConfig{
 		Timeout:     time.Minute,
 		Concurrency: vulkan.ConcurrencyExclusive,

@@ -29,8 +29,8 @@ type ProducerConfig struct {
 	// Default: 0 (disabled).
 	SlowProduceThreshold time.Duration
 
-	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
-	Retry  *common.RetryPolicy // transient-error retry policy for this producer's own Postgres calls -- never put on messages. Default: common.NewDefaultRetryPolicy().
+	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up; the client's logger when built through vulkan.Client.
+	Retry  *common.RetryPolicy // transient-error retry policy for this producer's own Postgres calls -- never put on messages. Default: common.NewDefaultRetryPolicy(); the client's policy when built through vulkan.Client.
 }
 
 func (c *ProducerConfig) WithDefaults() *ProducerConfig {

@@ -215,6 +215,10 @@ next. Path moves are `git mv` plus package clause plus import rewrite.
    text lines to stderr" gain "the client's logger when built through
    vulkan.Client".
 
+Progress 2026-09-03: steps 1-6 built, uncommitted; the fresh-DB suite is
+the review-ready checkpoint. Step 6 also gave ProducerConfig and
+ConsumerConfig's Logger/Retry comments the client-fills note.
+
 Directly affected labs at step 3/4: group-config-lab and binding-lab
 (Bindings), schedule-lab and schedule-concurrency-lab (ScheduleSpec),
 compaction-lab and compaction-head-write-lab (admin heads), routing-lab.

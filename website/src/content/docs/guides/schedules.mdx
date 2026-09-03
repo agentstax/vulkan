@@ -18,7 +18,7 @@ type InvoiceRun struct {
 func (InvoiceRun) SchemaVersion() int { return 1 }
 
 nightly, err := client.RegisterSchedule[InvoiceRun](ctx,
-	vulkan.ScheduleSpec{Name: "invoices.nightly", Topic: "invoices", Cron: "0 2 * * *"},
+	&vulkan.ScheduleSpec{Name: "invoices.nightly", Topic: "invoices", Cron: "0 2 * * *"},
 	&InvoiceRun{Region: "eu"}, nil)
 if err != nil {
 	return err
