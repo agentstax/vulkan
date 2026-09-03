@@ -26,8 +26,13 @@ values, no start-line change — the `disable_manager` attribute and its
 registry row are dropped, since the consumer no longer knows. Two guards in
 the wrapper: a ctx with nil `Done()` passes straight through so the session's
 own `ErrLifecycleContextNotCancellable` guard still trips (the errgroup's
-derived ctx is always cancellable and would mask it), and the manager runs
-under its own cancel released when the session returns — errgroup cancels
+derived ctx is always cancellable and would mask it) -- the wrapper checks
+only `Done() == nil` and never re-derives the guard's own
+condition, so the consumer stays the single owner of that classification; a
+session the guard permits anyway (`DisableGracefulShutdown` with an
+uncancellable ctx) runs without a manager, accepted because process exit is
+that session's only stop either way and `RunManager` remains available -- and
+the manager runs under its own cancel released when the session returns — errgroup cancels
 only on a non-nil error, so a nil session return would otherwise leave the
 manager running and `Wait` blocked forever.
 
@@ -40,7 +45,8 @@ is the deliberate opt-out surface: `consumer.NewConsumer → Register` hands
 back the plain instance with no manager attached. Verified live under
 `-race`: a plain Consume has one live system manager beside it and releases
 it on session end; a DisableManager client's Consume runs zero; both end
-clean. Supersedes [0638]'s clause "`Consume` reaches it through
+clean. Verified separately: the guard still trips on a `Background` ctx
+through the wrapper. Supersedes [0638]'s clause "`Consume` reaches it through
 `consumer.ConsumerConfig.RunSystemManager func(ctx) error`, filled by the
 client unless `ClientConfig.DisableManager` is set (nil is the fact the start
 line reports as `disable_manager`)"; the rest of 0638 stands. **Rejected:**

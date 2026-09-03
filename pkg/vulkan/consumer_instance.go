@@ -33,9 +33,14 @@ func newConsumerInstance[Message Versioned](instance *consumer.ConsumerInstance[
 // manager error before its first claim tears the session down; after that,
 // manager failures are logged and retried, never returned (SystemManager.Run).
 func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message], options *ConsumeOptions) error {
-	// a ctx that can never cancel must reach the session's own lifecycle
-	// guard -- the errgroup's derived ctx would mask it
-	if !i.runManager || ctx.Done() == nil {
+	if !i.runManager {
+		return i.ConsumerInstance.Consume(ctx, consumerFunc, options)
+	}
+
+	// if we can't cancel the context then we can't rely on errgroup
+	// to correctly stop manager. So if user has an uncancellable context
+	// AND they have DisabledGracefulShutdown let them run consumer only.
+	if ctx.Done() == nil {
 		return i.ConsumerInstance.Consume(ctx, consumerFunc, options)
 	}
 

@@ -45,6 +45,9 @@ because with a shared loop nothing returns to a `Consume` by design: no
 restart would have left one fatal killing a process's upkeep for its
 lifetime, and `vulkan manager run` up doing nothing.
 
+Verified on a fresh database: the 49-lab suite is green, and the manager row
+comes up at 1 on a new volume where the old one still held -1.
+
 Playground scenarios 08, 12, and 13 dropped their hand-wired
 `RunManager` (08 is now scenario 03's shape, and 13 no longer needs an
 errgroup at all); `schedulepermitlab` -- which asserted the deleted

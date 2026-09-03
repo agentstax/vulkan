@@ -194,6 +194,13 @@ worker-liveness-lab:
 schedule-lab:
   go run examples/phase_1/schedulelab/main.go
 
+# Schedule(ctx) runs the system manager, so two concurrent runs in one process
+# are both admitted and the manager row's claim gate admits one reconcile loop
+# between them. Also proves RegisterSchedule returns the handle whose Get reads
+# the declared row.
+schedule-concurrency-lab:
+  go run examples/phase_1/scheduleconcurrencylab/main.go
+
 key-lease-lab:
   go run examples/phase_1/keyleaselab/main.go
 
