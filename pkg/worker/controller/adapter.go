@@ -27,7 +27,7 @@ func toWorkerData(data datastore.ListWorkersRow) (*worker.WorkerData, error) {
 		Name:            data.Name,
 		Owner:           owner,
 		Metadata:        data.Metadata,
-		TargetInstances: data.TargetInstances,
+		TargetInstances: worker.InstanceTarget(data.TargetInstances),
 	}, nil
 }
 
@@ -39,7 +39,7 @@ func toOwnedWorker(data *datastore.WorkerConfigRow, owner *common.Owner) *worker
 		Name:            data.Name,
 		Owner:           owner,
 		Metadata:        data.Metadata,
-		TargetInstances: data.TargetInstances,
+		TargetInstances: worker.InstanceTarget(data.TargetInstances),
 	}
 }
 

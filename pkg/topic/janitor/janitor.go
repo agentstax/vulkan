@@ -63,7 +63,7 @@ func NewJanitorProvisioner(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig)
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(WorkerTopicJanitor, common.OwnerTopic, defaultJanitorMetadata())
+	definition, err := worker.NewDefinition(WorkerTopicJanitor, common.OwnerTopic, 1, defaultJanitorMetadata())
 	if err != nil {
 		return nil, err
 	}

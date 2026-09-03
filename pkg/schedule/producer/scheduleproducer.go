@@ -64,7 +64,7 @@ func NewScheduleProducerProvisioner(ds *iDatastore.PostgresDatastore, cfg *Sched
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(WorkerScheduleProducer, common.OwnerSystem, defaultScheduleProducerMetadata())
+	definition, err := worker.NewDefinition(WorkerScheduleProducer, common.OwnerSystem, 1, defaultScheduleProducerMetadata())
 	if err != nil {
 		return nil, err
 	}

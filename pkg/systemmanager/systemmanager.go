@@ -22,8 +22,9 @@ import (
 
 // SystemManager keeps the deployment's upkeep running with no user process
 // up: it claims the system's manager row and reconciles every worker row in
-// the deployment, the alerts' consumers included. Safe to run N-way --
-// worker claims arbitrate who runs what.
+// the deployment, the alerts' consumers included. Safe to run N-way -- the
+// manager row's own claim admits one reconcile loop at a time, and the
+// spawned workers' claims arbitrate the rest.
 type SystemManager struct {
 	Config *SystemManagerConfig
 	Logger logging.Logger
@@ -116,7 +117,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 	}
 
 	provisioners := []worker.Provisioner{topicJanitorProvisioner, consumerGroupJanitorProvisioner, scheduleProducerProvisioner, metricsCollectorProvisioner, cursorAdvancerProvisioner, partitionCountProvisioner, compactionReadCostProvisioner, workerLivenessProvisioner}
-	managerProvisioner, err := manager.NewManagerProvisioner(ds, &manager.ManagerConfig{
+	managerProvisioner, err := manager.NewManagerProvisioner(ds, 1, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	}, provisioners...)
@@ -151,8 +152,8 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 // One Run at a time per instance -- a second concurrent call is refused.
 // Returns migrate.ErrNotRegistered when no system has been registered.
 func (s *SystemManager) Run(ctx context.Context) error {
-	// the manager row is unbound (NoInstanceTarget), so no claim gate refuses
-	// a second claim -- meaning a second Run runs a rival reconcile loop
+	// the row's claim gate caps live instances deployment-wide; this refuses a
+	// second Run in-process rather than leaving it in a claim-retry loop
 	release, ok := s.permit.Acquire()
 	if !ok {
 		return errors.New("system manager already running")

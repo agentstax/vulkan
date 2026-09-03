@@ -55,6 +55,9 @@ func NewBaseProvisioner[Message topic.Versioned](ds *datastore.PostgresDatastore
 	if metrics == nil {
 		return nil, errors.New("metrics must not be nil")
 	}
+	if definition.TargetInstances != worker.NoInstanceTarget {
+		return nil, fmt.Errorf("definition.TargetInstances must be %d for a consumer, got %d", worker.NoInstanceTarget, definition.TargetInstances)
+	}
 	if cfg == nil {
 		cfg = &BaseProvisionerConfig{}
 	}
@@ -86,10 +89,6 @@ func NewBaseProvisioner[Message topic.Versioned](ds *datastore.PostgresDatastore
 	if err != nil {
 		return nil, err
 	}
-
-	// NoInstanceTarget on every consumer row: a consumer's claim gate is the
-	// caller asking to consume, not a count on the row.
-	definition.TargetInstances = worker.NoInstanceTarget
 
 	return &BaseProvisioner[Message]{
 		definition:    definition,

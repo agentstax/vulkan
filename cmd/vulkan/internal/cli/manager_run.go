@@ -24,8 +24,10 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 			"deployment running -- partition upkeep, retention, committed advance, schedule\n" +
 			"scheduling -- with no consumer required. Safe to run N-way: replicas\n" +
 			"coordinate through worker claims, so each worker's instance target\n" +
-			"holds. With --metrics-address, also serves the deployment's\n" +
-			"measurements as a Prometheus /metrics endpoint on that address.\n" +
+			"holds -- one replica holds the manager claim and the rest retry it,\n" +
+			"taking over when that claim expires. With --metrics-address, also\n" +
+			"serves the deployment's measurements as a Prometheus /metrics\n" +
+			"endpoint on that address.\n" +
 			"Stop with SIGINT or SIGTERM.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

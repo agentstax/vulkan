@@ -53,7 +53,7 @@ func NewCursorAdvancerProvisioner(ds *iDatastore.PostgresDatastore, cfg *CursorA
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(WorkerCursorAdvancer, common.OwnerConsumerGroup, defaultCursorAdvancerMetadata())
+	definition, err := worker.NewDefinition(WorkerCursorAdvancer, common.OwnerConsumerGroup, 1, defaultCursorAdvancerMetadata())
 	if err != nil {
 		return nil, err
 	}

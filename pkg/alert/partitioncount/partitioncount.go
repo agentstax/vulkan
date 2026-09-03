@@ -104,7 +104,7 @@ func NewPartitionCountProvisioner(ds *iDatastore.PostgresDatastore, cfg *Partiti
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(JobName, common.OwnerConsumerGroup, toPartitionCountMetadata(cfg))
+	definition, err := worker.NewDefinition(JobName, common.OwnerConsumerGroup, 1, toPartitionCountMetadata(cfg))
 	if err != nil {
 		return nil, err
 	}

@@ -83,7 +83,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	// a declarer here, never run -- admin creates manager rows, it doesn't claim them
-	managerProvisioner, err := manager.NewManagerProvisioner(ds, &manager.ManagerConfig{
+	managerProvisioner, err := manager.NewManagerProvisioner(ds, 1, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	}, topicJanitorProvisioner, scheduleProducerProvisioner, metricsCollectorProvisioner)

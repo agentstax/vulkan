@@ -31,7 +31,7 @@ func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consum
 	provisioners = append(provisioners, groupProvisioners...)
 	provisioners = append(provisioners, topicProvisioners...)
 
-	managerProvisioner, err := manager.NewManagerProvisioner(i.ds, &manager.ManagerConfig{
+	managerProvisioner, err := manager.NewManagerProvisioner(i.ds, worker.NoInstanceTarget, &manager.ManagerConfig{
 		Logger: i.Config.Logger,
 		Retry:  i.Config.Retry,
 	}, provisioners...)

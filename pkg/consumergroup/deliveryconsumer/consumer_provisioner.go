@@ -45,7 +45,7 @@ func NewDeliveryConsumerProvisioner[Message topic.Versioned](ds *datastore.Postg
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(WorkerDeliveryConsumer, common.OwnerConsumerGroup, toDeliveryConsumerMetadata(cfg))
+	definition, err := worker.NewDefinition(WorkerDeliveryConsumer, common.OwnerConsumerGroup, worker.NoInstanceTarget, toDeliveryConsumerMetadata(cfg))
 	if err != nil {
 		return nil, err
 	}

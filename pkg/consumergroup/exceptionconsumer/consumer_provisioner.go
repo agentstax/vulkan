@@ -46,7 +46,7 @@ func NewExceptionConsumerProvisioner[Message topic.Versioned](ds *datastore.Post
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(WorkerExceptionConsumer, common.OwnerConsumerGroup, toExceptionConsumerMetadata(cfg))
+	definition, err := worker.NewDefinition(WorkerExceptionConsumer, common.OwnerConsumerGroup, worker.NoInstanceTarget, toExceptionConsumerMetadata(cfg))
 	if err != nil {
 		return nil, err
 	}

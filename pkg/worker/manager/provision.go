@@ -18,8 +18,8 @@ func (d *ManagerProvisioner) Declare(ctx context.Context, owner *common.Owner) e
 
 // Provision claims one live instance. declared.Owner is the row's own declared.Owner and the
 // instance's reconcile scope -- the deeper the declared.Owner, the shorter the chain.
-// nil = declined, which for a manager row means target_instances was set away
-// from worker.NoInstanceTarget.
+// nil = declined: the row is suspended, or its instances are already at
+// target.
 func (d *ManagerProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
 	if declared.Owner == nil {
 		return nil, errors.New("declared.Owner must not be nil")

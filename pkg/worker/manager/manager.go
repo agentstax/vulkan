@@ -14,9 +14,12 @@ import (
 const WorkerManager = "manager"
 
 // A manager instance keeps one running execution per worker row on the
-// owner's chain, spawned through the provisioners it was given. Manager rows
-// carry no instance target -- the spawned workers' own claims arbitrate who
-// runs what, so any number of processes reconcile the same chain safely.
+// owner's chain, spawned through the provisioners it was given. The spawned
+// workers' own claims arbitrate who runs what, so any number of processes can
+// reconcile the same chain safely -- a group's row carries no instance target
+// for that reason, since each of its replicas spawns its own consumers. The
+// system's row is capped instead: one loop already covers the deployment, so
+// the rest would poll for nothing.
 type ManagerProvisioner struct {
 	Config *ManagerConfig
 	Logger logging.Logger
@@ -29,7 +32,7 @@ type ManagerProvisioner struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewManagerProvisioner(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig, provisioners ...worker.Provisioner) (*ManagerProvisioner, error) {
+func NewManagerProvisioner(ds *iDatastore.PostgresDatastore, targetInstances worker.InstanceTarget, cfg *ManagerConfig, provisioners ...worker.Provisioner) (*ManagerProvisioner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -63,12 +66,10 @@ func NewManagerProvisioner(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig,
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(WorkerManager, common.OwnerAny, defaultManagerMetadata())
+	definition, err := worker.NewDefinition(WorkerManager, common.OwnerAny, targetInstances, defaultManagerMetadata())
 	if err != nil {
 		return nil, err
 	}
-	definition.TargetInstances = worker.NoInstanceTarget
-
 	return &ManagerProvisioner{
 		Config:       cfg,
 		Logger:       cfg.Logger,

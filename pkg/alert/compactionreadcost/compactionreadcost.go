@@ -104,7 +104,7 @@ func NewCompactionReadCostProvisioner(ds *iDatastore.PostgresDatastore, cfg *Com
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(JobName, common.OwnerConsumerGroup, toCompactionReadCostMetadata(cfg))
+	definition, err := worker.NewDefinition(JobName, common.OwnerConsumerGroup, 1, toCompactionReadCostMetadata(cfg))
 	if err != nil {
 		return nil, err
 	}

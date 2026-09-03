@@ -44,3 +44,5 @@ Narrows [0547]: the *Instance rename stands; the no-split clause flips.
   call. K8s spec-vs-object is the precedent for the Definition/Worker pair.
 - The alerts' Declare preamble is them hand-rolling consumer registration —
   a candidate post-v1 cleanup, out of scope here.
+
+**Amended.** [0639] narrows the clause "consumers inherit it from BaseProvisioner, which stamps NoInstanceTarget as a base invariant": each consumer kind now passes the target to NewDefinition and the base guards it, rather than the base mutating the definition. The invariant stands; the rest of this record stands.

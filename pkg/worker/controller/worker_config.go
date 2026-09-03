@@ -16,7 +16,7 @@ type WorkerConfig struct {
 	// TargetInstances - how many live instances of the worker should run at
 	// once across every process. worker.NoInstanceTarget lifts the gate.
 	// Default: 1.
-	TargetInstances int
+	TargetInstances worker.InstanceTarget
 }
 
 func (c *WorkerConfig) WithDefaults() *WorkerConfig {
@@ -29,8 +29,8 @@ func (c *WorkerConfig) WithDefaults() *WorkerConfig {
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
 func (c *WorkerConfig) Validate() error {
-	if c.TargetInstances < worker.NoInstanceTarget {
-		return fmt.Errorf("TargetInstances must be >= %d, got %d", worker.NoInstanceTarget, c.TargetInstances)
+	if err := c.TargetInstances.Validate(); err != nil {
+		return fmt.Errorf("TargetInstances: %w", err)
 	}
 	return nil
 }

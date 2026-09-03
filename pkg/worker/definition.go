@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
@@ -16,10 +17,10 @@ type Definition struct {
 	Metadata any
 
 	OwnerKind       common.OwnerKind // common.OwnerAny lifts the declare guard
-	TargetInstances int              // 0 if unset -> 1; NoInstanceTarget lifts the claim gate
+	TargetInstances InstanceTarget
 }
 
-func NewDefinition(name string, ownerKind common.OwnerKind, metadata any) (*Definition, error) {
+func NewDefinition(name string, ownerKind common.OwnerKind, targetInstances InstanceTarget, metadata any) (*Definition, error) {
 	if name == "" {
 		return nil, errors.New("name must not be empty")
 	}
@@ -28,11 +29,14 @@ func NewDefinition(name string, ownerKind common.OwnerKind, metadata any) (*Defi
 			return nil, err
 		}
 	}
+	if err := targetInstances.Validate(); err != nil {
+		return nil, fmt.Errorf("targetInstances: %w", err)
+	}
 	if metadata == nil {
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	return &Definition{Name: name, OwnerKind: ownerKind, Metadata: metadata}, nil
+	return &Definition{Name: name, OwnerKind: ownerKind, TargetInstances: targetInstances, Metadata: metadata}, nil
 }
 
 // A Declarer states desired state: a worker row for the given owner.

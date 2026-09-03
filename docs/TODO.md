@@ -110,37 +110,95 @@ Verified during chunk 1, clearing chunk 2/5 items:
   Additive; the CLI's `group config get` reads only `Metadata`.
 - No SQL literal moved, so the sandbox SQL mirror needs no re-sync.
 
-### Chunk 2 -- gate the system manager row
+### Chunk 2 -- gate the system manager row -- DONE
 
-- `pkg/worker/manager/manager_config.go`: add optional
-  `TargetInstances int` to `ManagerConfig`. WithDefaults: 0 ->
-  `worker.NoInstanceTarget` (today's behavior; consumers pass nothing
-  and stay unbound). Validate: reject 0 explicitly set is impossible
-  to distinguish from unset -- so legal values after defaults are -1
-  or >= 1. `NewManagerProvisioner` writes it onto the Definition.
-- `pkg/admin/admin.go`: the declarer ManagerProvisioner ("a declarer
-  here, never run") passes `TargetInstances: 1`. This is what
-  `SystemController.Register` declares, so new installations get a
-  gated row.
-- `pkg/systemmanager/systemmanager.go`: its own ManagerProvisioner
-  passes `TargetInstances: 1` too, for a matching Definition (it never
-  declares today, but the Definition should not lie).
-- `pkg/consumer/consumer_provisioners.go`: unchanged -- group manager
-  rows keep the unbound default.
-- Existing databases: `registerWorker` updates only metadata on
-  re-declare, so an existing manager row keeps -1 and keeps today's
-  every-process behavior. Pre-v1 policy is drop+recreate; note it in
-  HISTORY at close-out. No DDL change at all -- the target is an
-  INSERT value.
-- `pkg/worker/definition.go` / `worker_config.go` comment touch-ups
-  where they describe the manager as the -1 case.
-- workerliveness: CLEARED in chunk 1, no change needed
-  (`classifyWorker` has no -1 case). Separately noted, pre-existing and
-  NOT this work's job: the alert filters on `snapshot.Owner.TopicId`,
-  so the SYSTEM manager row is outside every topic's check -- "nobody
-  runs system upkeep" is unalertable from inside, since the check runs
-  under the manager it would report on. VK0063 at register time stays
-  the answer.
+Built 2026-09-02. All six modules build, `go vet ./...` clean, `go test
+-race ./...` 120 passed / 78 packages, tools 34 passed. Verified live
+against the dev DB in a throwaway schema (below).
+
+- `ManagerConfig.TargetInstances` added as the first (domain) field.
+  WithDefaults 0 -> `worker.NoInstanceTarget`, so the consumer's
+  provisioner keeps declaring unbound group manager rows without being
+  touched; Validate rejects < -1, mirroring `WorkerConfig.Validate` and
+  the DDL's own `CHECK (target_instances >= -1)`.
+  `NewManagerProvisioner` writes `cfg.TargetInstances` onto the
+  Definition instead of hard-coding -1.
+- `pkg/admin/admin.go`'s declarer provisioner passes `TargetInstances: 1`
+  -- this is the one that reaches `SystemController.Register`, so new
+  installations declare the system manager row gated.
+  `pkg/systemmanager/systemmanager.go` passes 1 as well so its Definition
+  matches the row it claims.
+- Prose corrected where gating made it false: `NoInstanceTarget`'s doc
+  comment (was "like the manager"), `ManagerProvisioner`'s type comment
+  (was "Manager rows carry no instance target"), `Provision`'s nil-return
+  comment (was "target_instances was set away from NoInstanceTarget"),
+  `SystemManager`'s type comment, and `manager run`'s CLI help (now says
+  one replica holds the claim and the rest retry it).
+- `systemmanager.go`'s permit comment no longer claims the row is
+  unbound; it now says the row's gate caps the deployment while the
+  permit caps the process. Chunk 3 deletes both.
+
+Verified live (throwaway schema `vulkan_gatecheck`, dropped after; the
+dev DB's own `vulkan` schema was never written to):
+
+- CHECK 1: `RegisterSystem` declares the system manager row at
+  `target_instances = 1`.
+- CHECK 2: two clients each calling `RunManager` (two SystemManagers, so
+  the permit is not involved -- only the row's gate) produce exactly ONE
+  live manager instance.
+- CHECK 3: on cancel, the instance is released, not left to expire (0
+  live immediately).
+- CHECK 4: with the row set to 0, VK0035 warns and nothing is claimed.
+- The waiting runner logs exactly the new line, and NOT the old
+  suspended Warn:
+  `DEBUG manager row declined an instance -- retrying the claim
+  owner=system target_instances=1`.
+
+GOTCHA -- an existing installation keeps the old behavior. Confirmed on
+the dev DB: its manager row (id 4) is still -1, because `registerWorker`
+updates only metadata on re-declare. That is deliberate (an operator's
+suspend must survive a restart), so seeing the gate requires a fresh
+schema or a manual `UPDATE ... SET target_instances = 1`. Pre-v1 answer
+is drop+recreate; say so in the HISTORY entry at close-out.
+
+Observed while verifying, for chunk 5's labs: a single system manager
+process legitimately runs SEVERAL manager instances -- one for the system
+row plus one per alert consumer group (`owner=alert.partition_count` and
+siblings), since each alert consumer runs its own group manager. A lab
+counting manager instances must scope the count to the system row
+(`system_id IS NOT NULL`), or it will read those as duplicates.
+
+### Chunk 2b -- the instance target becomes vocabulary [0639] -- DONE
+
+Built 2026-09-02 on the user's call (shape 2 of three offered). All six
+modules build, vet clean, `go test -race ./...` passes, tools 34 passed,
+and the live checks below re-ran green after the refactor.
+
+- `worker.InstanceTarget` (named int) owns `NoInstanceTarget`, a
+  `Suspended()` reader for the zero, and `Validate` (positive count or
+  NoInstanceTarget; 0 rejected -- suspension is an operator's row edit,
+  never a declaration).
+- `NewDefinition(name, ownerKind, targetInstances, metadata)` takes it as
+  a required param. Both post-construction pokes deleted: the manager
+  passes `cfg.TargetInstances` in, and the three consumer kinds pass
+  `NoInstanceTarget` themselves while `NewBaseProvisioner` guards it
+  instead of stamping it.
+- `NewManagerProvisioner(ds, targetInstances, cfg, provisioners...)` takes
+  it as a required param too, and `ManagerConfig` drops the field: it was a
+  required value hiding in a config (zero could not mean unset without
+  meaning suspended, and the default it needed served 1 of 3 callers while
+  being the expensive one -- a fourth caller who said nothing would have
+  restored the fleet-wide polling 0638 removed).
+- Type reaches WorkerData, WorkerConfig; the datastore row
+  and `RegisterWorker` keep the column's plain int, adapters convert.
+  `metrics.WorkerSnapshot` stays int on purpose -- a vocabulary root
+  imports infrastructure only, never another domain.
+- Record 0639 written, DECISIONS indexed, 0549 back-linked.
+
+Live re-verification (throwaway schema, dev DB untouched): system manager
+row declared at 1; a registered consumer's `message_consumer` row at -1
+(also exercises the new base guard); two runners -> one live instance; a
+clean release on stop; target 0 -> VK0035 and nothing claimed.
 
 ### Chunk 3 -- SystemManager shared run
 

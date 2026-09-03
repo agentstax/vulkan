@@ -104,7 +104,7 @@ func NewWorkerLivenessProvisioner(ds *iDatastore.PostgresDatastore, cfg *WorkerL
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(JobName, common.OwnerConsumerGroup, toWorkerLivenessMetadata(cfg))
+	definition, err := worker.NewDefinition(JobName, common.OwnerConsumerGroup, 1, toWorkerLivenessMetadata(cfg))
 	if err != nil {
 		return nil, err
 	}
