@@ -21,12 +21,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **One declaration per type, vulkan as the client plus aliases** --
-  in flight in TODO.md, settled as [0643]. The earlier item here pointed
-  the other way (declarations moving into `vulkan`); the design reversed
-  it, since Go's import graph forbids a package that both declares the
-  types and imports the machinery that reads them. Steps 1-5 built; the
-  docs pass (step 6) and the review-ready lab suite remain.
 - **Step 3 -- the public-API review**, resumed where the playground
   gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
   HISTORY). The catalog (`examples/playground/`) is the measuring

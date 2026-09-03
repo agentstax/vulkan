@@ -34,7 +34,7 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 // NewProduceItem pairs one message with its options for ProduceBatch.
 // options may be nil for the defaults.
 func NewProduceItem[Message Versioned](message *Message, options *ProduceOptions) (*ProduceItem[Message], error) {
-	return producer.NewProduceItem[Message](message, options)
+	return producer.NewProduceItem(message, options)
 }
 
 // ProduceFunc appends the message producerFunc returns from inside the

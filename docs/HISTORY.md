@@ -5,6 +5,64 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-03 — One declaration per type, vulkan as the client plus aliases [0643]
+
+Every user-spelled type, const, declared error, and declared event is now
+declared exactly once, in the lowest package that reads it, and `pkg/vulkan`
+is the client plus aliases: `Client`, `ClientConfig`, the pool, the four
+handles, the two instance wrappers, and the `Producer`/`Consumer`
+interfaces are its own; every other exported name is an alias or var into
+the declaring package, so a click-through lands on the declaration in one
+hop instead of four. The alias set is computed, not kept -- a go/types walk
+in tools/conventions type-checks `pkg/vulkan` from source, follows every
+exported signature, field, method, and type parameter, and requires an
+alias or var whose target is the reached object under its own name; the
+same walk enforces the machinery floor (a controller, datastore, batcher,
+or worker package declares nothing a user spells beyond its Config, `*Row`,
+and controller/datastore/instance/provisioner types). This reverses the
+ROADMAP item that had declarations moving into `vulkan`: Go's import graph
+forbids the package that declares the types from importing the machinery
+that reads them, so River's facade-plus-types shape won over
+Temporal's alias-into-internal.
+
+The tree moved to match the laws. `consumergroup` is `consume` and
+producer's controller and batcher are `produce/...`, so activity roots
+carry the verb and their assemblers the agent noun (consume/consumer,
+produce/producer, schedule/scheduler); the roots' own controllers are
+`ConsumeController` and `ProduceController`. `Versioned` and
+`SchemaVersionOf` live in `common` (five domains read them); `Tx`,
+`TransactionFunc`, and `InTransaction` live in `pkg/datastore`; the
+declaration inputs a controller consumes -- `TopicConfig`,
+`ScheduleConfig`, `ScheduleSpec`, `SystemConfig`, the three alert
+`*JobConfig` types -- live in their roots, and the schedule controller
+parses `spec.Cron` itself. `ConsumerConfig` gained `Bindings`; admin
+gained `GetGroup`, `ListGroups`, `ListGroupWorkers`, `GetCompactionHead`,
+and `ListKeyMessages` so every handle verb is one call; vulkan's adapter
+and three config twins are deleted, and `RegisterProducer` /
+`RegisterConsumer` fill a nil `Logger` and `Retry` from the client. Codes
+follow the same law with no assembler case: the seven declared below or
+beside a root (VK0018, VK0033, VK0038, VK0041, VK0053, VK0056, VK0057,
+VK0065) moved to `produce`, `migrate`, `consume`, and `system` under
+exported names, every root's `logs.go` is `events.go`, and generic-noun
+types took their root's prefix at the declaration -- `MetricKind`,
+`MetricUnit`, `AlertStatus`, `AlertSeverity`, `ScheduleExpression`, and
+the `DiagnosticError` / `DiagnosticEvent` / `DiagnosticQuery` /
+`DiagnosticMetric` set with `NewDiagnostic*` constructors,
+`RecoveryTransient` / `RecoveryPermanent`, `DiagnosticKind*` -- so the
+flat vulkan namespace never collides.
+
+Six tools/conventions tests hold the shape: alias declarations only in
+alias.go, no `/controller` import from vulkan, the closure walk comparing
+targets, the machinery floor over the same closure, every
+`NewDiagnostic*` call initializing an exported var in a root's
+errors.go / events.go / metrics.go (doubling as the registry-completeness
+check, whose regex had gone dead in the rename), and SQL owner segments
+naming their datastore (which caught `consumerbase`, now `consumebase`).
+The docs pass moved `handler-outcomes`, VK0054, VK0055, and the three
+`RegisterSchedule` samples to vulkan's spellings. Verified: `just verify`
+green and the fresh-DB lab suite 49/49 on 2026-09-03. [0643] amends
+[0625]'s "every user type in vulkan" clause and [0555]'s package kinds.
+
 ## 2026-09-02 — Consume runs the deployment's upkeep [0638]-[0642]
 
 A deployment no longer needs to know the system manager exists. `Consume`
