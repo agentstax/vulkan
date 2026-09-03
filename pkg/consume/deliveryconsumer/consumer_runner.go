@@ -7,19 +7,19 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	consumerbase "github.com/agentstax/vulkan/pkg/consume/base"
+	consumebase "github.com/agentstax/vulkan/pkg/consume/base"
 	"github.com/agentstax/vulkan/pkg/consume/deliveryconsumer/controller"
 	"golang.org/x/sync/errgroup"
 )
 
 type deliveryRunner[Message common.Versioned] struct {
-	*consumerbase.BaseConsumer[Message]
+	*consumebase.BaseConsumer[Message]
 
 	consumers *controller.DeliveryConsumerGroupController
 	cfg       *DeliveryConsumerConfig
 }
 
-func newDeliveryRunner[Message common.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.DeliveryConsumerGroupController, cfg *DeliveryConsumerConfig) (*deliveryRunner[Message], error) {
+func newDeliveryRunner[Message common.Versioned](base *consumebase.BaseConsumer[Message], consumers *controller.DeliveryConsumerGroupController, cfg *DeliveryConsumerConfig) (*deliveryRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}
@@ -102,7 +102,7 @@ func (r *deliveryRunner[Message]) deliveryClaim(ctx context.Context) error {
 			// a Permanent error dead-letters now; anything else (a requested
 			// delay included -- this claim reads no can_run_after) retries
 			// until attempts exhaust, then dead-letters
-			if consumerbase.ClassifyHandlerError(err) == consumerbase.HandlerOutcomeTerminal {
+			if consumebase.ClassifyHandlerError(err) == consumebase.HandlerOutcomeTerminal {
 				if recordErr := r.consumers.RecordTerminal(ctx, &delivery, err, r.Topic.DeliveryLogMode); recordErr != nil {
 					return recordErr
 				}

@@ -149,19 +149,24 @@ pkg/vulkan
 
 - No `type X = ` declaration outside pkg/vulkan/alias.go.
 - pkg/vulkan imports no package whose path ends in `/controller` or
-  `/datastore`.
-- A controller, datastore, batcher, or worker package exports no struct
-  other than its Config, its `*Row` structs, its controller / datastore /
-  instance / provisioner types, and their constructors.
-- The alias closure (review G3): walk every exported signature and field
-  of pkg/vulkan with go/types; every named type, `Err*` var, and `Event*`
-  var from this module that is reachable must have a same-named vulkan
-  alias or var.
-- The SQL owner comment's package segment equals the declaring root's
-  name (review G5).
-- Every `diagnostic.New*` call site is in `pkg/<x>/{errors,events,metrics}.go`
-  or under pkg/common, and the variable it initializes is exported
-  (review G11).
+  contains `/controller/` (pkg/datastore is infrastructure and allowed).
+- The machinery floor (review G16): every object the alias closure
+  reaches that is declared below a root carries a Config / Row /
+  Controller / Datastore / Instance / Provisioner suffix.
+- The alias closure (review G3, G13): type-check pkg/vulkan from source
+  over its dependencies' export data, walk every exported signature,
+  field, method, and type parameter; every named type and typed const
+  from this module that is reachable, and every exported `Err*` /
+  `Event*` var in a package vulkan links, must have a vulkan alias or
+  var whose TARGET is that object, under the declaration's own name.
+- The SQL owner comment's package segment names its datastore (review
+  G5, G17): the root for the root's own datastore; the worker's name, or
+  root+worker, for a worker's; every segment names one package.
+- Every `diagnostic.NewDiagnostic*` call site initializes an exported var
+  in `pkg/<x>/{errors,events,metrics}.go` or under pkg/common, its code
+  is in the linked registry, and its package is imported by both
+  tools/conventions/conventions.go and tools/codeexport/main.go (review
+  G11, G15).
 
 ### Rule text
 
@@ -307,3 +312,26 @@ Full fresh-DB suite at the review-ready checkpoint.
   law 2 restated for codes makes the root the only home. Resolution: the
   moves listed under Lower-package deltas, the exported name, the
   call-site walk above.
+- **G16 The machinery floor is not "exports only Config and Row"**
+  (2026-09-03, found writing step 5). Read literally, the check flags
+  some thirty internal types no user spells -- a controller's result
+  structs read by its own worker (ClaimedRange, Delivery, Appended),
+  worker runners, the migrate Step. Law 2 says "nothing a user spells",
+  and the set a user spells is exactly what the alias closure reaches.
+  Resolution: the floor test runs over the closure's reachable set --
+  a reachable object declared below a root must carry one of the six
+  suffixes -- and the exports list stays as it is.
+- **G17 Worker datastores carry their own owner segments** (2026-09-03,
+  found writing step 5): `topicjanitor`, `messageconsumer`,
+  `scheduleproducer`, `partitioncount` -- never the root's name, so the
+  literal G5 check fails on every worker statement. Resolution: the rule
+  is the G13 prefix rule applied to segments -- a root's own datastore
+  is the root, a worker's is the worker's name or root+worker when the
+  bare name is a generic noun two roots share -- plus one segment per
+  package. It caught `consumerbase` (pkg/consume/base) on the current
+  tree, renamed `consumebase` with its import alias.
+- **G18 The registry-completeness regex went dead in step 4**
+  (2026-09-03): `New(?:Error|Event|Metric)\("VK` matched nothing after
+  the NewDiagnostic* rename, so the test passed vacuously. Resolution:
+  the G11 call-site walk replaces it and parses the call with go/ast
+  through the same `declaredCode` helper the Diagnose-pointer walk uses.

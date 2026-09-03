@@ -13,7 +13,7 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	consumerbase "github.com/agentstax/vulkan/pkg/consume/base"
+	consumebase "github.com/agentstax/vulkan/pkg/consume/base"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
@@ -27,7 +27,7 @@ const WorkerMessageConsumer = "message_consumer"
 type MessageConsumerProvisioner[Message common.Versioned] struct {
 	Config *MessageConsumerConfig
 
-	*consumerbase.BaseProvisioner[Message]
+	*consumebase.BaseProvisioner[Message]
 
 	consumers *controller.MessageConsumerGroupController
 }
@@ -49,7 +49,7 @@ func NewMessageConsumerProvisioner[Message common.Versioned](ds *datastore.Postg
 	if err != nil {
 		return nil, err
 	}
-	baseProvisioner, err := consumerbase.NewBaseProvisioner(ds, definition, consumerFunc, schemaVersion, metrics, &consumerbase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
+	baseProvisioner, err := consumebase.NewBaseProvisioner(ds, definition, consumerFunc, schemaVersion, metrics, &consumebase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
 	if err != nil {
 		return nil, err
 	}

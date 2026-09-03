@@ -12,7 +12,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumerbase "github.com/agentstax/vulkan/pkg/consume/base"
+	consumebase "github.com/agentstax/vulkan/pkg/consume/base"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consume/base/controller"
 	"github.com/agentstax/vulkan/pkg/consume/messageconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -21,7 +21,7 @@ import (
 )
 
 type messageRunner[Message common.Versioned] struct {
-	*consumerbase.BaseConsumer[Message]
+	*consumebase.BaseConsumer[Message]
 
 	consumers   *controller.MessageConsumerGroupController
 	poolLimiter concurrency.PoolLimiter
@@ -29,7 +29,7 @@ type messageRunner[Message common.Versioned] struct {
 	groupConfig *configState
 }
 
-func newMessageRunner[Message common.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.MessageConsumerGroupController, cfg *MessageConsumerConfig, declared *MessageConsumerMetadata) (*messageRunner[Message], error) {
+func newMessageRunner[Message common.Versioned](base *consumebase.BaseConsumer[Message], consumers *controller.MessageConsumerGroupController, cfg *MessageConsumerConfig, declared *MessageConsumerMetadata) (*messageRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}
@@ -353,11 +353,11 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered) {
 	runCtx := consume.WithMeta(ctx, toMessageMeta(item.row, item.options))
 	err := r.CallSafely(runCtx, &payload, item.row.Id, 0, item.row.Options, item.options.Timeout)
 
-	switch consumerbase.ClassifyHandlerError(err) {
-	case consumerbase.HandlerOutcomeTerminal:
+	switch consumebase.ClassifyHandlerError(err) {
+	case consumebase.HandlerOutcomeTerminal:
 		r.buffer.resolveTerminal(item, err)
 		return
-	case consumerbase.HandlerOutcomeDelayed:
+	case consumebase.HandlerOutcomeDelayed:
 		// a first delivery has no delays yet, so MaxDelays cannot be reached here
 		delayed, _ := errors.AsType[*consume.DelayedDelivery](err)
 		r.buffer.resolveDelayed(item, delayed)

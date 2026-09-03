@@ -57,3 +57,9 @@ callback-path change. CONVENTIONS.md Package layout rewritten around
 the three kinds. The 2026-08-04 consumer-layering record's
 read-models-in-controller half is superseded by this shape;
 consumer.NewConsumer survives unchanged.
+
+**Amended.** [0643] adds to the domain kind the naming rule (thing
+roots take the resource, activity roots the verb, assemblers the agent
+noun, `<Root>Controller`), the one-declaration law, and the machinery
+floor; `consumergroup` is `consume`, `produce` is a root beside
+`producer`, and API packages declare no codes. The rest stands.

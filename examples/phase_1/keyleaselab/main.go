@@ -152,7 +152,7 @@ func run() (err error) {
 	step("a release inside a rolled-back txn leaves the lease held")
 	tx, err := ds.Pool.Begin(ctx)
 	must(err)
-	// mirrors consumerbase.release's SQL (pkg/consume/base/controller/datastore/keylease.go) -- keep in sync
+	// mirrors consumebase.release's SQL (pkg/consume/base/controller/datastore/keylease.go) -- keep in sync
 	tag, err := tx.Exec(ctx, fmt.Sprintf(`
 		DELETE FROM %s.%s
 		WHERE consumer_group_id = $1

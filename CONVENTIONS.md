@@ -77,7 +77,7 @@ surfaces it.
 | attr, attrs | shorthand for a word the reader should never have to expand | attribute; log attribute (`slog.Attr` is stdlib and keeps its name) |
 | hole (a template's blank) | coinage for a blank the reader fills in | placeholder |
 | park, give-back, IOU, slot, settle, cede | coined mechanism shorthand | the row/column/status/action it literally is |
-| snooze | a job-queue verb for what is a handler-requested later run | delay; `consumergroup.Delay`, the `delays` column, `RetryPolicy.MaxDelays` |
+| snooze | a job-queue verb for what is a handler-requested later run | delay; `consume.Delay`, the `delays` column, `RetryPolicy.MaxDelays` |
 | allow, defer (concurrency policy values) | verbs for what the new message does; the values name what the key permits | parallel, exclusive, ordered (`deferred` stays the row status) |
 | compaction key (the message's key) | the key is a message property; compaction is one of its two readers [0612] | message key (compaction_head's own compaction_key column keeps its name) |
 | schema (a migration target) | a third sense of a word Postgres already owns; the rows a migrate command reports are the system and its topics, not schemas | name the resource -- `system`, `topic`; `schema` is the Postgres namespace and nothing else [0629] |
@@ -154,18 +154,48 @@ Every package is exactly one of three kinds:
 - **Infrastructure** (`common` and its subpackages `common/diagnostic`,
   `common/logging`, plus `datastore`) -- vocabulary and seams importable
   by everything.
-- **Domain** -- `pkg/<noun>` vocabulary root, its `controller` and
+- **Domain** -- a `pkg/<root>` vocabulary root, its `controller` and
   `controller/datastore`, and the worker packages that maintain the
-  domain's tables (template: topic, consumergroup).
-- **API package** (`producer`, `consumer`, `admin`, `systemmanager`) --
-  constructors, configs, instances; assembles domains and workers.
-  Declares no named error variables, owns no SQL, holds no vocabulary.
+  domain's tables (template: topic, consume). A thing domain's root is
+  named for the resource (topic, system, worker, alert, metrics); an
+  activity domain's root for the verb (schedule, migrate, compaction,
+  consume, produce). The root's own controller and datastore are
+  `<Root>Controller` / `<Root>Datastore` (ScheduleController); a worker
+  package's keep the worker's name.
+- **API package** (`producer`, `consumer`, `scheduler`, `admin`,
+  `systemmanager`, `vulkan`) -- constructors, configs, instances;
+  assembles domains and workers. An activity domain's assembler is its
+  agent noun (produce -> producer, consume -> consumer, schedule ->
+  scheduler). Declares no codes, owns no SQL, holds no vocabulary.
+  `vulkan` is the client plus aliases: it declares Client, ClientConfig,
+  the pool and its config, the handles, the two instance wrappers, and
+  the Producer/Consumer interfaces; every other exported name is an
+  alias or var into the declaring package, and the client holds
+  assemblers only.
 
 The seam law: anything another stack imports is a seam -- a vocabulary
 root or a domain controller. What only your own tree imports nests freely
 (producer keeps its controller/datastore/batcher: nothing else imports
 them). The placement law: a worker package lives under the domain whose
 tables it maintains, never under its assembler.
+
+The one-declaration law: every exported type, const, named error, and
+declared event is declared once, in the lowest package that reads it,
+with a floor -- machinery (a controller, datastore, batcher, or worker
+package) declares nothing a user spells except its own Config and `*Row`
+structs and its controller / datastore / instance / provisioner types.
+So a user-spelled name lives in exactly one of `common` (two domains
+read it), a root (that domain's machinery reads it), or an assembler
+(only its own verbs read it). The only `type X = pkg.X` lines in the
+repo are pkg/vulkan/alias.go, an alias keeps its declaration's name,
+and the alias set is computed by the closure test in tools/conventions,
+never hand-kept: whatever pkg/vulkan's exported surface reaches must be
+spelled there. A root type whose bare name is a generic noun (Kind,
+Status, Severity, Unit, Error, Expression) takes the root's noun as its
+prefix -- MetricKind, AlertStatus, ScheduleExpression, DiagnosticError
+-- and its consts follow the type's prefix (MetricKindCounter, the
+DeliveryLogMode pattern); the rename lands on the declaration, never on
+the alias.
 
 Developer tooling lives in dev-only modules under `tools/` (own go.mod,
 never tagged, outside the root test surface) -- the machine-checkable
@@ -176,9 +206,11 @@ tools/.
 
 The domain layers:
 
-- `pkg/<x>` -- vocabulary only: pure read-models, consts, named error
-  variables. Imports infrastructure only. No constructors for
-  read-models, no Config types, no fields without production readers.
+- `pkg/<x>` -- vocabulary: pure read-models, consts, named error
+  variables, declared events and metrics, and the declaration inputs
+  its controller consumes (TopicConfig, ScheduleConfig, ScheduleSpec).
+  Imports infrastructure only. No constructors for read-models, no
+  fields without production readers.
 - Every public read-model field carries a `json:"snake_case"` tag -- the
   wire name is the field's contract, the json sibling of the datastore
   `db:` rule. Keys spell the log attribute registry's name where one exists
@@ -191,11 +223,14 @@ The domain layers:
   Table-exact `*Row` structs live in `model.go`, never beside the query that
   returns them. An enum type travels with its const block.
 - Import arrows point strictly downward.
-- Named error variables are declared in the owning domain's `pkg/<x>`
-  vocabulary (`errors.go`); an error value shared across different stacks
-  lives in `pkg/common`. Whichever layer detects the condition raises it --
-  admin for guards it composes, a datastore for facts its own query
-  discovers.
+- Every code -- `diagnostic.NewDiagnosticError`, `NewDiagnosticEvent`,
+  `NewDiagnosticMetric` -- initializes an exported var in the owning
+  root's `errors.go`, `events.go`, or `metrics.go`; a condition raised
+  across different stacks lives in `pkg/common`. Machinery and
+  assemblers declare none, and tools/conventions plus tools/codeexport
+  link every declaring root. Whichever layer detects the condition
+  raises it -- admin for guards it composes, a datastore for facts its
+  own query discovers.
 - A config file is named for the struct it declares, never bare `config.go` --
   `<x>_config.go`, `controller_config.go`, `datastore_config.go`. A package
   that grows a second config gets a second file rather than a shared one.
@@ -235,15 +270,15 @@ The domain layers:
   seems to need two controllers, it is one operation with a wrong home: pick
   the owner whose invariant the transaction protects.
   The ONE sanctioned crossing is the produce-transaction seam:
-  `producer.InTransaction` hands its closure the producer `Tx`, and a method
-  built to run inside that closure takes the `Tx` (when it runs a
-  ProduceFunc) or `q datastore.Querier` (when it only runs statements).
+  `datastore.InTransaction` hands its closure a `datastore.Tx`, and a
+  method built to run inside that closure takes the `Tx` (when it runs a
+  ProducerFunc) or `q datastore.Querier` (when it only runs statements).
 - `datastore.Querier` is the one statement seam: Exec / Query / QueryRow /
   SendBatch / CopyFrom -- what pool, conn, and tx can all do, minus
   transaction control. A private that runs inside a boundary it doesn't own
   takes `q datastore.Querier`; `pgx.Tx` appears only as a local in the
-  private that owns Begin/Commit and in the adapter that builds the producer
-  `Tx`. No Beginner/pool interface, no wrapping of Rows/Row/CommandTag --
+  private that owns Begin/Commit and in pkg/datastore's own
+  transaction.go, which builds the `Tx`. No Beginner/pool interface, no wrapping of Rows/Row/CommandTag --
   pgx's own result types pass through. `*pgxpool.Conn` stays concrete in
   migrate: the advisory lock pins a session, and the concrete type is that
   contract.

@@ -44,7 +44,7 @@ func (d *KeyLeaseDatastore) claim(ctx context.Context, topicId int64, groupId in
 // message never creates or locks a lease row.
 func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLease, error) {
 	claimSql := fmt.Sprintf(`
-		-- vulkan: consumerbase.claimCompacted
+		-- vulkan: consumebase.claimCompacted
 		WITH head AS (
 			SELECT head_id
 			FROM %[1]s.%[2]s
@@ -72,7 +72,7 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 	// acquisition if the head moved. So a failed batch rolls the insert
 	// back instead of orphaning the lease.
 	recheckSql := fmt.Sprintf(`
-		-- vulkan: consumerbase.claimCompacted
+		-- vulkan: consumebase.claimCompacted
 		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $2
 			AND message_key = $1
@@ -129,7 +129,7 @@ func (d *KeyLeaseDatastore) claimCompacted(ctx context.Context, topicId int64, g
 // version of the key runs, so the only verdicts are acquired and busy.
 func (d *KeyLeaseDatastore) claimUncompacted(ctx context.Context, topicId int64, groupId int64, key string, duration time.Duration, token pgtype.UUID) (*KeyLease, error) {
 	sql := fmt.Sprintf(`
-		-- vulkan: consumerbase.claimUncompacted
+		-- vulkan: consumebase.claimUncompacted
 		INSERT INTO %[1]s.%[2]s AS kl (consumer_group_id, message_key, lease_token, expires_at)
 		VALUES ($1, $2, $3, now() + make_interval(secs => $4))
 		ON CONFLICT (consumer_group_id, message_key) DO UPDATE
@@ -163,7 +163,7 @@ func (d *KeyLeaseDatastore) claimUncompacted(ctx context.Context, topicId int64,
 //     outside the caller's own range (ownLow, ownHigh] -- the caller runs those in order
 func (d *KeyLeaseDatastore) claimOrdered(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, ownLow int64, ownHigh int64, duration time.Duration, token pgtype.UUID) (*KeyLease, error) {
 	sql := fmt.Sprintf(`
-		-- vulkan: consumerbase.claimOrdered
+		-- vulkan: consumebase.claimOrdered
 		INSERT INTO %[1]s.%[2]s AS kl (consumer_group_id, message_key, lease_token, expires_at)
 		SELECT $1, $2, $3, now() + make_interval(secs => $4)
 		-- no exception row still ready/inflight/deferred
@@ -224,7 +224,7 @@ func (d *KeyLeaseDatastore) Release(ctx context.Context, claim *KeyLease) (bool,
 
 func (d *KeyLeaseDatastore) release(ctx context.Context, q datastore.Querier, claim *KeyLease) (bool, error) {
 	sql := fmt.Sprintf(`
-		-- vulkan: consumerbase.release
+		-- vulkan: consumebase.release
 		DELETE FROM %[1]s.%[2]s
 		WHERE consumer_group_id = $1
 			AND message_key = $2

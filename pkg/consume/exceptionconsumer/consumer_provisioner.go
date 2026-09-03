@@ -13,7 +13,7 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	consumerbase "github.com/agentstax/vulkan/pkg/consume/base"
+	consumebase "github.com/agentstax/vulkan/pkg/consume/base"
 	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
@@ -27,7 +27,7 @@ const WorkerExceptionConsumer = "exception_consumer"
 type ExceptionConsumerProvisioner[Message common.Versioned] struct {
 	Config *ExceptionConsumerConfig
 
-	*consumerbase.BaseProvisioner[Message]
+	*consumebase.BaseProvisioner[Message]
 
 	consumers *controller.ExceptionConsumerGroupController
 }
@@ -49,7 +49,7 @@ func NewExceptionConsumerProvisioner[Message common.Versioned](ds *datastore.Pos
 	if err != nil {
 		return nil, err
 	}
-	baseProvisioner, err := consumerbase.NewBaseProvisioner(ds, definition, consumerFunc, schemaVersion, metrics, &consumerbase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
+	baseProvisioner, err := consumebase.NewBaseProvisioner(ds, definition, consumerFunc, schemaVersion, metrics, &consumebase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
 	if err != nil {
 		return nil, err
 	}

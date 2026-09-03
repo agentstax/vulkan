@@ -118,18 +118,14 @@ func declarationDocComments(t *testing.T) []declaration {
 // *** HELPERS ***
 // ***************
 
-// declaredCode returns the VK code a NewError or NewEvent call declares. The
-// call may sit under a Diagnose chain, so the walk descends to the innermost
+// declaredCode returns the VK code a declaration call opens with. The call
+// may sit under a Diagnose chain, so the walk descends to the innermost
 // constructor.
 func declaredCode(value ast.Expr) (string, bool) {
 	code := ""
 	ast.Inspect(value, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || (selector.Sel.Name != "NewDiagnosticError" && selector.Sel.Name != "NewDiagnosticEvent") {
+		if !ok || !declaresCode(call) {
 			return true
 		}
 		if len(call.Args) == 0 {

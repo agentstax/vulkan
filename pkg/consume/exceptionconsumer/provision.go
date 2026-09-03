@@ -3,7 +3,7 @@ package exceptionconsumer
 import (
 	"context"
 
-	consumerbase "github.com/agentstax/vulkan/pkg/consume/base"
+	consumebase "github.com/agentstax/vulkan/pkg/consume/base"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -28,7 +28,7 @@ func (d *ExceptionConsumerProvisioner[Message]) Provision(ctx context.Context, d
 		return nil, err
 	}
 
-	base, err := consumerbase.NewBaseConsumer(d.BaseProvisioner, declared.Owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
+	base, err := consumebase.NewBaseConsumer(d.BaseProvisioner, declared.Owner, resolvedTopic, &consumebase.BaseConsumerConfig{
 		TimeoutGrace:          cfg.TimeoutGrace,
 		RecordMargin:          cfg.RecordMargin,
 		SlowDispatchThreshold: cfg.SlowDispatchThreshold,
@@ -42,5 +42,5 @@ func (d *ExceptionConsumerProvisioner[Message]) Provision(ctx context.Context, d
 		return nil, err
 	}
 
-	return consumerbase.NewBaseInstance(d.BaseProvisioner, declared.Owner, claimed, cfg.InstanceTTL, runner.run)
+	return consumebase.NewBaseInstance(d.BaseProvisioner, declared.Owner, claimed, cfg.InstanceTTL, runner.run)
 }

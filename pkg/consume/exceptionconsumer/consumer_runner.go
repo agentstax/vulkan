@@ -9,7 +9,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consume"
-	consumerbase "github.com/agentstax/vulkan/pkg/consume/base"
+	consumebase "github.com/agentstax/vulkan/pkg/consume/base"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consume/base/controller"
 	"github.com/agentstax/vulkan/pkg/consume/exceptionconsumer/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -17,13 +17,13 @@ import (
 )
 
 type exceptionRunner[Message common.Versioned] struct {
-	*consumerbase.BaseConsumer[Message]
+	*consumebase.BaseConsumer[Message]
 
 	consumers   *controller.ExceptionConsumerGroupController
 	groupConfig *configState
 }
 
-func newExceptionRunner[Message common.Versioned](base *consumerbase.BaseConsumer[Message], consumers *controller.ExceptionConsumerGroupController, cfg *ExceptionConsumerConfig, declared *ExceptionConsumerMetadata) (*exceptionRunner[Message], error) {
+func newExceptionRunner[Message common.Versioned](base *consumebase.BaseConsumer[Message], consumers *controller.ExceptionConsumerGroupController, cfg *ExceptionConsumerConfig, declared *ExceptionConsumerMetadata) (*exceptionRunner[Message], error) {
 	if base == nil {
 		return nil, errors.New("base must not be nil")
 	}
@@ -181,10 +181,10 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, cfg *Ex
 	runCtx := consume.WithMeta(ctx, toExceptionMessageMeta(exception, resolvedOptions))
 	err := r.CallSafely(runCtx, &payload, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.Timeout)
 
-	switch consumerbase.ClassifyHandlerError(err) {
-	case consumerbase.HandlerOutcomeTerminal:
+	switch consumebase.ClassifyHandlerError(err) {
+	case consumebase.HandlerOutcomeTerminal:
 		return r.recordTerminal(ctx, exception, err, keyClaim)
-	case consumerbase.HandlerOutcomeDelayed:
+	case consumebase.HandlerOutcomeDelayed:
 		return r.recordDelayed(ctx, exception, resolvedOptions, err, keyClaim)
 	}
 	if err != nil {
