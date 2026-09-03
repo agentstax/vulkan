@@ -57,9 +57,7 @@ func (s *Schedule) Destroy(ctx context.Context) error {
 
 // Schedule runs the system manager until ctx cancels -- what `vulkan
 // manager run` does; the schedule producer worker produces every
-// registered schedule, not just this one. The client holds one
-// SystemManager, so a second concurrent run in this process is refused.
-// A requested stop returns nil.
+// registered schedule, not just this one. A requested stop returns nil.
 func (s *Schedule) Schedule(ctx context.Context) error {
 	return s.client.manager.Run(ctx)
 }

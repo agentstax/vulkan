@@ -3,12 +3,13 @@ package systemmanager
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer"
 	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -32,7 +33,6 @@ type SystemManager struct {
 	ds                *datastore.PostgresDatastore
 	manager           *manager.ManagerProvisioner
 	migrateController *migratecontroller.Controller
-	permit            *concurrency.Permit // held for the length of a Run call
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -133,43 +133,58 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	permit, err := concurrency.NewPermit()
-	if err != nil {
-		return nil, err
-	}
-
 	return &SystemManager{
 		Config:            cfg,
 		Logger:            cfg.Logger,
 		ds:                ds,
 		manager:           managerProvisioner,
 		migrateController: migrateController,
-		permit:            permit,
 	}, nil
 }
 
-// Run claims and reconciles until ctx cancels; a requested stop returns nil.
-// One Run at a time per instance -- a second concurrent call is refused.
+// Run keeps the deployment's upkeep running until ctx cancels, and returns
+// nil then. Safe to call N times, in one process or many -- the manager
+// row's claim admits one reconcile loop at a time and every other call
+// retries the claim. A life that ends on its own is logged and claimed
+// again behind Config.RunRetry; errors before the first claim return to
+// the caller.
 // Returns migrate.ErrNotRegistered when no system has been registered.
 func (s *SystemManager) Run(ctx context.Context) error {
-	// the row's claim gate caps live instances deployment-wide; this refuses a
-	// second Run in-process rather than leaving it in a claim-retry loop
-	release, ok := s.permit.Acquire()
-	if !ok {
-		return errors.New("system manager already running")
-	}
-	defer release()
-
 	owner, err := s.migrateController.SystemOwner(ctx)
 	if err != nil {
 		return err
 	}
-
 	runner, err := manager.NewRunner(s.manager, owner, &manager.RunnerConfig{
 		Logger: s.Logger,
 	})
 	if err != nil {
 		return err
 	}
-	return runner.Run(ctx)
+
+	for attempt := 0; ; attempt++ {
+		err := runner.Run(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		// re-jittered every retry -- replicas that hit the same fault must
+		// not retry in step
+		jitter := 1 + s.Config.JitterFraction*(2*rand.Float64()-1)
+		delay := time.Duration(float64(s.Config.RunRetry.CalculateDelay(min(attempt, s.Config.RunRetry.MaxRetries))) * jitter)
+		if err != nil {
+			s.Logger.ErrorContext(ctx, eventSystemManagerStopped.Message,
+				"code", eventSystemManagerStopped.Code,
+				"attempt", attempt+1,
+				"delay", delay,
+				"error", err)
+		}
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+	}
 }

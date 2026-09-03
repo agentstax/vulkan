@@ -783,6 +783,11 @@
       "fix_placeholders": [
         "schema"
       ]
+    },
+    "VK0065": {
+      "code": "VK0065",
+      "kind": "event",
+      "message": "system manager stopped -- nothing reconciles the deployment's workers until the loop re-claims the row after its backoff"
     }
   }
 }

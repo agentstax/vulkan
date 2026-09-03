@@ -199,8 +199,8 @@ func (c *Client) MigrateTopics(ctx context.Context, targetVersion int64) error {
 }
 
 // RunManager claims the system's manager row and reconciles every worker
-// row in the deployment until ctx cancels. The client holds one
-// SystemManager, so a second concurrent run in this process is refused.
+// row in the deployment until ctx cancels, then returns nil. Safe to run
+// N-way -- the row admits one reconcile loop at a time.
 func (c *Client) RunManager(ctx context.Context) error {
 	return c.manager.Run(ctx)
 }

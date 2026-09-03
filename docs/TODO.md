@@ -200,45 +200,51 @@ row declared at 1; a registered consumer's `message_consumer` row at -1
 (also exercises the new base guard); two runners -> one live instance; a
 clean release on stop; target 0 -> VK0035 and nothing claimed.
 
-### Chunk 3 -- SystemManager shared run
+### Chunk 3 -- SystemManager Run rework -- DONE
 
-`pkg/systemmanager/systemmanager.go`:
+Built 2026-09-02, then STRIPPED the same day on review [0641]. All
+modules build, vet clean, `go test -race ./...` passes, tools 34 passed,
+website codes.test.ts 6 passed. Live-verified under `-race` (below).
 
-- Delete the `permit` field and the `concurrency` import; delete the
-  "system manager already running" refusal.
-- Replace with one mutex-guarded state on the struct: count of active
-  `Run` calls, whether the loop goroutine is running, the loop's
-  cancel func and done channel.
-- `Run(ctx)` becomes join-and-block, same signature:
-  1. Under the mutex: count++. If no loop is running: resolve
-     `SystemOwner` and build the `manager.Runner` synchronously --
-     on error, count--, return the error -- then start the loop
-     goroutine under an internal cancellable context (derived from
-     `context.Background()`; it must outlive any one caller).
-  2. Block on `ctx.Done()`.
-  3. On the way out, under the mutex: count--. If count is 0 and a
-     loop is running: cancel it and wait on its done channel before
-     returning (last-out drains -- `ReleaseInstance` deletes the
-     instance row so a replacement or another process claims
-     immediately instead of waiting out `expires_at`).
-  4. Return nil (a requested stop).
-- The loop goroutine: `runner.Run(loopCtx)`; on return, under the
-  mutex mark not-running; a non-nil error (fatal -- a spawned worker
-  declared itself unrunnable; runner returns nil on cancel) is logged
-  as the new declared Error event. Never returned: no caller owns it.
-- New `pkg/systemmanager/logs.go`: declared Error event, code VK0065
-  (verify max across both registries at build time), message per the
-  grammar (e.g. "system manager stopped -- upkeep is not running"),
-  consequence fixed at declaration; call site attaches `"code"`,
-  `"error"`. Docs page in the same change; re-sync the website
-  codes.json registry.
-- A join that finds count > 0 but no loop running (a fatal happened
-  earlier) starts a fresh loop -- the step-1 branch already covers it;
-  make sure the mutex ordering makes it true. Races to test: join
-  while last-out is draining (must wait for the old done before
-  starting anew, or serialize under the mutex), fatal exit racing a
-  leave.
-- `SystemOwner` is resolved per loop start, not per join.
+- The permit and its "system manager already running" refusal are gone,
+  along with the `concurrency` import. Nothing is refused.
+- The plan's join-and-block shape (mutex-guarded caller count, shared
+  loop) was built, then deleted on review: the count had no users (the
+  scheduler builds a SystemManager per Schedule call; RunManager is
+  called once everywhere), and N in-process callers are exactly what
+  `target_instances = 1` already arbitrates. [0641] supersedes 0638's
+  clause; `SystemManager` holds only its dependencies.
+- `Run` = resolve system owner + build a `manager.Runner` (both
+  synchronous, so misconfiguration fails the caller), then run it under
+  the caller's own ctx inside the re-claim/backoff loop.
+
+DEVIATION from the plan, recorded as [0640] superseding 0638's clause:
+the loop RE-CLAIMS behind a backoff instead of ending. No-restart would
+have shipped a regression -- one fatal would kill a process's upkeep for
+its whole lifetime and leave `vulkan manager run` up doing nothing.
+
+- `SystemManagerConfig.RunRetry` is the per-loop curve (the
+  SweepRetry/TickRetry convention), defaulted and validated like the rest.
+- VK0065 declared unexported in `pkg/systemmanager/logs.go` (the VK0041
+  precedent for an event in an API package); page written; codes.json
+  regenerated.
+- Stale "second concurrent run is refused" doc comments fixed in
+  client.go RunManager, schedule.go Schedule, scheduler_instance.go.
+
+Live verification under `-race` (throwaway schema, dev DB untouched):
+two `Run` calls on ONE client are both admitted and share one instance
+row; when the claiming caller cancels, the remaining caller takes over
+within RetryDelay; the last one out releases the claim (0 live
+immediately, not left to expire); a later `Run` claims fresh.
+
+GOTCHA found while wiring the docs: a new declaring package must be
+linked into BOTH `tools/codeexport/main.go` and
+`tools/conventions/conventions.go`. Neither list had `pkg/systemmanager`,
+and `TestRegistryCoversEverySourceCode` did NOT catch it -- that test
+passes only because `seams_test.go` imports `pkg/vulkan`, which links
+systemmanager transitively into the test binary. The real net is
+`codes.test.ts` ("gives every page a declaration"), which would have
+failed on the orphaned VK0065 page. Both lists now name systemmanager.
 
 ### Chunk 4 -- client and consumer wiring
 

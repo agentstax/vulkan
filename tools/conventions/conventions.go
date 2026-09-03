@@ -21,6 +21,7 @@ import (
 	_ "github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 	_ "github.com/agentstax/vulkan/pkg/schedule"
 	_ "github.com/agentstax/vulkan/pkg/system"
+	_ "github.com/agentstax/vulkan/pkg/systemmanager"
 	_ "github.com/agentstax/vulkan/pkg/topic"
 	_ "github.com/agentstax/vulkan/pkg/worker"
 )

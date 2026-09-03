@@ -48,7 +48,6 @@ func newSchedulerInstance[Message topic.Versioned](registered *schedule.Schedule
 // run` does; the schedule producer worker produces every registered
 // schedule, not just this one. A requested stop returns nil.
 func (i *SchedulerInstance[Message]) Schedule(ctx context.Context) error {
-	// built per call -- a SystemManager refuses a second concurrent Run
 	systemManager, err := systemmanager.NewSystemManager(i.ds, &systemmanager.SystemManagerConfig{
 		Logger: i.Config.Logger,
 		Retry:  i.Config.Retry,
