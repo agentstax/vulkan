@@ -45,7 +45,7 @@ func (c *ConsumeController) GetBinding(ctx context.Context, topicId int64, group
 		return nil, fmt.Errorf("groupId must be > 0, got %d", groupId)
 	}
 
-	data, err := c.datastore.ListGroupBindingLog(ctx, topicId, groupId)
+	data, err := c.datastore.ListGroupBindingConfigLog(ctx, topicId, groupId)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (c *ConsumeController) GetBinding(ctx context.Context, topicId int64, group
 // ListBindings returns every group's effective declaration followed by
 // its still-waiting declarers, ordered by topic then group.
 func (c *ConsumeController) ListBindings(ctx context.Context) ([]*consume.Binding, error) {
-	data, err := c.datastore.ListBindingLog(ctx)
+	data, err := c.datastore.ListBindingConfigLog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func openWaiters(rows []datastore.BindingConfigLogRow, effective *datastore.Bind
 	var waiters []datastore.BindingConfigLogRow
 	for i := range rows {
 		row := &rows[i]
-		if row.Status != datastore.BindingLogWaiting {
+		if row.Status != datastore.BindingConfigLogWaiting {
 			continue
 		}
 		if declarerInstalledAfter(row, rows) {
@@ -126,7 +126,7 @@ func openWaiters(rows []datastore.BindingConfigLogRow, effective *datastore.Bind
 // to install -- an ended wait leaves its waiting row behind.
 func declarerInstalledAfter(waiting *datastore.BindingConfigLogRow, rows []datastore.BindingConfigLogRow) bool {
 	for i := range rows {
-		if rows[i].Status == datastore.BindingLogInstalled &&
+		if rows[i].Status == datastore.BindingConfigLogInstalled &&
 			rows[i].DeclaredBy == waiting.DeclaredBy &&
 			rows[i].Id > waiting.Id {
 			return true

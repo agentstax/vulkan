@@ -34,46 +34,49 @@ group child under `group` the way `group config get` does.
 Build order, each step foreground-checked (build, `go test -race` on
 the touched package):
 
-1. Datastore rename first (established-bad-name rule): `ListBindingLog`
-   / `listBindingLog` / `listTopicBindingLog` -> `ListBindingConfigLog`
-   / `listBindingConfigLog` / `listTopicBindingConfigLog`, matching the
-   table and `BindingConfigLogRow` since the [0611] rename.
-2. DONE 2026-09-03 (as `ListGroupBindingLog`; step 1 renames it) -- `ConsumeDatastore.ListGroupBindingConfigLog(ctx,
-   topicId, groupId) ([]BindingConfigLogRow, error)`: public Wrap pair
-   over `listTopicBindingConfigLog` (its `groupId` filter already
-   exists, used only inside the declare transaction today). Parent-child
-   list name after admin's `ListGroupWorkers`.
-3. DONE 2026-09-03 -- `ConsumeController.GetBinding(ctx, topicId,
-   groupId) (*consume.Binding, error)` in
-   controller/binding.go: id guards, one datastore read,
-   `NewestInstalledDeclaration`, `toBinding`; `(nil, nil)`
-   when no installed row -- the group reads the whole topic.
-4. DONE 2026-09-03 -- `MessageAdmin.GetBinding(ctx, topicName,
-   groupName)` in admin/binding.go beside `ListBindings`:
-   resolve ids the way `GetGroup` does, `(nil, nil)` when the topic or
-   group is absent.
-5. DONE 2026-09-03 (alias.go unchanged, closure test green) -- new `binding.go` (file named for the
-   handle's noun, like group.go / alert.go):
-   `BindingHandle{topicName, groupName, client}`,
-   `GroupHandle.Binding()` (no I/O, no args -- the group is
-   the identity, like `Client.System()`), `Get(ctx)` comma-ok.
-   `SystemHandle.ListBindings` -> `Bindings`
-   (stays on System). `tools/conventions` closure test decides whether
-   alias.go changes.
-6. DONE 2026-09-03 (CLI, labs, client.mdx callers updated) -- handle `List*` drift, same rule: `GroupHandle.ListWorkers` ->
-   `Workers`, `SchedulerHandle.ListMessages` -> `Messages`,
-   `TopicHandle.ListKeyMessages` -> `KeyMessages`; update their CLI
-   and lab callers and client.mdx mentions.
-7. CLI -- `group binding` sub-noun beside `group config`:
-   group_binding.go, group_binding_list.go (the fleet list, moved from
-   alert_bindings.go, which is deleted and alert.go's Short trimmed),
-   group_binding_get.go (`group binding get <topic> <group>`, laid out
-   like group_config_get.go).
-8. Docs -- client.mdx: the handles list and the "where the old verbs
-   went" table (`ListBindings` mentions plus the step-6
-   renames); routing.mdx `vulkan alert bindings` -> `vulkan group
-   binding list`, plus the `Get` sample.
-9. Lab: one fresh-DB lab driving `Binding().Get` before and
-   after a consumer's Register installs a set, and the nil case.
-10. Decision record (next number after current max), HISTORY entry,
-    remove this section.
+- [x] 1. Datastore rename (established-bad-name rule): `ListBindingLog` /
+      `listBindingLog` / `listTopicBindingLog` / `ListGroupBindingLog` /
+      `listGroupBindingLog` -> `*BindingConfigLog`, plus `BindingLogStatus`
+      / `BindingLogInstalled` / `BindingLogWaiting` ->
+      `BindingConfigLogStatus` / `BindingConfigLogInstalled` /
+      `BindingConfigLogWaiting`, matching the table and
+      `BindingConfigLogRow` since [0611] (precedent:
+      `appendTopicConfigLog`, `appendWorkerConfigLog`).
+- [x] 2. Datastore `ConsumeDatastore.ListGroupBindingLog(ctx, topicId,
+      groupId) ([]BindingConfigLogRow, error)`: public Wrap pair over
+      `listTopicBindingLog`. Parent-child list name after admin's
+      `ListGroupWorkers`.
+- [x] 3. Controller `ConsumeController.GetBinding(ctx, topicId, groupId)
+      (*consume.Binding, error)` in controller/binding.go: id guards, one
+      datastore read, `NewestInstalledDeclaration`, `toBinding`;
+      `(nil, nil)` when no installed row -- the group reads the whole
+      topic.
+- [x] 4. Admin `MessageAdmin.GetBinding(ctx, topicName, groupName)` in
+      admin/binding.go beside `ListBindings`: resolves ids the way
+      `GetGroup` does, `(nil, nil)` when the topic or group is absent.
+- [x] 5. pkg/vulkan `binding.go`: `BindingHandle{topicName, groupName,
+      client}`, `GroupHandle.Binding()` (no I/O, no args -- the group is
+      the identity, like `Client.System()`), `Get(ctx)` comma-ok.
+      `SystemHandle.ListBindingDeclarations` -> `Bindings` (stays on
+      System). alias.go unchanged; closure test green.
+- [x] 6. Handle `List*` drift, same rule: `GroupHandle.ListWorkers` ->
+      `Workers`, `SchedulerHandle.ListMessages` -> `Messages`,
+      `TopicHandle.ListKeyMessages` -> `KeyMessages`; CLI, lab, and
+      client.mdx callers updated.
+- [x] 7. Rename `BindingDeclaration` -> `Binding` down the stack; files
+      `binding.go`; `<Noun>Declaration` suffix row dropped from
+      CONVENTIONS.
+- [ ] 8. CLI -- `group binding` sub-noun beside `group config`:
+      group_binding.go, group_binding_list.go (the fleet list, moved from
+      alert_bindings.go, which is deleted and alert.go's Short trimmed),
+      group_binding_get.go (`group binding get <topic> <group>`, laid out
+      like group_config_get.go).
+- [ ] 9. Docs -- routing.mdx `vulkan alert bindings` -> `vulkan group
+      binding list`, plus a `Binding().Get` sample; client.mdx already
+      carries the new names (step 6), re-read once the CLI lands.
+- [ ] 10. Lab: one fresh-DB lab driving `Binding().Get` before and after a
+      consumer's Register installs a set, and the nil case (bindinglab
+      already exercises `System().Bindings`; extend it).
+- [ ] 11. Decision record (next number after current max) covering the
+      handle, the bare-plural client rule, the `Binding` rename and the
+      dropped suffix row; HISTORY entry; remove this section.

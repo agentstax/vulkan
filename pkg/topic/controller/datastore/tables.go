@@ -271,10 +271,10 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 
 	// helps listDeclarations so it doesn't have to sequential
 	// scan a long wait's appended retry rows
-	createBindingLogIndexSql := fmt.Sprintf(`
+	createBindingConfigLogIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE INDEX IF NOT EXISTS %[2]s_group ON %[1]s.%[3]s (consumer_group_id, status, declared_by, id);
 	`, d.Datastore.Schema, topic.BindingConfigLogTable(id), topic.BindingConfigLogTable(id))
-	_, err := tx.Exec(ctx, createBindingLogIndexSql)
+	_, err := tx.Exec(ctx, createBindingConfigLogIndexSql)
 	return err
 }

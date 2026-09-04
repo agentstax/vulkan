@@ -11,6 +11,13 @@ func (a *AlertHandle) MessageKey() string {
 	return a.messageKey
 }
 
+Might make Compaction its own handle
+func (t *TopicHandle) CompactionHead[Payload Versioned](ctx context.Context, messageKey string) (*Message[Payload], error) {
+	return t.client.admin.GetCompactionHead[Payload](ctx, t.name, messageKey)
+}
+
+Consider Making Metrics Handles per other Handles that need it OR just add unique metric verbs to existing handles with consistent naming
+
 # Doc
 
 SEO for markdown - tags
