@@ -26,27 +26,27 @@ func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			declarations, err := client.System().BindingDeclarations(ctx)
+			declarations, err := client.System().Bindings(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
 
 			if g.jsonOutput() {
 				if declarations == nil {
-					declarations = make([]*consume.BindingDeclaration, 0)
+					declarations = make([]*consume.Binding, 0)
 				}
 				writeJSON(out, declarations)
 				return nil
 			}
 
-			printBindingDeclarationsTable(out, declarations)
+			printBindingsTable(out, declarations)
 			return nil
 		},
 	}
 	return cmd
 }
 
-func printBindingDeclarationsTable(w io.Writer, declarations []*consume.BindingDeclaration) {
+func printBindingsTable(w io.Writer, declarations []*consume.Binding) {
 	if len(declarations) == 0 {
 		fmt.Fprintln(w, "no binding declarations -- every group matches all events on its topic")
 		return

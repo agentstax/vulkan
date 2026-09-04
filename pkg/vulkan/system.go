@@ -45,12 +45,12 @@ func (s *SystemHandle) MigrateTopics(ctx context.Context, targetVersion int64) e
 	return s.client.admin.MigrateTopics(ctx, targetVersion)
 }
 
-// BindingDeclarations returns every group's effective binding declaration
+// Bindings returns every group's effective binding declaration
 // and any declarers still waiting to change it, ordered by topic then
 // group. A group that never declared a set reads the whole topic and does
 // not appear.
-func (s *SystemHandle) BindingDeclarations(ctx context.Context) ([]*BindingDeclaration, error) {
-	return s.client.admin.ListBindingDeclarations(ctx)
+func (s *SystemHandle) Bindings(ctx context.Context) ([]*Binding, error) {
+	return s.client.admin.ListBindings(ctx)
 }
 
 // Destroy permanently deletes every topic, schedule, consumer group,

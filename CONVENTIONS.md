@@ -54,8 +54,8 @@ each func param has explicit type, never combined
   command output is `<Verb>Result`; point-in-time observability is
   `<Noun>Snapshot`; current state is `<Noun>Status`; an aggregate projection is
   `<Noun>Summary`; a readiness or retirement verdict is `<Noun>Health`; a
-  declared relationship is `<Noun>Declaration`; a table-exact datastore scan
-  is `<Noun>Row`; and running process state is `<Noun>Instance`.
+  table-exact datastore scan is `<Noun>Row`; and running process state is
+  `<Noun>Instance`.
 - `Data` and `Info` are not exported type suffixes. They describe
   representation without identifying the value's role. Qualify a projection
   by its subject instead (`ScheduleGroupSummary`, `TopicVersionHealth`).

@@ -57,7 +57,7 @@ type (
 	CursorPosition                  = consume.CursorPosition
 	CursorPositionKind              = consume.CursorPositionKind
 	Group                           = consume.Group
-	BindingDeclaration              = consume.BindingDeclaration
+	Binding                         = consume.Binding
 	BindingOutcome                  = consume.BindingOutcome
 	MessageMeta                     = consume.MessageMeta
 

@@ -14,8 +14,8 @@ func toGroup(data *datastore.ConsumerGroupConfigRow) *consume.Group {
 	}
 }
 
-func toBindingDeclaration(data *datastore.BindingConfigLogRow) *consume.BindingDeclaration {
-	return &consume.BindingDeclaration{
+func toBinding(data *datastore.BindingConfigLogRow) *consume.Binding {
+	return &consume.Binding{
 		GroupName:   data.GroupName,
 		TopicName:   data.TopicName,
 		Status:      consume.BindingOutcome(data.Status),

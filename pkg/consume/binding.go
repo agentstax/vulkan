@@ -11,10 +11,10 @@ const (
 	BindingWaiting   BindingOutcome = "waiting"   // a live instance still declares a different stored set
 )
 
-// BindingDeclaration is one declarer's newest declaration on a group.
+// Binding is one declarer's newest declaration on a group.
 // BindingInstalled is the group's effective set.
 // BindingWaiting a declarer still blocked on changing effective set.
-type BindingDeclaration struct {
+type Binding struct {
 	GroupName   string         `json:"group"`
 	TopicName   string         `json:"topic"`
 	Status      BindingOutcome `json:"status"`

@@ -213,7 +213,7 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
 
-- **BindingDeclarationHandle verbs beyond Get** — once the handle ships
+- **BindingHandle verbs beyond Get** — once the handle ships
   (TODO), bare nouns like every handle verb: `Waiting(ctx)` the
   group's still-blocked declarers (same datastore read, the
   controller's `openWaiters`); `Log(ctx, limit)` set-change history
@@ -223,7 +223,7 @@ documentation; the latter want a surface that has stopped moving.
   `Matches(ctx, routingKey)` an `EXISTS ... ~ pattern_regex` read on
   binding_config, the claim query's own predicate -- client-side
   matching would be a second mechanism for the same fact. Per-topic
-  `TopicHandle.BindingDeclarations(ctx)` beside `Groups` if a caller
+  `TopicHandle.Bindings(ctx)` beside `Groups` if a caller
   wants it (the datastore already reads per topic). Never `Declare` /
   `Clear`: [0511] removed them -- with live instances an admin declare
   waits forever, with none the app's next Register overwrites it.

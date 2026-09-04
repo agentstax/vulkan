@@ -364,7 +364,7 @@ cfg)`, topics nesting under it as
 `client.System(name).Topic(name)` the way groups nest under topics, and
 `client.Topic(name)` staying as the default system's shortcut. The
 verbs that own system state already sit there: `Register`, `MigrateTopics`,
-`BindingDeclarations`, `Alerts`, and `Measurements`. The manager is its
+`Bindings`, `Alerts`, and `Measurements`. The manager is its
 own `client.Manager()` handle because it is a running subsystem.
 
 ## Where the old verbs went
@@ -382,7 +382,7 @@ own `client.Manager()` handle because it is a running subsystem.
 | `GetGroup` | `Topic.Group(name).Get(ctx)`; its worker rows become `Group.Workers` |
 | (none) | `TopicHandle.Groups` |
 | `DestroyGroup` | `Group.Destroy` |
-| `ListBindingDeclarations` | `client.System().BindingDeclarations`; one group's effective set is `Group.BindingDeclaration().Get(ctx)` |
+| `ListBindings` | `client.System().Bindings`; one group's effective set is `Group.Binding().Get(ctx)` |
 | `GetSchedule` | `client.Scheduler(name).Get(ctx)` |
 | `ListSchedules` | `client.Schedulers` |
 | `SuspendSchedule` / `UnsuspendSchedule` | `Scheduler.Suspend` / `Scheduler.Unsuspend` |
