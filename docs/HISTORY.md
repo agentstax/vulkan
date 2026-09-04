@@ -17,7 +17,8 @@ left CONVENTIONS with it, and the client's four `List*` verbs became
 `BindingConfigLog*`. CLI: `vulkan group binding list` and `vulkan group
 binding get <topic> <group>` replace `alert bindings`. Lab: bindinglab
 drives `Binding().Get` through install, wait, swap, and the absent-group
-nil. `Waiting`, `Log`, `Matches` wait in ROADMAP Later.
+nil; the fresh-DB suite ran 49/49 at close-out. `Waiting`, `Log`,
+`Matches` wait in ROADMAP Later.
 
 ## 2026-09-03 — One declaration per type, vulkan as the client plus aliases [0643]
 
