@@ -11,6 +11,7 @@ func newGroupCmd(g *globalFlags) *cobra.Command {
 	}
 
 	cmd.AddCommand(newGroupConfigCmd(g))
+	cmd.AddCommand(newGroupBindingCmd(g))
 	cmd.AddCommand(newGroupDestroyCmd(g))
 
 	return cmd

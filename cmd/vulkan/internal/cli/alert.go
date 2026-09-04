@@ -7,11 +7,10 @@ import (
 func newAlertCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "alert",
-		Short: "Inspect published alerts and consumer group bindings",
+		Short: "Inspect published alerts",
 	}
 
 	cmd.AddCommand(newAlertListCmd(g))
-	cmd.AddCommand(newAlertBindingsCmd(g))
 
 	return cmd
 }

@@ -213,8 +213,8 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
 
-- **BindingHandle verbs beyond Get** — once the handle ships
-  (TODO), bare nouns like every handle verb: `Waiting(ctx)` the
+- **BindingHandle verbs beyond Get** — the handle shipped [0645]; these
+  are bare nouns like every handle verb: `Waiting(ctx)` the
   group's still-blocked declarers (same datastore read, the
   controller's `openWaiters`); `Log(ctx, limit)` set-change history
   newest first (a new query

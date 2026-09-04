@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
+func newGroupBindingListCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "bindings",
+		Use:   "list",
 		Short: "List every consumer group's declared binding set",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -26,47 +26,47 @@ func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			declarations, err := client.System().Bindings(ctx)
+			bindings, err := client.System().Bindings(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
 
 			if g.jsonOutput() {
-				if declarations == nil {
-					declarations = make([]*consume.Binding, 0)
+				if bindings == nil {
+					bindings = make([]*consume.Binding, 0)
 				}
-				writeJSON(out, declarations)
+				writeJSON(out, bindings)
 				return nil
 			}
 
-			printBindingsTable(out, declarations)
+			printBindingsTable(out, bindings)
 			return nil
 		},
 	}
 	return cmd
 }
 
-func printBindingsTable(w io.Writer, declarations []*consume.Binding) {
-	if len(declarations) == 0 {
-		fmt.Fprintln(w, "no binding declarations -- every group matches all events on its topic")
+func printBindingsTable(w io.Writer, bindings []*consume.Binding) {
+	if len(bindings) == 0 {
+		fmt.Fprintln(w, "no binding declarations -- every group receives every message on its topic")
 		return
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "GROUP\tTOPIC\tSTATUS\tPATTERNS\tDECLARED BY\tDECLARED AT\tLAST ATTEMPT")
-	for _, declaration := range declarations {
+	for _, binding := range bindings {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			declaration.GroupName,
-			declaration.TopicName,
-			string(declaration.Status),
-			patternsCell(declaration.Patterns),
-			declaration.DeclaredBy,
-			timeCell(declaration.DeclaredAt),
-			timeCell(declaration.AttemptedAt))
+			binding.GroupName,
+			binding.TopicName,
+			string(binding.Status),
+			patternsCell(binding.Patterns),
+			binding.DeclaredBy,
+			timeCell(binding.DeclaredAt),
+			timeCell(binding.AttemptedAt))
 	}
 	tw.Flush()
 
-	fmt.Fprintf(w, "\n%s\n", pluralize(len(declarations), "declaration"))
+	fmt.Fprintf(w, "\n%s\n", pluralize(len(bindings), "declaration"))
 }
 
 func patternsCell(patterns []string) string {

@@ -12,6 +12,14 @@ type BindingHandle struct {
 	client    *Client
 }
 
+// Bindings returns every group's effective binding declaration
+// and any declarers still waiting to change it, ordered by topic then
+// group. A group that never declared a set reads the whole topic and does
+// not appear.
+func (s *SystemHandle) Bindings(ctx context.Context) ([]*Binding, error) {
+	return s.client.admin.ListBindings(ctx)
+}
+
 // Binding names this group's binding declaration. No I/O and
 // no failure -- Get resolves both names when called.
 func (g *GroupHandle) Binding() *BindingHandle {

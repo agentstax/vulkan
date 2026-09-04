@@ -348,7 +348,9 @@ A plural noun lists materialized resources: `client.Topics`,
 `orders.Groups`, `client.Schedulers`, `sys.Alerts`, `sys.Measurements`.
 Its singular noun returns a no-I/O handle. Terminal reports and retained
 history keep the verb that says what they return: `Health`, `Metrics`,
-`Status`, `Workers`, and `Messages`.
+`Status`, `Workers`, and `Messages`. A group's binding set is a handle
+under the group, `orders.Group("charge-cards").Binding().Get(ctx)`, nil
+when the group never declared one.
 
 The key read sits on the topic. It used to be read inside a transaction
 on the producer instance and outside one on a separate

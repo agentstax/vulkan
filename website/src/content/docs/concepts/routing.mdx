@@ -79,8 +79,23 @@ declaration has explicit outcomes rather than last-writer-wins:
 Inspect where every group stands:
 
 ```sh
-vulkan alert bindings
+vulkan group binding list
 ```
+
+One group's effective set is a read on its handle. nil means the group
+never declared a set and receives the whole topic:
+
+```go
+binding, err := client.Topic("orders").Group("email-receipts").Binding().Get(ctx)
+if err != nil {
+	return err
+}
+if binding != nil {
+	fmt.Println(binding.Status, binding.Patterns)
+}
+```
+
+The same read from the shell is `vulkan group binding get orders email-receipts`.
 
 <ThreadAside label="NOTE" title="Binding changes are forward-only">
 The pattern is evaluated when a message

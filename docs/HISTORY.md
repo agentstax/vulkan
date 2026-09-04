@@ -5,6 +5,20 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-03 — Binding handle under the group, client lists are bare plurals [0645]
+
+`client.Topic(t).Group(g).Binding().Get(ctx)` reads one group's effective
+binding set, nil when the group never declared one; the fleet listing is
+`System().Bindings`. The read-model is `Binding` (was
+`BindingDeclaration`) all the way down, the `<Noun>Declaration` suffix
+left CONVENTIONS with it, and the client's four `List*` verbs became
+`Workers`, `Messages`, `KeyMessages`, `Bindings`. The datastore's
+`BindingLog*` names caught up with the [0611] table rename as
+`BindingConfigLog*`. CLI: `vulkan group binding list` and `vulkan group
+binding get <topic> <group>` replace `alert bindings`. Lab: bindinglab
+drives `Binding().Get` through install, wait, swap, and the absent-group
+nil. `Waiting`, `Log`, `Matches` wait in ROADMAP Later.
+
 ## 2026-09-03 — One declaration per type, vulkan as the client plus aliases [0643]
 
 Every user-spelled type, const, declared error, and declared event is now

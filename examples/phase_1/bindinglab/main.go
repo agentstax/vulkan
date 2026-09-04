@@ -103,7 +103,13 @@ func run() (err error) {
 	_, err = registerConsumer(ctx, []string{"orders.*"})
 	must(err)
 	assertInt("still one installed row after the same set re-registers", installedRows(ctx), 1)
-	fmt.Println("  ✓ installed once, joined on re-register")
+	assertString("Binding().Get reads the installed set", patterns(labBinding(ctx)), "orders.*")
+	absent, err := client.Topic(topicName).Group("bindinglab.never-declared").Binding().Get(ctx)
+	must(err)
+	if absent != nil {
+		die("Binding().Get on an unregistered group must return nil")
+	}
+	fmt.Println("  ✓ installed once, joined on re-register; Get reads the set, nil for an absent group")
 
 	// ===== divergent set waits on the live incumbent =====
 	step("a divergent set waits while the incumbent's heartbeats are fresh")
@@ -149,6 +155,7 @@ func run() (err error) {
 	if waiter == nil || patterns(waiter) != "payments.*" {
 		die("listing must show the divergent set as waiting")
 	}
+	assertString("Binding().Get still reads the incumbent's set during the wait", patterns(labBinding(ctx)), "orders.*")
 	fmt.Println("  ✓ waited: rows appended, effective set untouched, listing shows the open wait")
 
 	// ===== the deploy kills the incumbent; the waiter converges =====
@@ -170,6 +177,7 @@ func run() (err error) {
 	if waiter != nil {
 		die("the ended wait must leave the listing")
 	}
+	assertString("Binding().Get reads the swapped set", patterns(labBinding(ctx)), "payments.*")
 	fmt.Println("  ✓ swapped once the incumbent's heartbeats lapsed; wait left the listing")
 
 	wpInstance, err := client.Producer(topicName).Register[labMessage](ctx, nil)
@@ -316,6 +324,16 @@ func labDeclarations(ctx context.Context) (*consume.Binding, *consume.Binding) {
 		}
 	}
 	return installed, waiter
+}
+
+// labBinding reads the lab group's effective set through the group handle.
+func labBinding(ctx context.Context) *consume.Binding {
+	binding, err := client.Topic(topicName).Group(groupName).Binding().Get(ctx)
+	must(err)
+	if binding == nil {
+		die("Binding().Get must find the lab group's installed set")
+	}
+	return binding
 }
 
 func patterns(declaration *consume.Binding) string {
