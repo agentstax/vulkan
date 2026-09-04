@@ -4,32 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
-// Register resolves spec.Name to its schedule, creating it under systemId if
-// it doesn't exist; an existing schedule takes spec.Cron, topic, payload and
-// cfg -- the newest declaration wins. The payload is stored marshaled with
-// Message's schema version; every produce carries both. cfg may be nil or a
-// sparse struct -- WithDefaults fills every field left unset, Validate
-// rejects what's out of range.
-func (c *ScheduleController) Register[Message common.Versioned](ctx context.Context, systemId int64, spec *schedule.ScheduleSpec, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) (*schedule.Schedule, error) {
+// Register resolves name to its schedule, creating it under
+// systemId if it doesn't exist; the newest declaration wins. The payload is
+// stored marshaled with Message's schema version; every produce carries both.
+func (c *ScheduleController) Register[Message common.Versioned](ctx context.Context, systemId int64, name string, cron string, topicId int64, payload *Message, timeout time.Duration, concurrency common.ConcurrencyPolicy, metadata any) (*schedule.Schedule, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
-	if spec == nil {
-		return nil, errors.New("spec must not be nil")
+	if !schedule.SlugPattern.MatchString(name) {
+		return nil, fmt.Errorf("name must match %s, got %q", schedule.SlugPattern, name)
 	}
-	if !schedule.SlugPattern.MatchString(spec.Name) {
-		return nil, fmt.Errorf("Name must match %s, got %q", schedule.SlugPattern, spec.Name)
-	}
-	if spec.Topic == "" {
-		return nil, errors.New("Topic is required")
-	}
-	if spec.Cron == "" {
-		return nil, errors.New("Cron is required")
+	if cron == "" {
+		return nil, errors.New("cron is required")
 	}
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
@@ -37,22 +29,21 @@ func (c *ScheduleController) Register[Message common.Versioned](ctx context.Cont
 	if payload == nil {
 		return nil, errors.New("payload must not be nil")
 	}
-	if cfg == nil {
-		cfg = &schedule.ScheduleConfig{}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("timeout must be > 0, got %v", timeout)
 	}
-	cfg.WithDefaults()
-	if err := cfg.Validate(); err != nil {
-		return nil, err
+	if err := concurrency.Validate(); err != nil {
+		return nil, fmt.Errorf("concurrency: %w", err)
 	}
-	expression, err := schedule.ParseExpression(spec.Cron)
+	expression, err := schedule.ParseExpression(cron)
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Timeout > expression.MinRate() {
-		return nil, fmt.Errorf("Timeout %v exceeds Cron %q's min rate %v", cfg.Timeout, spec.Cron, expression.MinRate())
+	if timeout > expression.MinRate() {
+		return nil, fmt.Errorf("timeout %v exceeds cron %q's min rate %v", timeout, cron, expression.MinRate())
 	}
 
-	registered, err := c.datastore.Register(ctx, toScheduleDeclaration(systemId, spec.Name, expression, topicId, payload, cfg))
+	registered, err := c.datastore.Register(ctx, systemId, topicId, name, expression, concurrency, timeout, payload, common.SchemaVersionOf[Message](), metadata)
 	if err != nil {
 		return nil, err
 	}

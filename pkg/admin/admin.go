@@ -4,6 +4,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	consumecontroller "github.com/agentstax/vulkan/pkg/consume/controller"
@@ -26,6 +27,7 @@ import (
 
 type MessageAdmin struct {
 	Logger logging.Logger
+	Retry  *common.RetryPolicy
 
 	systemController   *systemcontroller.SystemController
 	topicController    *topiccontroller.TopicController
@@ -115,10 +117,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	scheduleProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
+	scheduleProducer, err := producer.NewProducer(ds)
 	if err != nil {
 		return nil, err
 	}
@@ -188,16 +187,14 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	alertScheduler, err := scheduler.NewScheduler(ds, &scheduler.SchedulerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
+	alertScheduler, err := scheduler.NewScheduler(ds)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MessageAdmin{
 		Logger:             cfg.Logger,
+		Retry:              cfg.Retry,
 		systemController:   systemController,
 		topicController:    topicController,
 		scheduleController: scheduleController,

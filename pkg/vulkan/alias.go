@@ -17,6 +17,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/produce/batcher"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/schedule"
+	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -64,7 +65,7 @@ type (
 	Topic           = topic.Topic
 	DeliveryLogMode = topic.DeliveryLogMode
 
-	ScheduleConfig        = schedule.ScheduleConfig
+	SchedulerConfig       = scheduler.SchedulerConfig
 	Schedule              = schedule.Schedule
 	ScheduleGroupSummary  = schedule.ScheduleGroupSummary
 	ScheduleMessageStatus = schedule.ScheduleMessageStatus

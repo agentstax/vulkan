@@ -75,20 +75,6 @@ func toMessageOutcome(data *datastore.ScheduleMessageStatusRow) schedule.Message
 	}
 }
 
-func toScheduleDeclaration[Message common.Versioned](systemId int64, name string, expression *schedule.ScheduleExpression, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) *datastore.ScheduleDeclaration {
-	return &datastore.ScheduleDeclaration{
-		Name:          name,
-		Expression:    expression,
-		SystemId:      systemId,
-		TopicId:       topicId,
-		Concurrency:   string(cfg.Concurrency),
-		TimeoutNs:     int64(cfg.Timeout),
-		Payload:       payload,
-		SchemaVersion: common.SchemaVersionOf[Message](),
-		Metadata:      cfg.Metadata,
-	}
-}
-
 func concurrencyEnum(concurrency string) (common.ConcurrencyPolicy, error) {
 	policy := common.ConcurrencyPolicy(concurrency)
 	if err := policy.Validate(); err != nil {

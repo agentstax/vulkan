@@ -1,10 +1,6 @@
 package vulkan
 
-import (
-	"context"
-
-	"github.com/agentstax/vulkan/pkg/producer"
-)
+import "context"
 
 // ProducerHandle is a topic's name plus the client, holding no row.
 type ProducerHandle struct {
@@ -32,12 +28,7 @@ func (p *ProducerHandle) Register[Message Versioned](ctx context.Context, cfg *P
 		cfg.Retry = p.client.Config.Retry
 	}
 
-	messageProducer, err := producer.NewProducer(p.client.ds, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	instance, err := messageProducer.Register[Message](ctx, p.topicName)
+	instance, err := p.client.producer.Register[Message](ctx, p.topicName, cfg)
 	if err != nil {
 		return nil, err
 	}

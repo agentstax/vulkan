@@ -15,10 +15,8 @@ type MetricsConsumer struct {
 	consumer *consumer.Consumer
 }
 
-// cfg may be nil or a sparse struct -- the underlying consumer defaults and
-// validates it.
-func NewMetricsConsumer(ds *iDatastore.PostgresDatastore, cfg *consumer.ConsumerConfig) (*MetricsConsumer, error) {
-	measurementConsumer, err := consumer.NewConsumer(ds, cfg)
+func NewMetricsConsumer(ds *iDatastore.PostgresDatastore) (*MetricsConsumer, error) {
+	measurementConsumer, err := consumer.NewConsumer(ds)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +28,6 @@ func NewMetricsConsumer(ds *iDatastore.PostgresDatastore, cfg *consumer.Consumer
 // cfg.Bindings is the group's binding set -- metric names or wildcard
 // patterns; nil = every metric.
 // Returns ErrTopicNotFound until RegisterSystem has run.
-func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string) (*consumer.ConsumerInstance[metrics.Measurement], error) {
-	return c.consumer.Register[metrics.Measurement](ctx, consumerGroup, metrics.TopicName)
+func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string, cfg *consumer.ConsumerConfig) (*consumer.ConsumerInstance[metrics.Measurement], error) {
+	return c.consumer.Register[metrics.Measurement](ctx, consumerGroup, metrics.TopicName, cfg)
 }

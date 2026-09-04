@@ -1,8 +1,8 @@
 package vulkan
 
-// Package vulkan is the one client over a Postgres pool: the assemblers built
-// once, the ambient config held once, every verb delegating to the package
-// that owns it.
+// Package vulkan is the one client over a Postgres pool: registration objects
+// built once, ambient config held once, and every verb delegated to the
+// package that owns it.
 
 import (
 	"context"
@@ -10,7 +10,9 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/systemmanager"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,11 +24,13 @@ type Client struct {
 
 	ds        *datastore.PostgresDatastore
 	admin     *admin.MessageAdmin
+	consumer  *consumer.Consumer
+	producer  *producer.Producer
 	scheduler *scheduler.Scheduler
 	manager   *systemmanager.SystemManager
 }
 
-// NewClient builds every assembler over pool and pings it once, so a wrong
+// NewClient builds every registration object over pool and pings it once, so a wrong
 // address or credential fails here instead of at the first query. The pool
 // stays the caller's -- vulkan never closes it. cfg may be nil or a sparse
 // struct.
@@ -61,10 +65,15 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, cfg *ClientConfig) (*Cli
 		return nil, err
 	}
 
-	messageScheduler, err := scheduler.NewScheduler(ds, &scheduler.SchedulerConfig{
-		Logger: logger,
-		Retry:  cfg.Retry,
-	})
+	messageConsumer, err := consumer.NewConsumer(ds)
+	if err != nil {
+		return nil, err
+	}
+	messageProducer, err := producer.NewProducer(ds)
+	if err != nil {
+		return nil, err
+	}
+	messageScheduler, err := scheduler.NewScheduler(ds)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +91,8 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, cfg *ClientConfig) (*Cli
 		Logger:    logger,
 		ds:        ds,
 		admin:     messageAdmin,
+		consumer:  messageConsumer,
+		producer:  messageProducer,
 		scheduler: messageScheduler,
 		manager:   systemManager,
 	}, nil

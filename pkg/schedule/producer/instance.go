@@ -126,7 +126,10 @@ func (i *ScheduleProducerInstance) produceDue(ctx context.Context, id int64) err
 
 		// registered per produce: the target topic is the row's, and a due
 		// row is minute-scale rare
-		target, err := i.producer.Register[schedule.StoredMessage](ctx, row.TopicName)
+		target, err := i.producer.Register[schedule.StoredMessage](ctx, row.TopicName, &producer.ProducerConfig{
+			Logger: i.Config.Logger,
+			Retry:  i.Config.Retry,
+		})
 		if err != nil {
 			return err
 		}

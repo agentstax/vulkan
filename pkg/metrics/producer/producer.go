@@ -66,10 +66,7 @@ func NewMetricsProducer(ds *datastore.PostgresDatastore, cfg *ProducerConfig) (*
 		return nil, err
 	}
 
-	p, err := iProducer.NewProducer(ds, &iProducer.ProducerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
+	p, err := iProducer.NewProducer(ds)
 	if err != nil {
 		return nil, err
 	}
@@ -87,11 +84,17 @@ func NewMetricsProducer(ds *datastore.PostgresDatastore, cfg *ProducerConfig) (*
 // carries the final totals. Each call registers its own producer instances,
 // so Run is callable again after it returns.
 func (p *MetricsProducer) Run(ctx context.Context, group string, topicName string, version int, sessionId string) error {
-	events, err := p.producer.Register[metrics.GoRoutineEvent](ctx, metrics.TopicName)
+	events, err := p.producer.Register[metrics.GoRoutineEvent](ctx, metrics.TopicName, &iProducer.ProducerConfig{
+		Logger: p.Config.Logger,
+		Retry:  p.Config.Retry,
+	})
 	if err != nil {
 		return err
 	}
-	measurements, err := p.producer.Register[metrics.Measurement](ctx, metrics.TopicName)
+	measurements, err := p.producer.Register[metrics.Measurement](ctx, metrics.TopicName, &iProducer.ProducerConfig{
+		Logger: p.Config.Logger,
+		Retry:  p.Config.Retry,
+	})
 	if err != nil {
 		return err
 	}

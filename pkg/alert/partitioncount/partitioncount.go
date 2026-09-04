@@ -80,10 +80,7 @@ func NewPartitionCountProvisioner(ds *iDatastore.PostgresDatastore, cfg *Partiti
 		return nil, err
 	}
 
-	alertProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
+	alertProducer, err := producer.NewProducer(ds)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +93,7 @@ func NewPartitionCountProvisioner(ds *iDatastore.PostgresDatastore, cfg *Partiti
 		return nil, err
 	}
 
-	scheduleConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
-		Bindings: []string{JobName},
-		Logger:   cfg.Logger,
-		Retry:    cfg.Retry,
-	})
+	scheduleConsumer, err := consumer.NewConsumer(ds)
 	if err != nil {
 		return nil, err
 	}

@@ -56,10 +56,7 @@ func NewScheduleProducerProvisioner(ds *iDatastore.PostgresDatastore, cfg *Sched
 		return nil, err
 	}
 
-	jobProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
+	jobProducer, err := producer.NewProducer(ds)
 	if err != nil {
 		return nil, err
 	}

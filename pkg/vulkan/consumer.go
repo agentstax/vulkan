@@ -1,10 +1,6 @@
 package vulkan
 
-import (
-	"context"
-
-	"github.com/agentstax/vulkan/pkg/consumer"
-)
+import "context"
 
 // ConsumerHandle is a consumer group's name, its topic, and the client,
 // holding no row.
@@ -36,12 +32,7 @@ func (c *ConsumerHandle) Register[Message Versioned](ctx context.Context, cfg *C
 		cfg.Retry = c.client.Config.Retry
 	}
 
-	messageConsumer, err := consumer.NewConsumer(c.client.ds, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	instance, err := messageConsumer.Register[Message](ctx, c.groupName, c.topicName)
+	instance, err := c.client.consumer.Register[Message](ctx, c.groupName, c.topicName, cfg)
 	if err != nil {
 		return nil, err
 	}

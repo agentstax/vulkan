@@ -15,6 +15,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
+	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/system"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -65,7 +66,11 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 	}
 
 	for _, job := range []*alertcontroller.Job{partitionCountJob, compactionReadCostJob, workerLivenessJob} {
-		if _, err := a.scheduler.Register[alert.JobPayload](ctx, job.Spec, job.Payload, job.Config); err != nil {
+		if _, err := a.scheduler.Register[alert.JobPayload](ctx, job.Name, schedule.TopicName, job.Cron, job.Payload, &scheduler.SchedulerConfig{
+			Concurrency: common.ConcurrencyExclusive,
+			Logger:      a.Logger,
+			Retry:       a.Retry,
+		}); err != nil {
 			return err
 		}
 	}

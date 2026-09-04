@@ -102,7 +102,7 @@ func run() (err error) {
 	client, err = vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds = client.Datastore()
-	labScheduler, err = scheduler.NewScheduler(ds, nil)
+	labScheduler, err = scheduler.NewScheduler(ds)
 	must(err)
 
 	prefix = fmt.Sprintf("schedulelab.%d", time.Now().UnixNano())
@@ -153,7 +153,7 @@ func validationSection(ctx context.Context) {
 	if _, err := schedule.ParseExpression("0 0 30 2 *"); err == nil {
 		die("a expression with no upcoming scheduled time must be rejected at parse")
 	}
-	if _, err := registerSchedule(ctx, prefix+".validate", "@hourly", target.Name, payload, &schedule.ScheduleConfig{Timeout: 2 * time.Hour}); err == nil {
+	if _, err := registerSchedule(ctx, prefix+".validate", "@hourly", target.Name, payload, &scheduler.SchedulerConfig{Timeout: 2 * time.Hour}); err == nil {
 		die("timeout above the expression's min rate must be rejected")
 	}
 	fmt.Println("  ✓ rejections: empty/uppercase/star name, sub-minute, no-upcoming, timeout > min rate")
@@ -226,14 +226,14 @@ func targetSection(ctx context.Context) {
 func handleSection(ctx context.Context) {
 	step("handle: scheduler.Register declares the row, Schedule runs the manager until ctx cancels")
 
-	if _, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: prefix + ".handle", Topic: prefix + ".missing", Cron: "@hourly"}, payload, nil); !errors.Is(err, topic.ErrTopicNotFound) {
+	if _, err := labScheduler.Register[labMessage](ctx, prefix+".handle", prefix+".missing", "@hourly", payload, nil); !errors.Is(err, topic.ErrTopicNotFound) {
 		die(fmt.Sprintf("want ErrTopicNotFound for an unregistered target, got %v", err))
 	}
-	if _, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: prefix + ".handle", Topic: target.Name, Cron: "every day at noon"}, payload, nil); err == nil {
+	if _, err := labScheduler.Register[labMessage](ctx, prefix+".handle", target.Name, "every day at noon", payload, nil); err == nil {
 		die("want an error for an unparseable expression")
 	}
 
-	nightly, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: prefix + ".handle", Topic: target.Name, Cron: "@hourly"}, payload, nil)
+	nightly, err := labScheduler.Register[labMessage](ctx, prefix+".handle", target.Name, "@hourly", payload, nil)
 	must(err)
 	defer func() { must(client.Scheduler(prefix + ".handle").Destroy(ctx)) }()
 	found, err := client.Scheduler(prefix + ".handle").Get(ctx)
@@ -379,7 +379,7 @@ func deferSection(ctx context.Context) {
 	step("exclusive (spot): a scheduler request waits behind a running one, then runs")
 
 	job, err := registerSchedule(ctx, prefix+".defer", "@every 1m", target.Name, payload,
-		&schedule.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
+		&scheduler.SchedulerConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(client.Scheduler(prefix + ".defer").Destroy(ctx)) }()
 
@@ -423,7 +423,7 @@ func runNowOverrideSection(ctx context.Context) {
 	step("run-now beside a running request: default 'parallel' runs alongside it, cfg exclusive waits for it")
 
 	job, err := registerSchedule(ctx, prefix+".runnow", "@hourly", target.Name, payload,
-		&schedule.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
+		&scheduler.SchedulerConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(client.Scheduler(prefix + ".runnow").Destroy(ctx)) }()
 
@@ -815,8 +815,8 @@ func exec(ctx context.Context, sql string, args ...any) {
 
 // registerSchedule is the handle's Register for the lab's message type,
 // returning the row like admin's reads do.
-func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedule.ScheduleConfig) (*schedule.Schedule, error) {
-	instance, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: name, Topic: topicName, Cron: expression}, payload, cfg)
+func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *scheduler.SchedulerConfig) (*schedule.Schedule, error) {
+	instance, err := labScheduler.Register[labMessage](ctx, name, topicName, expression, payload, cfg)
 	if err != nil {
 		return nil, err
 	}

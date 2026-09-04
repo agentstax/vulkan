@@ -75,10 +75,7 @@ func NewMetricsCollectorProvisioner(ds *iDatastore.PostgresDatastore, cfg *Metri
 		return nil, err
 	}
 
-	measurementProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
+	measurementProducer, err := producer.NewProducer(ds)
 	if err != nil {
 		return nil, err
 	}

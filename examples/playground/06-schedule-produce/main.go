@@ -5,7 +5,7 @@
 // other.
 //
 // Concepts held before domain code (12): the 7 from scenario 03, plus
-// RegisterSchedule[T], ScheduleSpec, the Scheduler handle and the returned
+// SchedulerHandle.Register[T] and the returned
 // SchedulerInstance's Schedule
 // verb, vulkan.MetaFromContext for the scheduled time, and the fact that
 // Schedule runs the system manager.

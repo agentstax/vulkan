@@ -3,8 +3,6 @@ package datastore
 import (
 	"encoding/json"
 	"time"
-
-	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
 // ScheduleConfigRow is one schedule_config row joined to its schedule_cursor row.
@@ -22,20 +20,6 @@ type ScheduleConfigRow struct {
 	Metadata        json.RawMessage `db:"metadata"`
 	NextScheduledAt time.Time       `db:"next_scheduled_at"`
 	LastScheduledAt *time.Time      `db:"last_scheduled_at"`
-}
-
-// ScheduleDeclaration is one declaration of a schedule, as RegisterSchedule
-// takes it. Schedule stays parsed -- next_scheduled_at is computed from it.
-type ScheduleDeclaration struct {
-	Name          string
-	Expression    *schedule.ScheduleExpression
-	SystemId      int64
-	TopicId       int64
-	Concurrency   string
-	TimeoutNs     int64
-	Payload       any
-	SchemaVersion int
-	Metadata      any
 }
 
 // ScheduleGroupSummaryRow is one consumer group's Status counts.

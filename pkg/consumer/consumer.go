@@ -28,21 +28,30 @@ type ConsumerFunc[Message common.Versioned] func(ctx context.Context, message *M
 // backoff, and the topic's upkeep (partitions, retention, committed advance) runs
 // alongside consumption.
 type Consumer struct {
-	Config *ConsumerConfig
-	Logger logging.Logger
-
-	ds       *datastore.PostgresDatastore
-	declared *ConsumerConfig
-
-	topicController *topiccontroller.TopicController
-	consumers       *consumecontroller.ConsumeController
-	workers         *workercontroller.WorkerController
-	evaluators      []alert.Evaluator
+	ds *datastore.PostgresDatastore
 }
 
-func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer, error) {
+// NewConsumer builds the datastore-only registration object. Register owns
+// the config because each call returns an independently configured instance.
+func NewConsumer(ds *datastore.PostgresDatastore) (*Consumer, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
+	}
+	return &Consumer{ds: ds}, nil
+}
+
+// Register resolves the named topic and registers the consumer group on it,
+// returning an instance that consumes Message from it. Callable many times,
+// with a different Message per call -- each call returns an independent
+// instance.
+// ConsumerConfig.Bindings is the group's full pattern set; nil = the whole topic.
+// ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
+func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consumerGroup string, topicName string, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+	if consumerGroup == "" {
+		return nil, errors.New("consumer group is required")
+	}
+	if topicName == "" {
+		return nil, errors.New("topic name is required")
 	}
 	if cfg == nil {
 		cfg = &ConsumerConfig{}
@@ -56,88 +65,59 @@ func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consume
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-
 	cfg.Logger = logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Buffer: true, Suppress: true})
 
-	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
+	topicController, err := topiccontroller.NewTopicController(c.ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	consumers, err := consumecontroller.NewConsumeController(ds, &consumecontroller.ControllerConfig{
+	consumers, err := consumecontroller.NewConsumeController(c.ds, &consumecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	workers, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
+	workers, err := workercontroller.NewWorkerController(c.ds, &workercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	partitionCountController, err := partitioncountcontroller.NewPartitionCountController(ds, &partitioncountcontroller.ControllerConfig{
+	partitionCountController, err := partitioncountcontroller.NewPartitionCountController(c.ds, &partitioncountcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-	compactionReadCostController, err := compactionreadcostcontroller.NewCompactionReadCostController(ds, &compactionreadcostcontroller.ControllerConfig{
+	compactionReadCostController, err := compactionreadcostcontroller.NewCompactionReadCostController(c.ds, &compactionreadcostcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
+	evaluators := []alert.Evaluator{partitionCountController, compactionReadCostController}
 
-	return &Consumer{
-		Config:          cfg,
-		Logger:          cfg.Logger,
-		ds:              ds,
-		declared:        declared,
-		topicController: topicController,
-		consumers:       consumers,
-		workers:         workers,
-		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController},
-	}, nil
-}
-
-// Register resolves the named topic and registers the consumer group on it,
-// returning an instance that consumes Message from it. Callable many times,
-// with a different Message per call -- each call returns an independent
-// instance.
-// ConsumerConfig.Bindings is the group's full pattern set; nil = the whole topic.
-// ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consumerGroup string, topicName string) (*ConsumerInstance[Message], error) {
-	if consumerGroup == "" {
-		return nil, errors.New("consumer group is required")
-	}
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
-
-	current, err := c.topicController.Get(ctx, topicName)
+	current, err := topicController.Get(ctx, topicName)
 	if err != nil {
 		return nil, err
 	}
 	if current == nil {
 		return nil, topic.ErrTopicNotFound.With("topic", topicName)
 	}
-	if err := c.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
+	if err := topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return nil, err
 	}
 
-	c.logAlerts(ctx, current)
+	c.logAlerts(ctx, current, cfg.Logger, evaluators)
 
-	group, err := c.consumers.RegisterGroup(ctx, current.Id, consumerGroup, c.Config.Start)
+	group, err := consumers.RegisterGroup(ctx, current.Id, consumerGroup, cfg.Start)
 	if err != nil {
 		return nil, err
 	}
@@ -150,32 +130,32 @@ func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consu
 	}
 
 	// the registered group config is stored on the group's consumer worker rows
-	if err := c.workers.RegisterWorker(ctx, messageconsumer.WorkerMessageConsumer, owner, toMessageConsumerWorkerConfig(c.declared)); err != nil {
+	if err := workers.RegisterWorker(ctx, messageconsumer.WorkerMessageConsumer, owner, toMessageConsumerWorkerConfig(declared)); err != nil {
 		return nil, err
 	}
-	if err := c.workers.RegisterWorker(ctx, exceptionconsumer.WorkerExceptionConsumer, owner, toExceptionConsumerWorkerConfig(c.declared)); err != nil {
+	if err := workers.RegisterWorker(ctx, exceptionconsumer.WorkerExceptionConsumer, owner, toExceptionConsumerWorkerConfig(declared)); err != nil {
 		return nil, err
 	}
 
 	declaredAt := time.Now()
-	outcome, err := c.consumers.DeclareBindings(ctx, current.Id, group.Id, c.Config.Bindings, declaredAt)
+	outcome, err := consumers.DeclareBindings(ctx, current.Id, group.Id, cfg.Bindings, declaredAt)
 	if err != nil {
 		return nil, err
 	}
 	if outcome == consume.BindingWaiting {
-		c.Logger.InfoContext(ctx, "binding declaration waiting -- a live instance still declares a different set; Consume retries until installed",
-			"group", group.Name, "patterns", c.Config.Bindings)
+		cfg.Logger.InfoContext(ctx, "binding declaration waiting -- a live instance still declares a different set; Consume retries until installed",
+			"group", group.Name, "patterns", cfg.Bindings)
 	}
 
 	// built per instance -- two instances must never share one event queue
 	// or one set of session counters
 	instanceMetrics, err := metricsproducer.NewMetricsProducer(c.ds, &metricsproducer.ProducerConfig{
-		Logger: c.Config.Logger,
-		Retry:  c.Config.Retry,
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, common.SchemaVersionOf[Message](), declaredAt, c.Config)
+	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, consumers, topicName, common.SchemaVersionOf[Message](), declaredAt, cfg)
 }

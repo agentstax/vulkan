@@ -237,9 +237,9 @@ func classifySection(ctx context.Context) {
 
 	// the alert controller takes the producer package's instance, not the
 	// client's wrapper
-	alertProducer, err := producer.NewProducer(ds, nil)
+	alertProducer, err := producer.NewProducer(ds)
 	must(err)
-	instance, err := alertProducer.Register[alert.Alert](ctx, alert.TopicName)
+	instance, err := alertProducer.Register[alert.Alert](ctx, alert.TopicName, nil)
 	must(err)
 	heads, err := compactioncontroller.NewCompactionController(ds, nil)
 	must(err)

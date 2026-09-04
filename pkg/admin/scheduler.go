@@ -80,7 +80,10 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 	if target == nil {
 		return nil, topic.ErrTopicNotFound.With("topic_id", found.TopicId)
 	}
-	instance, err := a.scheduleProducer.Register[schedule.StoredMessage](ctx, target.Name)
+	instance, err := a.scheduleProducer.Register[schedule.StoredMessage](ctx, target.Name, &producer.ProducerConfig{
+		Logger: a.Logger,
+		Retry:  a.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}

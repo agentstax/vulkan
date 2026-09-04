@@ -1,17 +1,7 @@
 # Public API
 
-05 ignoring this for now
-
-07 looks pretty good
-
-11 gonna ignore this one for now, we just don't have a good solution yet but have it on roadmap
-
-Settled/done, removed from the list: 08 Consume auto-runs the system manager
-([0638]-[0642], shipped 2026-09-02); ProduceOptions is nil-ok; config lives on
-RegisterConsumer per the client shape; defer Close can't replace
-LifecycleContext (Consume blocks, so the defer never runs -- signal helper is
-the ecosystem norm); scenario 10's errgroup deleted, its atomic kept (8
-handler goroutines); New* comments fixed on NewPostgresDatastore.
+eventually get rid of admin after client looks and feels good
+- would need to make client init lots of other things (which is fine)
 
 # Doc
 

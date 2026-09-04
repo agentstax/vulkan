@@ -19,10 +19,8 @@ type MetricsProducer struct {
 	producer *producer.Producer
 }
 
-// cfg may be nil or a sparse struct -- the underlying producer defaults and
-// validates it.
-func NewMetricsProducer(ds *iDatastore.PostgresDatastore, cfg *producer.ProducerConfig) (*MetricsProducer, error) {
-	measurementProducer, err := producer.NewProducer(ds, cfg)
+func NewMetricsProducer(ds *iDatastore.PostgresDatastore) (*MetricsProducer, error) {
+	measurementProducer, err := producer.NewProducer(ds)
 	if err != nil {
 		return nil, err
 	}
@@ -32,8 +30,8 @@ func NewMetricsProducer(ds *iDatastore.PostgresDatastore, cfg *producer.Producer
 // Register resolves __system.metrics and returns an instance ready to
 // Produce. Callable many times -- each call returns an independent instance.
 // Returns ErrTopicNotFound until RegisterSystem has run.
-func (p *MetricsProducer) Register(ctx context.Context) (*MetricsProducerInstance, error) {
-	instance, err := p.producer.Register[metrics.Measurement](ctx, metrics.TopicName)
+func (p *MetricsProducer) Register(ctx context.Context, cfg *producer.ProducerConfig) (*MetricsProducerInstance, error) {
+	instance, err := p.producer.Register[metrics.Measurement](ctx, metrics.TopicName, cfg)
 	if err != nil {
 		return nil, err
 	}

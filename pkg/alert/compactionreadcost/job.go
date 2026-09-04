@@ -4,8 +4,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
 const JobName = "alert." + controller.AlertCompactionReadCost
@@ -28,5 +26,5 @@ func NewJob(cfg *alert.CompactionReadCostJobConfig) (*alertcontroller.Job, error
 	}
 
 	// exclusive so runs never overlap
-	return alertcontroller.NewJob(JobName, cfg.Expression, data, &schedule.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
+	return alertcontroller.NewJob(JobName, cfg.Expression, data)
 }

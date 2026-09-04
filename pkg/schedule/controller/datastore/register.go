@@ -3,17 +3,19 @@ package datastore
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
-// Register resolves declared.Name to its row, creating it if it doesn't
-// exist. An existing row takes declared's config.
-func (d *ScheduleDatastore) Register(ctx context.Context, declared *ScheduleDeclaration) (*ScheduleConfigRow, error) {
+// Register resolves name to its row, creating it if it doesn't exist. An
+// existing row takes the supplied config values.
+func (d *ScheduleDatastore) Register(ctx context.Context, systemId int64, topicId int64, name string, expression *schedule.ScheduleExpression, concurrency common.ConcurrencyPolicy, timeout time.Duration, payload any, schemaVersion int, metadata any) (*ScheduleConfigRow, error) {
 	var found *ScheduleConfigRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		found, err = d.register(ctx, declared)
+		found, err = d.register(ctx, systemId, topicId, name, expression, concurrency, timeout, payload, schemaVersion, metadata)
 		return err
 	})
 	return found, err
@@ -21,13 +23,13 @@ func (d *ScheduleDatastore) Register(ctx context.Context, declared *ScheduleDecl
 
 // register registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDeclaration) (*ScheduleConfigRow, error) {
-	found, err := d.get(ctx, d.Datastore.Pool, declared.Name)
+func (d *ScheduleDatastore) register(ctx context.Context, systemId int64, topicId int64, name string, expression *schedule.ScheduleExpression, concurrency common.ConcurrencyPolicy, timeout time.Duration, payload any, schemaVersion int, metadata any) (*ScheduleConfigRow, error) {
+	found, err := d.get(ctx, d.Datastore.Pool, name)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, topicId, expression, concurrency, timeout, payload, schemaVersion, metadata)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -36,7 +38,7 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 	}
 	defer tx.Rollback(ctx)
 
-	lockKey, err := common.NewAdvisoryLockKey("schedule", d.Datastore.Schema, declared.Name)
+	lockKey, err := common.NewAdvisoryLockKey("schedule", d.Datastore.Schema, name)
 	if err != nil {
 		return nil, err
 	}
@@ -50,15 +52,15 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 	}
 
 	// re-check under the lock -- a racing register may have committed while we waited
-	found, err = d.get(ctx, tx, declared.Name)
+	found, err = d.get(ctx, tx, name)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, topicId, expression, concurrency, timeout, payload, schemaVersion, metadata)
 	}
 
-	next, err := d.nextScheduledTime(ctx, tx, declared.Expression)
+	next, err := d.nextScheduledTime(ctx, tx, expression)
 	if err != nil {
 		return nil, err
 	}
@@ -81,9 +83,9 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 	`, d.Datastore.Schema)
 	var id int64
 	if err := tx.QueryRow(ctx, insertConfigSql,
-		declared.SystemId, declared.TopicId,
-		declared.Name, declared.Expression.String(), declared.Concurrency, declared.TimeoutNs,
-		declared.Payload, declared.SchemaVersion, declared.Metadata,
+		systemId, topicId,
+		name, expression.String(), string(concurrency), int64(timeout),
+		payload, schemaVersion, metadata,
 	).Scan(&id); err != nil {
 		return nil, err
 	}
@@ -97,7 +99,7 @@ func (d *ScheduleDatastore) register(ctx context.Context, declared *ScheduleDecl
 		return nil, err
 	}
 
-	created, err := d.get(ctx, tx, declared.Name)
+	created, err := d.get(ctx, tx, name)
 	if err != nil {
 		return nil, err
 	}

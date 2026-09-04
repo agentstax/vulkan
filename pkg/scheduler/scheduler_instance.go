@@ -21,7 +21,7 @@ type SchedulerInstance[Message common.Versioned] struct {
 	ds *datastore.PostgresDatastore
 }
 
-// cfg arrives already resolved by NewScheduler -- Register is the only caller.
+// cfg arrives already resolved by Register.
 func newSchedulerInstance[Message common.Versioned](registered *schedule.Schedule, payload *Message, ds *datastore.PostgresDatastore, cfg *SchedulerConfig) (*SchedulerInstance[Message], error) {
 	if registered == nil {
 		return nil, errors.New("schedule must not be nil")

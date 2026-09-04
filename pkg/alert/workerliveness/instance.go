@@ -10,6 +10,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/produce"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -63,7 +64,7 @@ func (i *WorkerLivenessInstance) Run(ctx context.Context) error {
 // claim applies the claimed row's repeat_interval against the alerts topic's
 // live retention.
 func (i *WorkerLivenessInstance) consume(ctx context.Context) error {
-	registered, err := i.provisioner.producer.Register[alert.Alert](ctx, alert.TopicName)
+	registered, err := i.provisioner.producer.Register[alert.Alert](ctx, alert.TopicName, &producer.ProducerConfig{Logger: i.Logger, Retry: i.provisioner.Config.Retry})
 	if err != nil {
 		return err
 	}
@@ -73,13 +74,17 @@ func (i *WorkerLivenessInstance) consume(ctx context.Context) error {
 	}
 	i.alerts = alerts
 
-	measurements, err := i.provisioner.producer.Register[metrics.Measurement](ctx, metrics.TopicName)
+	measurements, err := i.provisioner.producer.Register[metrics.Measurement](ctx, metrics.TopicName, &producer.ProducerConfig{Logger: i.Logger, Retry: i.provisioner.Config.Retry})
 	if err != nil {
 		return err
 	}
 	i.measurements = measurements
 
-	instance, err := i.provisioner.scheduleConsumer.Register[alert.JobPayload](ctx, JobName, schedule.TopicName)
+	instance, err := i.provisioner.scheduleConsumer.Register[alert.JobPayload](ctx, JobName, schedule.TopicName, &consumer.ConsumerConfig{
+		Bindings: []string{JobName},
+		Logger:   i.Logger,
+		Retry:    i.provisioner.Config.Retry,
+	})
 	if err != nil {
 		return err
 	}

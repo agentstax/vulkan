@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
-// replaceConfig overwrites an already-registered schedule's mutable
-// config with declared's: the newest declaration wins.
-func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleConfigRow, declared *ScheduleDeclaration) (*ScheduleConfigRow, error) {
+// replaceConfig overwrites an already-registered schedule's mutable config:
+// the newest registration wins.
+func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleConfigRow, topicId int64, expression *schedule.ScheduleExpression, concurrency common.ConcurrencyPolicy, timeout time.Duration, payload any, schemaVersion int, metadata any) (*ScheduleConfigRow, error) {
 	// a scheduled time already due under the old schedule is dropped, not
 	// produced late -- the new schedule decides when the schedule next runs
 	var next *time.Time
-	if found.Expression != declared.Expression.String() {
-		seeded, err := d.nextScheduledTime(ctx, d.Datastore.Pool, declared.Expression)
+	if found.Expression != expression.String() {
+		seeded, err := d.nextScheduledTime(ctx, d.Datastore.Pool, expression)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +43,7 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleCo
 		WHERE id = $1;
 	`, d.Datastore.Schema)
 	tag, err := tx.Exec(ctx, updateConfigSql, found.Id,
-		declared.Expression.String(), declared.TopicId, declared.Concurrency, declared.TimeoutNs, declared.Payload, declared.SchemaVersion, declared.Metadata)
+		expression.String(), topicId, string(concurrency), int64(timeout), payload, schemaVersion, metadata)
 	if err != nil {
 		return nil, err
 	}
