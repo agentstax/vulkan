@@ -533,7 +533,7 @@ func supersedeSection(ctx context.Context) {
 
 	// the request listing names the replacement: newest first, the dropped
 	// request points at the one that replaced it
-	requests, err := client.Scheduler(prefix+".supersede").ListMessages(ctx, 20)
+	requests, err := client.Scheduler(prefix+".supersede").Messages(ctx, 20)
 	must(err)
 	if len(requests) != 2 {
 		die(fmt.Sprintf("want 2 listed requests, got %d", len(requests)))
@@ -633,7 +633,7 @@ func statusSection(ctx context.Context) {
 
 	// per-group outcomes for the same two requests: the bound group ran both,
 	// the bindingless group ran neither
-	requests, err := client.Scheduler(jobName).ListMessages(ctx, 20)
+	requests, err := client.Scheduler(jobName).Messages(ctx, 20)
 	must(err)
 	outcomes := map[string]schedule.MessageOutcome{}
 	for _, request := range requests {

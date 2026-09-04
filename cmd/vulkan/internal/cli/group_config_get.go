@@ -41,7 +41,7 @@ field.`,
 			}
 			defer closeClient()
 
-			workers, err := client.Topic(topicName).Group(groupName).ListWorkers(ctx)
+			workers, err := client.Topic(topicName).Group(groupName).Workers(ctx)
 			if err != nil {
 				return groupError(topicName, groupName, err)
 			}

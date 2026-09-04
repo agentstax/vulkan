@@ -177,6 +177,22 @@ func (d *ConsumeDatastore) listBindingLog(ctx context.Context) ([]BindingConfigL
 	return declarations, nil
 }
 
+// ListGroupBindingLog reads one group's newest attempt row per declarer
+// and status.
+func (d *ConsumeDatastore) ListGroupBindingLog(ctx context.Context, topicId int64, groupId int64) ([]BindingConfigLogRow, error) {
+	var declarations []BindingConfigLogRow
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		declarations, err = d.listGroupBindingLog(ctx, topicId, groupId)
+		return err
+	})
+	return declarations, err
+}
+
+func (d *ConsumeDatastore) listGroupBindingLog(ctx context.Context, topicId int64, groupId int64) ([]BindingConfigLogRow, error) {
+	return d.listTopicBindingLog(ctx, d.Datastore.Pool, topicId, groupId)
+}
+
 func (d *ConsumeDatastore) listTopicBindingLog(ctx context.Context, querier datastore.Querier, topicId int64, groupId int64) ([]BindingConfigLogRow, error) {
 	// DISTINCT ON keeps newest-per-declarer in SQL -- a long wait's appended
 	// retry rows never ship to the caller

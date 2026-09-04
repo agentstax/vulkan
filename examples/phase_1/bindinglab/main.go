@@ -300,7 +300,7 @@ func bindingDisplays(ctx context.Context) string {
 // labDeclarations reads the listing surface and returns the lab group's
 // installed row and open waiting row (nil when absent).
 func labDeclarations(ctx context.Context) (*consume.BindingDeclaration, *consume.BindingDeclaration) {
-	declarations, err := client.System().ListBindingDeclarations(ctx)
+	declarations, err := client.System().BindingDeclarations(ctx)
 	must(err)
 	var installed *consume.BindingDeclaration
 	var waiter *consume.BindingDeclaration

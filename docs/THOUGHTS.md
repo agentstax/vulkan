@@ -3,6 +3,14 @@
 eventually get rid of admin after client looks and feels good
 - would need to make client init lots of other things (which is fine)
 
+Rename alert messageKey -> name. Would need to be propogated through all of alert code
+func (s *SystemHandle) Alert(messageKey string) *AlertHandle {
+	return &AlertHandle{messageKey: messageKey, client: s.client}
+}
+func (a *AlertHandle) MessageKey() string {
+	return a.messageKey
+}
+
 # Doc
 
 SEO for markdown - tags

@@ -35,6 +35,27 @@ func (c *ConsumeController) DeclareBindings(ctx context.Context, topicId int64, 
 	return c.datastore.DeclareBindings(ctx, topicId, groupId, declared, common.ProcessIdentity, declaredAt)
 }
 
+// GetBindingDeclaration returns the group's effective declaration -- its
+// newest installed row -- or nil when the group never installed a set.
+func (c *ConsumeController) GetBindingDeclaration(ctx context.Context, topicId int64, groupId int64) (*consume.BindingDeclaration, error) {
+	if topicId <= 0 {
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
+	}
+	if groupId <= 0 {
+		return nil, fmt.Errorf("groupId must be > 0, got %d", groupId)
+	}
+
+	data, err := c.datastore.ListGroupBindingLog(ctx, topicId, groupId)
+	if err != nil {
+		return nil, err
+	}
+	effective, found := datastore.NewestInstalledDeclaration(data)
+	if !found {
+		return nil, nil
+	}
+	return toBindingDeclaration(effective), nil
+}
+
 // ListBindingDeclarations returns every group's effective declaration followed by
 // its still-waiting declarers, ordered by topic then group.
 func (c *ConsumeController) ListBindingDeclarations(ctx context.Context) ([]*consume.BindingDeclaration, error) {

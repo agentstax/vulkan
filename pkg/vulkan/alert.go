@@ -35,5 +35,5 @@ func (a *AlertHandle) Get(ctx context.Context) (*Message[Alert], error) {
 
 // Messages returns the alert's retained values, newest first.
 func (a *AlertHandle) Messages(ctx context.Context, limit int) ([]*Message[Alert], error) {
-	return a.client.Topic(alert.TopicName).ListKeyMessages[Alert](ctx, a.messageKey, limit)
+	return a.client.Topic(alert.TopicName).KeyMessages[Alert](ctx, a.messageKey, limit)
 }

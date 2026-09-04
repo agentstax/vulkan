@@ -70,8 +70,8 @@ func (s *SchedulerHandle) Status(ctx context.Context) ([]*ScheduleGroupSummary, 
 	return s.client.admin.ScheduleStatus(ctx, s.name)
 }
 
-// ListMessages lists the schedule's produced messages, newest first.
-func (s *SchedulerHandle) ListMessages(ctx context.Context, limit int) ([]*ScheduleMessageStatus, error) {
+// Messages returns the schedule's produced messages, newest first.
+func (s *SchedulerHandle) Messages(ctx context.Context, limit int) ([]*ScheduleMessageStatus, error) {
 	return s.client.admin.ScheduleMessages(ctx, s.name, limit)
 }
 

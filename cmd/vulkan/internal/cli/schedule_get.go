@@ -63,7 +63,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 
 				var listed []*schedule.ScheduleMessageStatus
 				if messages {
-					listed, err = client.Scheduler(name).ListMessages(ctx, limit)
+					listed, err = client.Scheduler(name).Messages(ctx, limit)
 					if err != nil {
 						return translateAdminError(err)
 					}
@@ -100,7 +100,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 			printScheduleStatuses(out, statuses)
 
 			if messages {
-				listed, err := client.Scheduler(name).ListMessages(ctx, limit)
+				listed, err := client.Scheduler(name).Messages(ctx, limit)
 				if err != nil {
 					return translateAdminError(err)
 				}

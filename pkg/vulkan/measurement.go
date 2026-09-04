@@ -37,5 +37,5 @@ func (m *MeasurementHandle) Get(ctx context.Context) (*Message[Measurement], err
 
 // Messages returns the measurement series' retained values, newest first.
 func (m *MeasurementHandle) Messages(ctx context.Context, limit int) ([]*Message[Measurement], error) {
-	return m.client.Topic(metrics.TopicName).ListKeyMessages[Measurement](ctx, m.messageKey, limit)
+	return m.client.Topic(metrics.TopicName).KeyMessages[Measurement](ctx, m.messageKey, limit)
 }

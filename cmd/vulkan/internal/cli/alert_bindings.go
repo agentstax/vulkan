@@ -26,7 +26,7 @@ func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			declarations, err := client.System().ListBindingDeclarations(ctx)
+			declarations, err := client.System().BindingDeclarations(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

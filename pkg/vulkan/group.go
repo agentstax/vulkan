@@ -31,8 +31,8 @@ func (g *GroupHandle) Get(ctx context.Context) (*Group, error) {
 	return g.client.admin.GetGroup(ctx, g.topicName, g.name)
 }
 
-// ListWorkers lists the group's worker rows -- its stored config.
-func (g *GroupHandle) ListWorkers(ctx context.Context) ([]*Worker, error) {
+// Workers returns the group's worker rows -- its stored config.
+func (g *GroupHandle) Workers(ctx context.Context) ([]*Worker, error) {
 	return g.client.admin.ListGroupWorkers(ctx, g.topicName, g.name)
 }
 

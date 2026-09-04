@@ -307,13 +307,13 @@ snapshot, err := orders.Metrics(ctx)
 renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // refused unless ClientConfig.AllowDestroy
 current, err := orders.CompactionHead[ReadingV1](ctx, "device-7")
-versions, err := orders.ListKeyMessages[ReadingV1](ctx, "device-7", 20)
+versions, err := orders.KeyMessages[ReadingV1](ctx, "device-7", 20)
 
 // groups hang off their topic
 groups, err := orders.Groups(ctx)
 group := orders.Group("charge-cards")
 registeredGroup, err := group.Get(ctx)
-workers, err := group.ListWorkers(ctx)
+workers, err := group.Workers(ctx)
 err = group.Destroy(ctx, nil)
 dead, err := group.ListDeadMessages(ctx, 50) // proposed verbs land here
 err = group.Rewind(ctx, vulkan.AtTime(t))    // proposed
@@ -326,7 +326,7 @@ err = nightly.Suspend(ctx)
 err = nightly.Unsuspend(ctx)
 result, err := nightly.Run(ctx, nil)
 status, err := nightly.Status(ctx)
-messages, err := nightly.ListMessages(ctx, 20)
+messages, err := nightly.Messages(ctx, 20)
 err = nightly.Destroy(ctx)
 
 // system -- the same handle grammar; today it takes no name
@@ -348,12 +348,12 @@ A plural noun lists materialized resources: `client.Topics`,
 `orders.Groups`, `client.Schedulers`, `sys.Alerts`, `sys.Measurements`.
 Its singular noun returns a no-I/O handle. Terminal reports and retained
 history keep the verb that says what they return: `Health`, `Metrics`,
-`Status`, `ListWorkers`, `ListMessages`, and `Messages`.
+`Status`, `Workers`, and `Messages`.
 
 The key read sits on the topic. It used to be read inside a transaction
 on the producer instance and outside one on a separate
 `CompactionController` keyed by topic id, two objects for one fact;
-`orders.CompactionHead` and `orders.ListKeyMessages` put the read beside
+`orders.CompactionHead` and `orders.KeyMessages` put the read beside
 the topic that holds the row. Both carry the message type, because both
 decode a stored payload.
 
@@ -364,7 +364,7 @@ cfg)`, topics nesting under it as
 `client.System(name).Topic(name)` the way groups nest under topics, and
 `client.Topic(name)` staying as the default system's shortcut. The
 verbs that own system state already sit there: `Register`, `MigrateTopics`,
-`ListBindingDeclarations`, `Alerts`, and `Measurements`. The manager is its
+`BindingDeclarations`, `Alerts`, and `Measurements`. The manager is its
 own `client.Manager()` handle because it is a running subsystem.
 
 ## Where the old verbs went
@@ -379,21 +379,21 @@ own `client.Manager()` handle because it is a running subsystem.
 | `RenameTopic` | `Topic.Rename` |
 | `DestroyTopic` | `Topic.Destroy` |
 | `TopicHealth` / `TopicMetrics` | `Topic.Health` / `Topic.Metrics` |
-| `GetGroup` | `Topic.Group(name).Get(ctx)`; its worker rows become `Group.ListWorkers` |
+| `GetGroup` | `Topic.Group(name).Get(ctx)`; its worker rows become `Group.Workers` |
 | (none) | `TopicHandle.Groups` |
 | `DestroyGroup` | `Group.Destroy` |
-| `ListBindingDeclarations` | `client.System().ListBindingDeclarations` |
+| `ListBindingDeclarations` | `client.System().BindingDeclarations`; one group's effective set is `Group.BindingDeclaration().Get(ctx)` |
 | `GetSchedule` | `client.Scheduler(name).Get(ctx)` |
 | `ListSchedules` | `client.Schedulers` |
 | `SuspendSchedule` / `UnsuspendSchedule` | `Scheduler.Suspend` / `Scheduler.Unsuspend` |
 | `RunSchedule` | `Scheduler.Run` |
-| `ScheduleStatus` / `ScheduleMessages` | `Scheduler.Status` / `Scheduler.ListMessages` |
+| `ScheduleStatus` / `ScheduleMessages` | `Scheduler.Status` / `Scheduler.Messages` |
 | `DestroySchedule` | `Scheduler.Destroy` |
 | `RegisterSystem` | `client.System().Register` |
 | `GetSystem` / `MigrateSystem` / `DestroySystem` | `client.System().Get` / `.Migrate` / `.Destroy` |
 | `ListAlerts` | `client.System().Alerts` |
 | `ListMeasurements` / `ListMeasurementMessages` | `client.System().Measurements` / `.Measurement(...).Messages` |
-| `CompactionController.GetHead` / `ListKeyMessages` | `Topic.CompactionHead` / `Topic.ListKeyMessages` |
+| `CompactionController.GetHead` / `ListKeyMessages` | `Topic.CompactionHead` / `Topic.KeyMessages` |
 | `RegisterSchedule` | `client.Scheduler(name).Register`, returns `SchedulerInstance` |
 
 ## The manager

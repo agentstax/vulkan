@@ -165,7 +165,7 @@ func seedingSection(ctx context.Context) {
 		die("RegisterSystem must seed the " + compactionreadcost.JobName + " schedule")
 	}
 
-	declarations, err := client.System().ListBindingDeclarations(ctx)
+	declarations, err := client.System().BindingDeclarations(ctx)
 	must(err)
 	for _, jobName := range []string{partitioncount.JobName, compactionreadcost.JobName} {
 		declared := false
@@ -349,7 +349,7 @@ func executorSection(ctx context.Context) {
 	waitDelivered(ctx, firstRun.Id, "success")
 
 	// the running executor's Register declared the group's set
-	declarations, err := client.System().ListBindingDeclarations(ctx)
+	declarations, err := client.System().BindingDeclarations(ctx)
 	must(err)
 	declared := false
 	for _, declaration := range declarations {

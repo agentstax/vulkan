@@ -31,21 +31,21 @@ the touched package):
    / `listBindingLog` / `listTopicBindingLog` -> `ListBindingConfigLog`
    / `listBindingConfigLog` / `listTopicBindingConfigLog`, matching the
    table and `BindingConfigLogRow` since the [0611] rename.
-2. Datastore -- `ConsumeDatastore.ListGroupBindingConfigLog(ctx,
+2. DONE 2026-09-03 (as `ListGroupBindingLog`; step 1 renames it) -- `ConsumeDatastore.ListGroupBindingConfigLog(ctx,
    topicId, groupId) ([]BindingConfigLogRow, error)`: public Wrap pair
    over `listTopicBindingConfigLog` (its `groupId` filter already
    exists, used only inside the declare transaction today). Parent-child
    list name after admin's `ListGroupWorkers`.
-3. Controller -- `ConsumeController.GetBindingDeclaration(ctx, topicId,
+3. DONE 2026-09-03 -- `ConsumeController.GetBindingDeclaration(ctx, topicId,
    groupId) (*consume.BindingDeclaration, error)` in
    controller/binding_declaration.go: id guards, one datastore read,
    `NewestInstalledDeclaration`, `toBindingDeclaration`; `(nil, nil)`
    when no installed row -- the group reads the whole topic.
-4. Admin -- `MessageAdmin.GetBindingDeclaration(ctx, topicName,
+4. DONE 2026-09-03 -- `MessageAdmin.GetBindingDeclaration(ctx, topicName,
    groupName)` in admin/binding.go beside `ListBindingDeclarations`:
    resolve ids the way `GetGroup` does, `(nil, nil)` when the topic or
    group is absent.
-5. pkg/vulkan -- new `binding_declaration.go` (file named for the
+5. DONE 2026-09-03 (alias.go unchanged, closure test green) -- new `binding_declaration.go` (file named for the
    handle's noun, like group.go / alert.go):
    `BindingDeclarationHandle{topicName, groupName, client}`,
    `GroupHandle.BindingDeclaration()` (no I/O, no args -- the group is
@@ -53,7 +53,7 @@ the touched package):
    `SystemHandle.ListBindingDeclarations` -> `BindingDeclarations`
    (stays on System). `tools/conventions` closure test decides whether
    alias.go changes.
-6. Handle `List*` drift, same rule: `GroupHandle.ListWorkers` ->
+6. DONE 2026-09-03 (CLI, labs, client.mdx callers updated) -- handle `List*` drift, same rule: `GroupHandle.ListWorkers` ->
    `Workers`, `SchedulerHandle.ListMessages` -> `Messages`,
    `TopicHandle.ListKeyMessages` -> `KeyMessages`; update their CLI
    and lab callers and client.mdx mentions.

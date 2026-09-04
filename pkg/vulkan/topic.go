@@ -63,7 +63,7 @@ func (t *TopicHandle) CompactionHead[Payload Versioned](ctx context.Context, mes
 	return t.client.admin.GetCompactionHead[Payload](ctx, t.name, messageKey)
 }
 
-// ListKeyMessages returns messageKey's retained messages, newest first.
-func (t *TopicHandle) ListKeyMessages[Payload Versioned](ctx context.Context, messageKey string, limit int) ([]*Message[Payload], error) {
+// KeyMessages returns messageKey's retained messages, newest first.
+func (t *TopicHandle) KeyMessages[Payload Versioned](ctx context.Context, messageKey string, limit int) ([]*Message[Payload], error) {
 	return t.client.admin.ListKeyMessages[Payload](ctx, t.name, messageKey, limit)
 }
