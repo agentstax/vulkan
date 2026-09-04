@@ -53,7 +53,7 @@ var (
 	ds           *iDatastore.PostgresDatastore
 	client       *vulkan.Client
 	labScheduler *scheduler.Scheduler
-	target       *topic.TopicData // the lab's own target topic
+	target       *topic.Topic // the lab's own target topic
 	prefix       string
 )
 
@@ -107,7 +107,7 @@ func run() (err error) {
 
 	prefix = fmt.Sprintf("schedulelab.%d", time.Now().UnixNano())
 	// status reads count 'success' rows, so the target keeps every outcome
-	target, err = client.RegisterTopic(ctx, prefix+".target", &vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
+	target, err = client.Topic(prefix+".target").Register(ctx, &vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
 	must(err)
 	defer cleanupTarget()
 
@@ -165,7 +165,7 @@ func validationSection(ctx context.Context) {
 	if feb29.NextScheduledAt.UTC().Month() != time.February || feb29.NextScheduledAt.UTC().Day() != 29 {
 		die(fmt.Sprintf("feb29 job seeded to %v, want a Feb 29", feb29.NextScheduledAt))
 	}
-	must(client.Schedule(prefix + ".feb29").Destroy(ctx))
+	must(client.Scheduler(prefix + ".feb29").Destroy(ctx))
 	fmt.Printf("  ✓ Feb-29 expression registered, seeded to %s\n", feb29.NextScheduledAt.UTC().Format("2006-01-02"))
 
 	first, err := registerSchedule(ctx, prefix+".redeclare", "@hourly", target.Name, payload, nil)
@@ -176,7 +176,7 @@ func validationSection(ctx context.Context) {
 		die(fmt.Sprintf("identical re-register resolved to a different job: %d vs %d", again.Id, first.Id))
 	}
 
-	must(client.Schedule(prefix + ".redeclare").Suspend(ctx))
+	must(client.Scheduler(prefix + ".redeclare").Suspend(ctx))
 	redeclared, err := registerSchedule(ctx, prefix+".redeclare", "@daily", target.Name, payload, nil)
 	must(err)
 	if redeclared.Id != first.Id {
@@ -191,7 +191,7 @@ func validationSection(ctx context.Context) {
 	if !redeclared.Suspended {
 		die("a re-register must leave a suspended job suspended")
 	}
-	must(client.Schedule(prefix + ".redeclare").Destroy(ctx))
+	must(client.Scheduler(prefix + ".redeclare").Destroy(ctx))
 	fmt.Println("  ✓ identical re-register is a no-op, a differing one wins and leaves suspended alone")
 }
 
@@ -199,7 +199,7 @@ func targetSection(ctx context.Context) {
 	step("target: a schedule dies with its target topic, one on another topic survives")
 
 	topicName := prefix + ".ownedtopic"
-	_, err := client.RegisterTopic(ctx, topicName, nil)
+	_, err := client.Topic(topicName).Register(ctx, nil)
 	must(err)
 
 	_, err = registerSchedule(ctx, prefix+".cascade", "@hourly", topicName, payload, nil)
@@ -209,17 +209,17 @@ func targetSection(ctx context.Context) {
 
 	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
-	cascaded, err := client.Schedule(prefix + ".cascade").Get(ctx)
+	cascaded, err := client.Scheduler(prefix + ".cascade").Get(ctx)
 	must(err)
 	if cascaded != nil {
 		die("a schedule must cascade away with its target topic")
 	}
-	standalone, err := client.Schedule(prefix + ".standalone").Get(ctx)
+	standalone, err := client.Scheduler(prefix + ".standalone").Get(ctx)
 	must(err)
 	if standalone == nil {
 		die("a schedule on another topic must survive an unrelated topic destroy")
 	}
-	must(client.Schedule(prefix + ".standalone").Destroy(ctx))
+	must(client.Scheduler(prefix + ".standalone").Destroy(ctx))
 	fmt.Println("  ✓ cascade removed the schedule with its target topic, the other survived")
 }
 
@@ -235,8 +235,8 @@ func handleSection(ctx context.Context) {
 
 	nightly, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: prefix + ".handle", Topic: target.Name, Cron: "@hourly"}, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".handle").Destroy(ctx)) }()
-	found, err := client.Schedule(prefix + ".handle").Get(ctx)
+	defer func() { must(client.Scheduler(prefix + ".handle").Destroy(ctx)) }()
+	found, err := client.Scheduler(prefix + ".handle").Get(ctx)
 	must(err)
 	if found == nil || found.Id != nightly.Registered.Id || found.TopicId != target.Id || found.SchemaVersion != 1 {
 		die(fmt.Sprintf("handle row differs from admin's read: %+v vs %+v", nightly.Registered, found))
@@ -259,7 +259,7 @@ func produceOnceSection(ctx context.Context) {
 
 	job, err := registerSchedule(ctx, prefix+".walk", "@every 1m", target.Name, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".walk").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".walk").Destroy(ctx)) }()
 	key := job.Name
 
 	backdated := time.Now().UTC().Add(-5 * time.Minute)
@@ -284,7 +284,7 @@ func dedupeSection(ctx context.Context) {
 
 	job, err := registerSchedule(ctx, prefix+".dedupe", "@every 1m", target.Name, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".dedupe").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".dedupe").Destroy(ctx)) }()
 	key := job.Name
 
 	// 10s back: due now, and its successor stays out of reach for ~50s more,
@@ -309,18 +309,18 @@ func suspendSection(ctx context.Context) {
 
 	job, err := registerSchedule(ctx, prefix+".suspend", "@hourly", target.Name, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".suspend").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".suspend").Destroy(ctx)) }()
 	key := job.Name
 
-	must(client.Schedule(prefix + ".suspend").Suspend(ctx))
+	must(client.Scheduler(prefix + ".suspend").Suspend(ctx))
 	backdate(ctx, job.Id, time.Now().UTC().Add(-2*time.Hour))
 	time.Sleep(10 * schedulerPollRate)
 	if got := messageCount(ctx, key); got != 0 {
 		die(fmt.Sprintf("suspended row produced %d messages", got))
 	}
 
-	must(client.Schedule(prefix + ".suspend").Unsuspend(ctx))
-	unsuspended, err := client.Schedule(prefix + ".suspend").Get(ctx)
+	must(client.Scheduler(prefix + ".suspend").Unsuspend(ctx))
+	unsuspended, err := client.Scheduler(prefix + ".suspend").Get(ctx)
 	must(err)
 	if !unsuspended.NextScheduledAt.After(time.Now()) {
 		die(fmt.Sprintf("unsuspend must re-seed next_scheduled_at in the future, got %v", unsuspended.NextScheduledAt))
@@ -344,10 +344,10 @@ func poisonSection(ctx context.Context) {
 
 	poisoned, err := registerSchedule(ctx, prefix+".poison", "@hourly", target.Name, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".poison").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".poison").Destroy(ctx)) }()
 	sibling, err := registerSchedule(ctx, prefix+".sibling", "@every 1m", target.Name, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".sibling").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".sibling").Destroy(ctx)) }()
 	poisonedKey := poisoned.Name
 	siblingKey := sibling.Name
 
@@ -381,7 +381,7 @@ func deferSection(ctx context.Context) {
 	job, err := registerSchedule(ctx, prefix+".defer", "@every 1m", target.Name, payload,
 		&schedule.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".defer").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".defer").Destroy(ctx)) }()
 
 	groupName := prefix + ".defer.group"
 	group := registerGroup(ctx, groupName, prefix+".defer")
@@ -425,7 +425,7 @@ func runNowOverrideSection(ctx context.Context) {
 	job, err := registerSchedule(ctx, prefix+".runnow", "@hourly", target.Name, payload,
 		&schedule.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".runnow").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".runnow").Destroy(ctx)) }()
 
 	groupName := prefix + ".runnow.group"
 	group := registerGroup(ctx, groupName, prefix+".runnow")
@@ -454,7 +454,7 @@ func runNowOverrideSection(ctx context.Context) {
 
 	// were the second request stamped with the job's 'exclusive', it would wait
 	// until the first finishes -- the default 'parallel' runs it now
-	override, err := client.Schedule(prefix+".runnow").Run(ctx, nil)
+	override, err := client.Scheduler(prefix+".runnow").Run(ctx, nil)
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, override.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, blocker)); got != 0 {
@@ -464,7 +464,7 @@ func runNowOverrideSection(ctx context.Context) {
 
 	// cfg.Concurrency exclusive opts back into the job's no-overlap safety: this
 	// request waits for the running one instead of running beside it
-	deferred, err := client.Schedule(prefix+".runnow").Run(ctx, &vulkan.RunScheduleConfig{Concurrency: common.ConcurrencyExclusive})
+	deferred, err := client.Scheduler(prefix+".runnow").Run(ctx, &vulkan.RunScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, deferred.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), group, deferred.Id)); got != 0 {
@@ -480,7 +480,7 @@ func supersedeSection(ctx context.Context) {
 
 	job, err := registerSchedule(ctx, prefix+".supersede", "@hourly", target.Name, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(prefix + ".supersede").Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(prefix + ".supersede").Destroy(ctx)) }()
 
 	groupName := prefix + ".supersede.group"
 	group := registerGroup(ctx, groupName, prefix+".supersede")
@@ -490,9 +490,9 @@ func supersedeSection(ctx context.Context) {
 	// keyed row while it IS the head, so the first is dropped unrun with no
 	// delivery_log trace (the 'superseded' log row is the dispatched-then-
 	// outraced exclusive path -- exclusivelab owns it)
-	pending, err := client.Schedule(prefix+".supersede").Run(ctx, nil)
+	pending, err := client.Scheduler(prefix+".supersede").Run(ctx, nil)
 	must(err)
-	head, err := client.Schedule(prefix+".supersede").Run(ctx, nil)
+	head, err := client.Scheduler(prefix+".supersede").Run(ctx, nil)
 	must(err)
 
 	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM %s.%s WHERE compaction_key = $1;`, ds.Schema, topic.CompactionHeadTable(target.Id)),
@@ -521,7 +521,7 @@ func supersedeSection(ctx context.Context) {
 		die(fmt.Sprintf("the superseded request must never reach the handler, handled %d", got))
 	}
 
-	statuses, err := client.Schedule(prefix + ".supersede").Status(ctx)
+	statuses, err := client.Scheduler(prefix + ".supersede").Status(ctx)
 	must(err)
 	status := statusFor(statuses, groupName)
 	if status.Ran != 1 || status.Succeeded != 1 || status.Failed != 0 {
@@ -533,7 +533,7 @@ func supersedeSection(ctx context.Context) {
 
 	// the request listing names the replacement: newest first, the dropped
 	// request points at the one that replaced it
-	requests, err := client.Schedule(prefix+".supersede").ListMessages(ctx, 20)
+	requests, err := client.Scheduler(prefix+".supersede").ListMessages(ctx, 20)
 	must(err)
 	if len(requests) != 2 {
 		die(fmt.Sprintf("want 2 listed requests, got %d", len(requests)))
@@ -559,7 +559,7 @@ func statusSection(ctx context.Context) {
 	jobName := prefix + ".status"
 	_, err := registerSchedule(ctx, jobName, "@hourly", target.Name, payload, nil)
 	must(err)
-	defer func() { must(client.Schedule(jobName).Destroy(ctx)) }()
+	defer func() { must(client.Scheduler(jobName).Destroy(ctx)) }()
 
 	boundName := prefix + ".status.bound"
 	otherName := prefix + ".status.other"
@@ -590,18 +590,18 @@ func statusSection(ctx context.Context) {
 
 	// wait out request 1's success before producing request 2, so the second
 	// run-now can't supersede the first while it sits unclaimed
-	first, err := client.Schedule(jobName).Run(ctx, nil)
+	first, err := client.Scheduler(jobName).Run(ctx, nil)
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`, ds.Schema, topic.DeliveryLogTable(target.Id), bound, first.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`, ds.Schema, topic.DeliveryLogTable(target.Id), bound, first.Id)); got < 1 {
 		die("the first request must record its failed attempt before succeeding")
 	}
 
-	second, err := client.Schedule(jobName).Run(ctx, nil)
+	second, err := client.Scheduler(jobName).Run(ctx, nil)
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`, ds.Schema, topic.DeliveryLogTable(target.Id), bound, second.Id), 1)
 
-	statuses, err := client.Schedule(jobName).Status(ctx)
+	statuses, err := client.Scheduler(jobName).Status(ctx)
 	must(err)
 	for _, status := range statuses {
 		fmt.Printf("  group=%s ran=%d succeeded=%d failed=%d superseded=%d\n", status.ConsumerGroup, status.Ran, status.Succeeded, status.Failed, status.Superseded)
@@ -633,7 +633,7 @@ func statusSection(ctx context.Context) {
 
 	// per-group outcomes for the same two requests: the bound group ran both,
 	// the bindingless group ran neither
-	requests, err := client.Schedule(jobName).ListMessages(ctx, 20)
+	requests, err := client.Scheduler(jobName).ListMessages(ctx, 20)
 	must(err)
 	outcomes := map[string]schedule.MessageOutcome{}
 	for _, request := range requests {
@@ -716,10 +716,11 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 // stop is called.
 func startConsumer(ctx context.Context, group string, bindings []string, concurrency int, handler func(context.Context, *labMessage) error) func() {
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := client.RegisterConsumer[labMessage](lifecycleCtx, group, target.Name, &vulkan.ConsumerConfig{
+	instance, err := client.Consumer(group, target.Name).Register[labMessage](lifecycleCtx, &vulkan.ConsumerConfig{
 		Bindings:                bindings,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 	})
+
 	must(err)
 	done := make(chan struct{})
 	go func() {
@@ -735,7 +736,7 @@ func startConsumer(ctx context.Context, group string, bindings []string, concurr
 	}
 }
 
-func statusFor(statuses []*schedule.GroupStatus, group string) *schedule.GroupStatus {
+func statusFor(statuses []*schedule.ScheduleGroupSummary, group string) *schedule.ScheduleGroupSummary {
 	for _, status := range statuses {
 		if status.ConsumerGroup == group {
 			return status
@@ -814,7 +815,7 @@ func exec(ctx context.Context, sql string, args ...any) {
 
 // registerSchedule is the handle's Register for the lab's message type,
 // returning the row like admin's reads do.
-func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedule.ScheduleConfig) (*schedule.ScheduleData, error) {
+func registerSchedule(ctx context.Context, name string, expression string, topicName string, payload *labMessage, cfg *schedule.ScheduleConfig) (*schedule.Schedule, error) {
 	instance, err := labScheduler.Register[labMessage](ctx, &schedule.ScheduleSpec{Name: name, Topic: topicName, Cron: expression}, payload, cfg)
 	if err != nil {
 		return nil, err

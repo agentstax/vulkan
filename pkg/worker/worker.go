@@ -27,8 +27,8 @@ func (t InstanceTarget) Validate() error {
 	return fmt.Errorf("must be %d or > 0, got %d", NoInstanceTarget, t)
 }
 
-// WorkerData is one row of the worker_config table.
-type WorkerData struct {
+// Worker is one row of the worker_config table.
+type Worker struct {
 	Id              int64          `json:"id"`
 	Name            string         `json:"worker"`
 	Owner           *common.Owner  `json:"owner"`

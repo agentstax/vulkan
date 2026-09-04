@@ -12,7 +12,7 @@ import (
 
 // GetGroup reads the group's row. Returns (nil, nil), not an error, when
 // the topic or the group isn't registered.
-func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName string) (*consume.GroupData, error) {
+func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName string) (*consume.Group, error) {
 	if groupName == "" {
 		return nil, errors.New("group name is required")
 	}
@@ -26,7 +26,7 @@ func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName
 
 // ListGroups lists the topic's consumer groups, ordered by name.
 // Returns ErrTopicNotFound when the topic isn't registered.
-func (a *MessageAdmin) ListGroups(ctx context.Context, topicName string) ([]*consume.GroupData, error) {
+func (a *MessageAdmin) ListGroups(ctx context.Context, topicName string) ([]*consume.Group, error) {
 	found, err := a.GetTopic(ctx, topicName)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (a *MessageAdmin) ListGroups(ctx context.Context, topicName string) ([]*con
 
 // ListGroupWorkers lists the group's worker rows -- its stored config.
 // Returns ErrTopicNotFound / ErrGroupNotFound when either side is missing.
-func (a *MessageAdmin) ListGroupWorkers(ctx context.Context, topicName string, groupName string) ([]*worker.WorkerData, error) {
+func (a *MessageAdmin) ListGroupWorkers(ctx context.Context, topicName string, groupName string) ([]*worker.Worker, error) {
 	groupOwner, err := a.groupOwner(ctx, topicName, groupName)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (a *MessageAdmin) ListGroupWorkers(ctx context.Context, topicName string, g
 	}
 
 	// ListWorkers walks the whole owner chain -- keep only the group's own rows
-	var workers []*worker.WorkerData
+	var workers []*worker.Worker
 	for _, row := range listed {
 		if row.Owner.ConsumerGroupId == groupOwner.ConsumerGroupId {
 			workers = append(workers, row)

@@ -128,7 +128,7 @@ func runLazyStaleness(ctx context.Context, pool *pgxpool.Pool) ([]rangeEvent, []
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -140,7 +140,7 @@ func runLazyStaleness(ctx context.Context, pool *pgxpool.Pool) ([]rangeEvent, []
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
@@ -207,7 +207,7 @@ func runSyncStaleness(ctx context.Context, pool *pgxpool.Pool) []float64 {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.sync.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -219,7 +219,7 @@ func runSyncStaleness(ctx context.Context, pool *pgxpool.Pool) []float64 {
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
@@ -294,7 +294,7 @@ func timeSequentialCommits(ctx context.Context, pool *pgxpool.Pool, label string
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.fixedcost.%s.%d", label, time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -306,7 +306,7 @@ func timeSequentialCommits(ctx context.Context, pool *pgxpool.Pool, label string
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	seed(ctx, wpInstance, int(n))
@@ -352,7 +352,7 @@ func timeConcurrentCommits(ctx context.Context, pool *pgxpool.Pool, label string
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase10.rolluplab.contention.%s.%d", label, time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -364,7 +364,7 @@ func timeConcurrentCommits(ctx context.Context, pool *pgxpool.Pool, label string
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	seed(ctx, wpInstance, total)
@@ -443,4 +443,4 @@ func die(msg string) {
 	panic(labFailure{message: msg})
 }
 
-func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.Group, err error) int64 { must(err); return g.Id }

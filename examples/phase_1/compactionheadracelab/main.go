@@ -96,13 +96,13 @@ func concurrentRaceScenario(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.race.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	compaction, err := vulkan.NewCompactionOptions(0)
@@ -137,7 +137,7 @@ func scaleCurveScenario(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.scale.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: scalePartitionSize})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: scalePartitionSize})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))

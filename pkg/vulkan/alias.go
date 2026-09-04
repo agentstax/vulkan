@@ -23,19 +23,19 @@ import (
 )
 
 type (
-	Versioned                      = common.Versioned
-	MessageData[Message Versioned] = common.MessageData[Message]
-	MessageOptions                 = common.MessageOptions
-	RetryPolicy                    = common.RetryPolicy
-	ConcurrencyPolicy              = common.ConcurrencyPolicy
-	Owner                          = common.Owner
-	OwnerKind                      = common.OwnerKind
-	Logger                         = logging.Logger
-	DiagnosticError                = diagnostic.DiagnosticError
-	DiagnosticEvent                = diagnostic.DiagnosticEvent
-	DiagnosticQuery                = diagnostic.DiagnosticQuery
-	DiagnosticRecovery             = diagnostic.DiagnosticRecovery
-	DiagnosticKind                 = diagnostic.DiagnosticKind
+	Versioned                  = common.Versioned
+	Message[Payload Versioned] = common.Message[Payload]
+	MessageOptions             = common.MessageOptions
+	RetryPolicy                = common.RetryPolicy
+	ConcurrencyPolicy          = common.ConcurrencyPolicy
+	Owner                      = common.Owner
+	OwnerKind                  = common.OwnerKind
+	Logger                     = logging.Logger
+	DiagnosticError            = diagnostic.DiagnosticError
+	DiagnosticEvent            = diagnostic.DiagnosticEvent
+	DiagnosticQuery            = diagnostic.DiagnosticQuery
+	DiagnosticRecovery         = diagnostic.DiagnosticRecovery
+	DiagnosticKind             = diagnostic.DiagnosticKind
 
 	PostgresDatastore = datastore.PostgresDatastore
 	Querier           = datastore.Querier
@@ -55,51 +55,50 @@ type (
 	ConsumerFunc[Message Versioned] = consumer.ConsumerFunc[Message]
 	CursorPosition                  = consume.CursorPosition
 	CursorPositionKind              = consume.CursorPositionKind
-	GroupData                       = consume.GroupData
+	Group                           = consume.Group
 	BindingDeclaration              = consume.BindingDeclaration
 	BindingOutcome                  = consume.BindingOutcome
 	MessageMeta                     = consume.MessageMeta
 
 	TopicConfig     = topic.TopicConfig
-	TopicData       = topic.TopicData
+	Topic           = topic.Topic
 	DeliveryLogMode = topic.DeliveryLogMode
 
-	ScheduleSpec   = schedule.ScheduleSpec
-	ScheduleConfig = schedule.ScheduleConfig
-	ScheduleData   = schedule.ScheduleData
-	GroupStatus    = schedule.GroupStatus
-	MessageStatus  = schedule.MessageStatus
-	MessageOutcome = schedule.MessageOutcome
-	StoredMessage  = schedule.StoredMessage
+	ScheduleConfig        = schedule.ScheduleConfig
+	Schedule              = schedule.Schedule
+	ScheduleGroupSummary  = schedule.ScheduleGroupSummary
+	ScheduleMessageStatus = schedule.ScheduleMessageStatus
+	MessageOutcome        = schedule.MessageOutcome
+	StoredMessage         = schedule.StoredMessage
 
 	SystemConfig   = system.SystemConfig
-	SystemData     = system.SystemData
-	WorkerData     = worker.WorkerData
+	System         = system.System
+	Worker         = worker.Worker
 	InstanceTarget = worker.InstanceTarget
 
 	DestroyOptions       = admin.DestroyOptions
 	RegisterSystemConfig = admin.RegisterSystemConfig
 	RunScheduleConfig    = admin.RunScheduleConfig
-	VersionHealth        = admin.VersionHealth
+	TopicVersionHealth   = admin.TopicVersionHealth
 
 	PartitionCountJobConfig     = alert.PartitionCountJobConfig
 	CompactionReadCostJobConfig = alert.CompactionReadCostJobConfig
 	WorkerLivenessJobConfig     = alert.WorkerLivenessJobConfig
 
-	TopicSnapshot            = metrics.TopicSnapshot
-	ConsumerGroupSnapshot    = metrics.ConsumerGroupSnapshot
-	SchemaVersionSnapshot    = metrics.SchemaVersionSnapshot
-	GroupSchemaVersionLag    = metrics.GroupSchemaVersionLag
-	GroupLag                 = metrics.GroupLag
-	CursorSnapshot           = metrics.CursorSnapshot
-	ExceptionSnapshot        = metrics.ExceptionSnapshot
-	AbandonedRoutineSnapshot = metrics.AbandonedRoutineSnapshot
-	Measurement              = metrics.Measurement
-	MetricKind               = metrics.MetricKind
-	MetricUnit               = metrics.MetricUnit
-	Alert                    = alert.Alert
-	AlertStatus              = alert.AlertStatus
-	AlertSeverity            = alert.AlertSeverity
+	TopicSnapshot                 = metrics.TopicSnapshot
+	ConsumerGroupSnapshot         = metrics.ConsumerGroupSnapshot
+	TopicSchemaVersionSnapshot    = metrics.TopicSchemaVersionSnapshot
+	ConsumerGroupSchemaVersionLag = metrics.ConsumerGroupSchemaVersionLag
+	ConsumerGroupLag              = metrics.ConsumerGroupLag
+	CursorSnapshot                = metrics.CursorSnapshot
+	ExceptionSnapshot             = metrics.ExceptionSnapshot
+	AbandonedRoutineSnapshot      = metrics.AbandonedRoutineSnapshot
+	Measurement                   = metrics.Measurement
+	MetricKind                    = metrics.MetricKind
+	MetricUnit                    = metrics.MetricUnit
+	Alert                         = alert.Alert
+	AlertStatus                   = alert.AlertStatus
+	AlertSeverity                 = alert.AlertSeverity
 )
 
 const (

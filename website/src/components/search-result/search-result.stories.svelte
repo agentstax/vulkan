@@ -12,7 +12,7 @@
 				{ text: 'the ', marked: false },
 				{ text: 'topic', marked: true },
 				{ text: ' named in the call is not registered — register it with ', marked: false },
-				{ text: 'Client.RegisterTopic', marked: true },
+				{ text: 'Client.Topic(name).Register', marked: true },
 				{ text: ' first.', marked: false },
 			],
 		},

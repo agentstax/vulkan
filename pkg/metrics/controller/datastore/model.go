@@ -65,9 +65,9 @@ type SchemaVersionCountRow struct {
 	CompactionHeads int64 `db:"compaction_heads"`
 }
 
-// GroupSchemaVersionLagRow is one row of GroupSchemaVersionLag's query: a
+// ConsumerGroupSchemaVersionLagRow is one row of ConsumerGroupSchemaVersionLag's query: a
 // group's unread and unresolved rows at one payload version.
-type GroupSchemaVersionLagRow struct {
+type ConsumerGroupSchemaVersionLagRow struct {
 	ConsumerGroup        string `db:"consumer_group"`
 	Unconsumed           int64  `db:"unconsumed"`
 	UnresolvedExceptions int64  `db:"unresolved_exceptions"`

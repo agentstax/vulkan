@@ -61,7 +61,7 @@ func run() (err error) {
 
 	const topicName = "test.producerregister"
 	_ = client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}) // clean slate from any crashed prior run
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -69,7 +69,7 @@ func run() (err error) {
 
 	// ===== Register on Background =====
 	step("Register(context.Background()) -- a build step, no lifetime to enforce")
-	instance, err := client.RegisterProducer[Message](ctx, tp.Name, nil)
+	instance, err := client.Producer(tp.Name).Register[Message](ctx, nil)
 	must(err)
 	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, nil)
 	must(err)
@@ -90,7 +90,7 @@ func run() (err error) {
 
 	// ===== Register many times =====
 	step("Register again -- an independent instance from the same factory")
-	sibling, err := client.RegisterProducer[Message](ctx, tp.Name, nil)
+	sibling, err := client.Producer(tp.Name).Register[Message](ctx, nil)
 	must(err)
 	_, err = sibling.Produce(ctx, &Message{Data: "sibling"}, nil)
 	must(err)

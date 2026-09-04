@@ -48,7 +48,7 @@ func run() (err error) {
 	client, err := vulkan.NewClient(ctx, pool, nil)
 	must(err)
 
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 	fmt.Println("system registered")
 	return nil
 }

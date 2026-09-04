@@ -53,17 +53,17 @@ messages this instance processes at once (`ConsumeOptions`);
 `ConcurrencyOverride` is what a message key means (group config). They
 sound alike and sit on opposite sides of the split.
 
-One rule places everything: the declaration at the `Register*` verb
-on the client, session options at the verb that runs.
-`client.RegisterConsumer[T](ctx, group, topic, cfg)` carries the
-declaration it writes, the way `RegisterTopic` already does.
+One rule places everything: the declaration at the handle's `Register`
+verb, session options at the verb that runs.
+`client.Consumer(group, topic).Register[T](ctx, cfg)` carries the
+declaration it writes, the way `client.Topic(name).Register` already does.
 `ConsumeOptions` mirrors `ProduceOptions`: act verbs take options,
 `nil` for the defaults.
 
 ## Declared at Register, stored on the row
 
 ```go
-payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested",
+payments, err := client.Consumer("charge-cards", "payments.requested").Register[PaymentRequestedV1](ctx,
 	&vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
 			Timeout: 10 * time.Second,
@@ -183,11 +183,11 @@ inventing one would add a second place a message's options come from.
 `Batch`, `SlowProduceThreshold`, `Logger`, and `Retry` are process
 facts. One config struct, nothing declared, no split.
 
-The rungs mirror: `client.RegisterProducer[T](ctx, topic, cfg)` takes
+The rungs mirror: `client.Producer(topic).Register[T](ctx, cfg)` takes
 the config, and `Produce` already had its options.
 
 ```go
-requests, err := client.RegisterProducer[PaymentRequestedV1](ctx, "payments.requested",
+requests, err := client.Producer("payments.requested").Register[PaymentRequestedV1](ctx,
 	&vulkan.ProducerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
 	})
@@ -210,12 +210,12 @@ cross-topic batch to give up.
 
 Nothing moves in what admin declares: each declaring verb already
 takes the resource's config and stores it on the resource's row with
-a `_config_log` trail. `RegisterTopic` is the template this whole page
+a `_config_log` trail. `TopicHandle.Register` is the template this whole page
 copies; where the rest of admin's verbs live is
 [the client page](/guides/client/#admin-resource-by-resource).
 
 ```go
-registered, err := client.RegisterTopic(ctx, "payments.requested", nil)
+registered, err := client.Topic("payments.requested").Register(ctx, nil)
 if err != nil {
 	return err
 }
@@ -234,13 +234,12 @@ declares nothing because it has nothing durable of its own.
 A schedule is already a declared resource done right: `Register`
 takes the config, stores it on the `schedule_config` row, and the
 newest declaration wins. The name, the target topic, and the cron
-expression travel together as one `ScheduleSpec` — three adjacent
-strings is where a swap stops being caught — and the config sits
-beside it.
+expression are selected through one `SchedulerHandle`; the config sits beside
+the target and expression at `Register`.
 
 ```go
-nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx,
-	&vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
+nightly, err := client.Scheduler("nightly-report").Register[ReportRequestedV1](ctx,
+	"reports.requested", "0 3 * * *",
 	&ReportRequestedV1{Kind: "nightly"}, &vulkan.ScheduleConfig{
 		Timeout:     time.Minute,
 		Concurrency: vulkan.ConcurrencyExclusive,
@@ -252,11 +251,11 @@ if err != nil {
 return nightly.Schedule(ctx)
 ```
 
-`ScheduleConfig` keeps its name and is handed to `RegisterSchedule`:
+`ScheduleConfig` keeps its name and is handed to `SchedulerHandle.Register`:
 `Timeout`, `Concurrency`, and `Metadata` are the schedule's declared
 semantics and land on the row with the expression and payload; the
 old `SchedulerConfig` was ambient only and dissolves into
-`ClientConfig`. `Schedule` is unchanged — it runs the system manager,
+`ClientConfig`. `SchedulerInstance.Schedule` runs the system manager,
 which produces every registered schedule — and takes no options: a
 schedule session has no tuning of its own.
 
@@ -266,15 +265,15 @@ a redeclared expression leaves no history. Open whether it earns one.
 
 ## The manager's version
 
-Nothing moves here either. The manager spans the whole deployment, so
-`client.RunManager` takes no identity, and its config is the client's
+The manager spans the whole deployment, so `client.Manager()` takes no
+identity, and its config is the client's
 `Logger` and `Retry` — every knob its workers actually run under is a
 declared `metadata` document on a `worker_config` row, read from the
 fleet at provision. The manager owns no config because the fleet
 already declares it — the same ecosystem the group config joins.
 
 ```go
-return client.RunManager(ctx)
+return client.Manager().Run(ctx)
 ```
 
 The full ladder, then: the client holds the ambient config once; every
@@ -289,5 +288,5 @@ resolves to the library default -> its first `Register` on a build
 carrying the split writes the group's first declaration. The tuning
 fields moved off `ConsumerConfig` to `ConsumeOptions` at `Consume`, and
 `ConsumerConfig` itself moved from `NewConsumer` to
-`client.RegisterConsumer` — old call sites break at compile time, and
+`client.Consumer(group, topic).Register` — old call sites break at compile time, and
 the group fields kept their meaning.

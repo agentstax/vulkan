@@ -48,7 +48,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
-			topics, err := client.ListTopics(ctx)
+			topics, err := client.Topics(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

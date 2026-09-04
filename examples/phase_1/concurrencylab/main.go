@@ -74,13 +74,13 @@ func run() (err error) {
 	must(err)
 
 	topicName := fmt.Sprintf("phase14a.concurrencylab.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	runOrdering(ctx, client, wpInstance, tp.Name)
@@ -122,9 +122,10 @@ func runOrdering(ctx context.Context, client *vulkan.Client, wpInstance *vulkan.
 // claim -- batchLimit must cover it) at the given pool size, returning the
 // slow message's completion offset from start and each fast message's.
 func drain(ctx context.Context, client *vulkan.Client, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
-	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, &vulkan.ConsumerConfig{
+	wcInstance, err := client.Consumer(group, topicName).Register[common.Work](ctx, &vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
 	})
+
 	must(err)
 
 	options := &vulkan.ConsumeOptions{
@@ -200,9 +201,10 @@ func runThroughput(ctx context.Context, client *vulkan.Client, wpInstance *vulka
 }
 
 func drainTimed(ctx context.Context, client *vulkan.Client, topicName, group string, poolSize, target int) time.Duration {
-	wcInstance, err := client.RegisterConsumer[common.Work](ctx, group, topicName, &vulkan.ConsumerConfig{
+	wcInstance, err := client.Consumer(group, topicName).Register[common.Work](ctx, &vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
 	})
+
 	must(err)
 
 	options := &vulkan.ConsumeOptions{

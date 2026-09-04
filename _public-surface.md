@@ -130,8 +130,8 @@ Configs (`WithDefaults` · `Validate`):
 Types:
 - `maintain.Duty`
 - `maintain.DutyConstructor`
-- `admin.VersionHealth`
-- `admin.GroupLag`
+- `admin.TopicVersionHealth`
+- `admin.ConsumerGroupLag`
 - `admin.DestroyOptions`
 
 Errors:

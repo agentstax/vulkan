@@ -57,7 +57,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	name := fmt.Sprintf("listgroupslab.orders.%d", run)
-	registered, err := client.RegisterTopic(ctx, name, nil)
+	registered, err := client.Topic(name).Register(ctx, nil)
 	must(err)
 
 	groupController, err := consumecontroller.NewConsumeController(ds, nil)
@@ -69,9 +69,9 @@ func run() (err error) {
 		must(err)
 	}
 
-	step("Topic.ListGroups returns both, ordered by name")
+	step("TopicHandle.Groups returns both, ordered by name")
 	orders := client.Topic(name)
-	groups, err := orders.ListGroups(ctx)
+	groups, err := orders.Groups(ctx)
 	must(err)
 	if len(groups) != 2 {
 		die(fmt.Sprintf("expected 2 groups, got %d", len(groups)))
@@ -100,11 +100,11 @@ func run() (err error) {
 	if row != nil {
 		die(fmt.Sprintf("expected (nil, nil) for an unregistered topic, got %+v", row))
 	}
-	_, err = ghostTopic.ListGroups(ctx)
+	_, err = ghostTopic.Groups(ctx)
 	if !errors.Is(err, topic.ErrTopicNotFound) {
-		die(fmt.Sprintf("ListGroups on an unregistered topic: expected ErrTopicNotFound, got %v", err))
+		die(fmt.Sprintf("Groups on an unregistered topic: expected ErrTopicNotFound, got %v", err))
 	}
-	fmt.Printf("  ✓ ListGroups on an unregistered topic -> %v\n", err)
+	fmt.Printf("  ✓ Groups on an unregistered topic -> %v\n", err)
 
 	step("cleanup: Topic.Destroy drops the family")
 	must(orders.Destroy(ctx, &vulkan.DestroyOptions{Force: true}))

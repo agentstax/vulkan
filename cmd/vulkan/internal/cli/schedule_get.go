@@ -45,7 +45,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			row, err := client.Schedule(name).Get(ctx)
+			row, err := client.Scheduler(name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -56,19 +56,19 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 					return failPrinted()
 				}
 
-				statuses, err := client.Schedule(name).Status(ctx)
+				statuses, err := client.Scheduler(name).Status(ctx)
 				if err != nil {
 					return translateAdminError(err)
 				}
 
-				var listed []*schedule.MessageStatus
+				var listed []*schedule.ScheduleMessageStatus
 				if messages {
-					listed, err = client.Schedule(name).ListMessages(ctx, limit)
+					listed, err = client.Scheduler(name).ListMessages(ctx, limit)
 					if err != nil {
 						return translateAdminError(err)
 					}
 					if listed == nil {
-						listed = make([]*schedule.MessageStatus, 0)
+						listed = make([]*schedule.ScheduleMessageStatus, 0)
 					}
 				}
 
@@ -90,7 +90,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 				return failPrinted()
 			}
 
-			statuses, err := client.Schedule(name).Status(ctx)
+			statuses, err := client.Scheduler(name).Status(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -100,7 +100,7 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 			printScheduleStatuses(out, statuses)
 
 			if messages {
-				listed, err := client.Schedule(name).ListMessages(ctx, limit)
+				listed, err := client.Scheduler(name).ListMessages(ctx, limit)
 				if err != nil {
 					return translateAdminError(err)
 				}
@@ -137,14 +137,14 @@ type scheduleDocument struct {
 // scheduleGetDocument is schedule get's json result; the not-found case is data
 // (exists false, schedule null), the exit code stays 1.
 type scheduleGetDocument struct {
-	Schedule string                    `json:"schedule"`
-	Exists   bool                      `json:"exists"`
-	Job      *scheduleDocument         `json:"row"`
-	Groups   []*schedule.GroupStatus   `json:"groups"`
-	Messages []*schedule.MessageStatus `json:"messages"` // null unless --messages
+	Schedule string                            `json:"schedule"`
+	Exists   bool                              `json:"exists"`
+	Job      *scheduleDocument                 `json:"row"`
+	Groups   []*schedule.ScheduleGroupSummary  `json:"groups"`
+	Messages []*schedule.ScheduleMessageStatus `json:"messages"` // null unless --messages
 }
 
-func toScheduleDocument(row *schedule.ScheduleData) scheduleDocument {
+func toScheduleDocument(row *schedule.Schedule) scheduleDocument {
 	return scheduleDocument{
 		ScheduleId:      row.Id,
 		SystemId:        row.SystemId,
@@ -161,7 +161,7 @@ func toScheduleDocument(row *schedule.ScheduleData) scheduleDocument {
 	}
 }
 
-func toScheduleDocuments(schedules []*schedule.ScheduleData) []scheduleDocument {
+func toScheduleDocuments(schedules []*schedule.Schedule) []scheduleDocument {
 	documents := make([]scheduleDocument, 0, len(schedules))
 	for _, row := range schedules {
 		documents = append(documents, toScheduleDocument(row))
@@ -169,11 +169,11 @@ func toScheduleDocuments(schedules []*schedule.ScheduleData) []scheduleDocument 
 	return documents
 }
 
-func toScheduleGetDocument(name string, row *schedule.ScheduleData, groups []*schedule.GroupStatus, messages []*schedule.MessageStatus) scheduleGetDocument {
+func toScheduleGetDocument(name string, row *schedule.Schedule, groups []*schedule.ScheduleGroupSummary, messages []*schedule.ScheduleMessageStatus) scheduleGetDocument {
 	document := scheduleGetDocument{
 		Schedule: name,
 		Exists:   row != nil,
-		Groups:   make([]*schedule.GroupStatus, 0, len(groups)),
+		Groups:   make([]*schedule.ScheduleGroupSummary, 0, len(groups)),
 		Messages: messages,
 	}
 	document.Groups = append(document.Groups, groups...)
@@ -185,7 +185,7 @@ func toScheduleGetDocument(name string, row *schedule.ScheduleData, groups []*sc
 	return document
 }
 
-func printScheduleDetail(w io.Writer, row *schedule.ScheduleData) {
+func printScheduleDetail(w io.Writer, row *schedule.Schedule) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintf(tw, "  Schedule\t%s\n", row.Expression)
 	fmt.Fprintf(tw, "  Concurrency\t%s\n", row.Concurrency)
@@ -201,7 +201,7 @@ func printScheduleDetail(w io.Writer, row *schedule.ScheduleData) {
 
 // printScheduleStatuses is one line per consumer group whose binding matches
 // the schedule's name -- message outcomes over the target topic's retention window.
-func printScheduleStatuses(w io.Writer, statuses []*schedule.GroupStatus) {
+func printScheduleStatuses(w io.Writer, statuses []*schedule.ScheduleGroupSummary) {
 	fmt.Fprintln(w)
 	if len(statuses) == 0 {
 		fmt.Fprintln(w, "  no consumer group is bound to this row's name")
@@ -218,7 +218,7 @@ func printScheduleStatuses(w io.Writer, statuses []*schedule.GroupStatus) {
 
 // printScheduleMessages is one line per (message, consumer group), newest
 // message first -- messages older than the retention window are gone.
-func printScheduleMessages(w io.Writer, statuses []*schedule.MessageStatus) {
+func printScheduleMessages(w io.Writer, statuses []*schedule.ScheduleMessageStatus) {
 	fmt.Fprintln(w)
 	if len(statuses) == 0 {
 		fmt.Fprintln(w, "  no messages in the retention window")
@@ -238,7 +238,7 @@ func printScheduleMessages(w io.Writer, statuses []*schedule.MessageStatus) {
 
 // messageOutcomeCell names the replacing message inline, where the reader is
 // already looking for it.
-func messageOutcomeCell(status *schedule.MessageStatus) string {
+func messageOutcomeCell(status *schedule.ScheduleMessageStatus) string {
 	if status.Outcome == schedule.MessageSuperseded && status.SupersededBy != nil {
 		return fmt.Sprintf("superseded by %d at %s", *status.SupersededBy, timeCell(*status.SupersededAt))
 	}
@@ -247,7 +247,7 @@ func messageOutcomeCell(status *schedule.MessageStatus) string {
 
 // scheduleNextCell - a suspended schedule's next_scheduled_at is stale by design
 // (unsuspend re-seeds it), so show the state instead of a misleading time.
-func scheduleNextCell(row *schedule.ScheduleData) string {
+func scheduleNextCell(row *schedule.Schedule) string {
 	if row.Suspended {
 		return "suspended"
 	}
@@ -255,7 +255,7 @@ func scheduleNextCell(row *schedule.ScheduleData) string {
 }
 
 // scheduleLastCell - NULL until the scheduler first produces this schedule.
-func scheduleLastCell(row *schedule.ScheduleData) string {
+func scheduleLastCell(row *schedule.Schedule) string {
 	if row.LastScheduledAt == nil {
 		return "never"
 	}

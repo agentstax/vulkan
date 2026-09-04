@@ -5,7 +5,8 @@
 // other.
 //
 // Concepts held before domain code (12): the 7 from scenario 03, plus
-// RegisterSchedule[T], ScheduleSpec, the Schedule handle and its Schedule
+// RegisterSchedule[T], ScheduleSpec, the Scheduler handle and the returned
+// SchedulerInstance's Schedule
 // verb, vulkan.MetaFromContext for the scheduled time, and the fact that
 // Schedule runs the system manager.
 //
@@ -55,17 +56,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	invoices, err := client.RegisterTopic(ctx, "invoices", nil)
+	invoices, err := client.Topic("invoices").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	nightly, err := client.RegisterSchedule[InvoiceRun](ctx, &vulkan.ScheduleSpec{Name: "invoices.nightly", Topic: invoices.Name, Cron: "0 2 * * *"}, &InvoiceRun{Region: "eu"}, nil)
+	nightly, err := client.Scheduler("invoices.nightly").Register[InvoiceRun](ctx, invoices.Name, "0 2 * * *", &InvoiceRun{Region: "eu"}, nil)
 	if err != nil {
 		return err
 	}
 
-	runs, err := client.RegisterConsumer[InvoiceRun](ctx, "invoice-runner", invoices.Name, nil)
+	runs, err := client.Consumer("invoice-runner", invoices.Name).Register[InvoiceRun](ctx, nil)
 	if err != nil {
 		return err
 	}

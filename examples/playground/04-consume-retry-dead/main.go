@@ -62,12 +62,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested", &vulkan.ConsumerConfig{
+	payments, err := client.Consumer("charge-cards", "payments.requested").Register[PaymentRequestedV1](ctx, &vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
 			Timeout: 10 * time.Second,
 			Retry:   &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
 		},
 	})
+
 	if err != nil {
 		return err
 	}

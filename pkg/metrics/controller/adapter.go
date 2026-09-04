@@ -136,16 +136,16 @@ func toAbandonedRoutineSnapshot(abandoned []datastore.EventTimestampRow, cleared
 	return &snapshot
 }
 
-func toSchemaVersionSnapshot(count *datastore.SchemaVersionCountRow, lags []datastore.GroupSchemaVersionLagRow) metrics.SchemaVersionSnapshot {
-	groups := make([]metrics.GroupSchemaVersionLag, 0, len(lags))
+func toTopicSchemaVersionSnapshot(count *datastore.SchemaVersionCountRow, lags []datastore.ConsumerGroupSchemaVersionLagRow) metrics.TopicSchemaVersionSnapshot {
+	groups := make([]metrics.ConsumerGroupSchemaVersionLag, 0, len(lags))
 	for _, lag := range lags {
-		groups = append(groups, metrics.GroupSchemaVersionLag{
+		groups = append(groups, metrics.ConsumerGroupSchemaVersionLag{
 			ConsumerGroup:        lag.ConsumerGroup,
 			Unconsumed:           lag.Unconsumed,
 			UnresolvedExceptions: lag.UnresolvedExceptions,
 		})
 	}
-	return metrics.SchemaVersionSnapshot{
+	return metrics.TopicSchemaVersionSnapshot{
 		Version:         int(count.SchemaVersion),
 		Messages:        count.Messages,
 		CompactionHeads: count.CompactionHeads,

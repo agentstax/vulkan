@@ -17,8 +17,8 @@ type InvoiceRun struct {
 
 func (InvoiceRun) SchemaVersion() int { return 1 }
 
-nightly, err := client.RegisterSchedule[InvoiceRun](ctx,
-	&vulkan.ScheduleSpec{Name: "invoices.nightly", Topic: "invoices", Cron: "0 2 * * *"},
+nightly, err := client.Scheduler("invoices.nightly").Register[InvoiceRun](ctx,
+	"invoices", "0 2 * * *",
 	&InvoiceRun{Region: "eu"}, nil)
 if err != nil {
 	return err
@@ -30,8 +30,7 @@ return nightly.Schedule(ctx)
 And in whichever service does the invoicing, nothing about cron:
 
 ```go
-invoices, err := client.RegisterConsumer[InvoiceRun](ctx, "invoice-runner",
-	"invoices", nil)
+invoices, err := client.Consumer("invoice-runner", "invoices").Register[InvoiceRun](ctx, nil)
 if err != nil {
 	return err
 }
@@ -47,8 +46,9 @@ This is the same shape as the other two register verbs: declare a named
 resource on the client, run what comes back. For a producer -
 `RegisterProducer` resolves the topic and `Produce` writes. For a
 consumer - `RegisterConsumer` declares the group and `Consume` runs it.
-For a schedule - `RegisterSchedule` declares it and the handle's
-`Schedule` keeps the system producing it.
+For a schedule - `RegisterSchedule` declares it and returns a
+`SchedulerInstance`; its `Schedule` keeps the system producing it. The
+`Scheduler` handle administers the stored schedule.
 
 ## What Register stores
 
@@ -78,17 +78,17 @@ The payload is the same document every time. A handler that needs to
 know which scheduled time a message is for reads `meta.ScheduledAt`;
 it is not in the payload because the payload never changes.
 
-## What Schedule does
+## What SchedulerInstance.Schedule does
 
-`Schedule` runs the system manager, the same thing `vulkan manager
+`SchedulerInstance.Schedule` runs the system manager, the same thing `vulkan manager
 run` does. The schedule producer is a system worker; it is what
 actually produces, and it produces every registered schedule, not just
-the one whose instance called `Schedule`. So `Schedule` exists for one
+the one whose instance called `Schedule`. So `SchedulerInstance.Schedule` exists for one
 reason: a program that registers a schedule and exits has registered
 one that never fires unless a manager is running somewhere. Calling
-`Schedule` makes the registering program that somewhere — and so does
+`SchedulerInstance.Schedule` makes the registering program that somewhere — and so does
 any `Consume` in the deployment, since a consumer runs the manager
-too. `Schedule` is one more caller of it, and the manager row's
+too. `SchedulerInstance.Schedule` is one more caller of it, and the manager row's
 `target_instances` decides which caller holds the claim.
 
 The produce itself is what a hand-written producer would do, in one
@@ -139,7 +139,7 @@ one noun on both:
 
 | client | CLI | what it does |
 | --- | --- | --- |
-| `Schedule(name).Run` | `vulkan schedule run` | produces one message now, off-schedule, from the stored payload |
+| `Scheduler(name).Run` | `vulkan schedule run` | produces one message now, off-schedule, from the stored payload |
 | `Suspend` / `Unsuspend` | `vulkan schedule suspend` / `unsuspend` | stops and resumes the schedule; a time that came due while suspended is dropped |
 | `Status`, `ListMessages` | `vulkan schedule get` / `get --messages` | per-group outcomes, read from the target topic's `delivery_log` by message key; a `succeeded` count needs the target topic's `DeliveryLogMode: all` (the default keeps failures only) - `Register` warns [VK0058](/errors/VK0058) when it isn't |
 | `Destroy` | `vulkan schedule destroy` | deletes the row; gated by `AllowDestroy` |

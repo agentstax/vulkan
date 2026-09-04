@@ -20,7 +20,7 @@ import (
 // shares state with a predecessor still draining.
 type BaseConsumer[Message common.Versioned] struct {
 	Owner         *common.Owner
-	Topic         *topic.TopicData
+	Topic         *topic.Topic
 	SchemaVersion int
 	Config        *BaseConsumerConfig
 	Logger        logging.Logger
@@ -34,7 +34,7 @@ type BaseConsumer[Message common.Versioned] struct {
 // resolvedTopic comes from BaseProvisioner.GetTopic. cfg may be nil or a
 // sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func NewBaseConsumer[Message common.Versioned](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, resolvedTopic *topic.TopicData, cfg *BaseConsumerConfig) (*BaseConsumer[Message], error) {
+func NewBaseConsumer[Message common.Versioned](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, resolvedTopic *topic.Topic, cfg *BaseConsumerConfig) (*BaseConsumer[Message], error) {
 	if baseProvisioner == nil {
 		return nil, errors.New("provisioner base must not be nil")
 	}

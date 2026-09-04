@@ -51,11 +51,11 @@ var (
 	registerClient *vulkan.Client
 	capture        *captureLogger
 
-	schedulesTopic *topic.TopicData
-	alertsTopic    *topic.TopicData
+	schedulesTopic *topic.Topic
+	alertsTopic    *topic.Topic
 	prefix         string
 
-	labTopic      *topic.TopicData
+	labTopic      *topic.Topic
 	labTopicOwner *common.Owner
 	labGroupName  string
 
@@ -99,7 +99,7 @@ func run() (err error) {
 	client, err = vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds = client.Datastore()
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 
 	capture = newCaptureLogger()
 	registerClient, err = vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{Logger: capture})
@@ -118,7 +118,7 @@ func run() (err error) {
 
 	prefix = fmt.Sprintf("workerlivenesslab.%d", time.Now().UnixNano())
 	labGroupName = prefix + ".group"
-	labTopic, err = client.RegisterTopic(ctx, prefix+".topic", nil)
+	labTopic, err = client.Topic(prefix+".topic").Register(ctx, nil)
 	must(err)
 	labTopicOwner, err = common.NewTopicOwner(labTopic.SystemId, labTopic.Id, labTopic.Name)
 	must(err)
@@ -127,7 +127,7 @@ func run() (err error) {
 	// only the lab's run-nows produce job requests (a suspended job still
 	// runs on run-now)
 	for _, jobName := range []string{partitioncount.JobName, compactionreadcost.JobName, workerliveness.JobName} {
-		must(client.Schedule(jobName).Suspend(ctx))
+		must(client.Scheduler(jobName).Suspend(ctx))
 	}
 
 	registerSection(ctx)
@@ -143,7 +143,7 @@ func registerSection(ctx context.Context) {
 	step("register-time: produce-only warns VK0063, a running consumer silences it")
 
 	// a fresh topic's only worker row is its janitor, and nothing has claimed it
-	_, err := registerClient.RegisterProducer[labMessage](ctx, labTopic.Name, nil)
+	_, err := registerClient.Producer(labTopic.Name).Register[labMessage](ctx, nil)
 	must(err)
 	lines := capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name)
 	if len(lines) != 1 {
@@ -159,7 +159,7 @@ func registerSection(ctx context.Context) {
 	waitUnclaimed(ctx, 0)
 
 	before := len(capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name))
-	_, err = registerClient.RegisterProducer[labMessage](ctx, labTopic.Name, nil)
+	_, err = registerClient.Producer(labTopic.Name).Register[labMessage](ctx, nil)
 	must(err)
 	if got := len(capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name)); got != before {
 		die(fmt.Sprintf("Register under a live consumer must be silent, got %d lines after %d", got, before))
@@ -177,7 +177,7 @@ func scheduledSection(ctx context.Context) {
 	stopExecutor := startExecutor(ctx)
 	defer stopExecutor()
 
-	activeRun, err := client.Schedule(workerliveness.JobName).Run(ctx, nil)
+	activeRun, err := client.Scheduler(workerliveness.JobName).Run(ctx, nil)
 	must(err)
 	waitDelivered(ctx, activeRun.Id, "success")
 
@@ -200,7 +200,7 @@ func scheduledSection(ctx context.Context) {
 	defer stopConsumer()
 	waitUnclaimed(ctx, 0)
 
-	resolveRun, err := client.Schedule(workerliveness.JobName).Run(ctx, nil)
+	resolveRun, err := client.Scheduler(workerliveness.JobName).Run(ctx, nil)
 	must(err)
 	waitDelivered(ctx, resolveRun.Id, "success")
 	if got := headStatus(ctx, key); got != string(alert.AlertStatusResolved) {
@@ -214,7 +214,7 @@ func scheduledSection(ctx context.Context) {
 // startConsumer runs a consumer on the lab topic until the returned stop is
 // called; its manager claims every worker row the topic owns.
 func startConsumer(ctx context.Context) func() {
-	instance, err := client.RegisterConsumer[labMessage](ctx, labGroupName, labTopic.Name, nil)
+	instance, err := client.Consumer(labGroupName, labTopic.Name).Register[labMessage](ctx, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -270,7 +270,7 @@ func cleanup() {
 	ctx := context.Background()
 
 	for _, jobName := range []string{partitioncount.JobName, compactionreadcost.JobName, workerliveness.JobName} {
-		must(client.Schedule(jobName).Unsuspend(ctx))
+		must(client.Scheduler(jobName).Unsuspend(ctx))
 	}
 
 	// the check evaluates every topic, so a run leaves a head on each one --
@@ -309,7 +309,7 @@ func waitUnclaimed(ctx context.Context, want int64) {
 // listedAlert is the lab topic's worker_liveness alert as ListAlerts reads
 // it, nil when the topic has none.
 func listedAlert(ctx context.Context) *alert.Alert {
-	heads, err := client.ListAlerts(ctx)
+	heads, err := client.System().Alerts(ctx)
 	must(err)
 	for _, head := range heads {
 		found := head.Message

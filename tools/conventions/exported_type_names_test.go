@@ -1,9 +1,8 @@
 package conventions
 
-// Walks every type declaration in the datastore packages under pkg/ and
-// refuses names ending in "Data": scan structs are named for the table they
-// scan plus "Row" (CONVENTIONS.md ## Package layout), and the "Data" suffix
-// belongs to the public read-models.
+// Walks every exported type declaration under pkg/ and refuses the
+// representation-only "Data" and "Info" suffixes. Public type suffixes name
+// semantic roles (CONVENTIONS.md ## Naming & terminology).
 
 import (
 	"go/ast"
@@ -16,7 +15,7 @@ import (
 	"testing"
 )
 
-func TestDatastoreTypeNamesNeverEndInData(t *testing.T) {
+func TestExportedTypeNamesUseSemanticRoles(t *testing.T) {
 	root := repoRoot(t)
 
 	err := filepath.WalkDir(filepath.Join(root, "pkg"), func(path string, entry fs.DirEntry, walkErr error) error {
@@ -26,10 +25,6 @@ func TestDatastoreTypeNamesNeverEndInData(t *testing.T) {
 		if entry.IsDir() || !strings.HasSuffix(path, ".go") {
 			return nil
 		}
-		if !strings.Contains(filepath.ToSlash(path), "/datastore/") {
-			return nil
-		}
-
 		fileSet := token.NewFileSet()
 		parsed, err := parser.ParseFile(fileSet, path, nil, 0)
 		if err != nil {
@@ -37,7 +32,10 @@ func TestDatastoreTypeNamesNeverEndInData(t *testing.T) {
 		}
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			spec, ok := node.(*ast.TypeSpec)
-			if !ok || !strings.HasSuffix(spec.Name.Name, "Data") {
+			if !ok || !ast.IsExported(spec.Name.Name) {
+				return true
+			}
+			if !strings.HasSuffix(spec.Name.Name, "Data") && !strings.HasSuffix(spec.Name.Name, "Info") {
 				return true
 			}
 			relative, err := filepath.Rel(root, path)
@@ -45,7 +43,7 @@ func TestDatastoreTypeNamesNeverEndInData(t *testing.T) {
 				relative = path
 			}
 			position := relative + ":" + strconv.Itoa(fileSet.Position(spec.Pos()).Line)
-			t.Errorf("%s declares type %s -- name a datastore scan struct for the table it scans plus Row", position, spec.Name.Name)
+			t.Errorf("%s declares type %s -- exported type suffixes name semantic roles; Data and Info do not", position, spec.Name.Name)
 			return true
 		})
 		return nil

@@ -244,7 +244,7 @@ func (i *MetricsCollectorInstance) collectTopics(ctx context.Context) error {
 	return group.Wait()
 }
 
-func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *topic.TopicData) error {
+func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *topic.Topic) error {
 	snapshot, err := i.metrics.TopicSnapshot(ctx, current.Id)
 	if err != nil {
 		return err

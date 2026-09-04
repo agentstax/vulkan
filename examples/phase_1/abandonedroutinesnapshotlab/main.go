@@ -50,7 +50,7 @@ func run() (err error) {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds := client.Datastore()
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 
 	metricsController, err := metricscontroller.NewMetricsController(ds, nil)
 	must(err)

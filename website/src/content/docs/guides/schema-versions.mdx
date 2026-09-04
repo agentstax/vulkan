@@ -18,7 +18,7 @@ type OrderPlacedV2 struct {
 
 func (OrderPlacedV2) SchemaVersion() int { return 2 }
 
-instance, err := client.RegisterProducer[OrderPlacedV2](ctx, "orders.placed", nil)
+instance, err := client.Producer("orders.placed").Register[OrderPlacedV2](ctx, nil)
 must(err)
 ```
 
@@ -48,7 +48,7 @@ One topic, one log, one id space, rows of any version interleaved.
 ## A group reads its own version and steps over the rest
 
 ```go
-instance, err := client.RegisterConsumer[OrderPlacedV2](ctx, "fraud-scoring", "orders.placed", nil)
+instance, err := client.Consumer("fraud-scoring", "orders.placed").Register[OrderPlacedV2](ctx, nil)
 must(err)
 ```
 

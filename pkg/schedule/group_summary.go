@@ -1,8 +1,8 @@
 package schedule
 
-// GroupStatus is one consumer group's outcomes for one schedule's messages,
+// ScheduleGroupSummary is one consumer group's outcomes for one schedule's messages,
 // derived from the target topic's delivery log.
-type GroupStatus struct {
+type ScheduleGroupSummary struct {
 	ConsumerGroup string `json:"group"`
 
 	// Ran - messages the group ran at least once.

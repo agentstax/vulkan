@@ -52,7 +52,7 @@ func run() (err error) {
 	must(err)
 
 	step("RegisterSystem creates __system.metrics idempotently")
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 	metricsTopic, err := client.Topic(metrics.TopicName).Get(ctx)
 	must(err)
 	if metricsTopic == nil {
@@ -62,14 +62,14 @@ func run() (err error) {
 		metricsTopic.Id, metricsTopic.RetentionTTL, metricsTopic.PartitionSize, metricsTopic.DeliveryLogMode)
 
 	step("RegisterTopic rejects a user name under the reserved prefix")
-	_, err = client.RegisterTopic(ctx, common.SystemTopicPrefix+"evil", nil)
+	_, err = client.Topic(common.SystemTopicPrefix+"evil").Register(ctx, nil)
 	assertReserved("RegisterTopic(__system.evil)", err)
 
 	step("RenameTopic refused both directions")
 	_, err = client.Topic(metrics.TopicName).Rename(ctx, fmt.Sprintf("reservedtopiclab.stolen.%d", run))
 	assertReserved("RenameTopic(__system.metrics -> user name)", err)
 
-	userTopic, err := client.RegisterTopic(ctx, fmt.Sprintf("reservedtopiclab.user.%d", run), nil)
+	userTopic, err := client.Topic(fmt.Sprintf("reservedtopiclab.user.%d", run)).Register(ctx, nil)
 	must(err)
 	_, err = client.Topic(userTopic.Name).Rename(ctx, common.SystemTopicPrefix+"evil")
 	assertReserved("RenameTopic(user name -> __system.evil)", err)
@@ -80,7 +80,7 @@ func run() (err error) {
 	assertReserved("DestroyTopic(__system.metrics)", err)
 
 	step("re-running RegisterSystem keeps the same row and re-declares its config")
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 	afterRerun, err := client.Topic(metrics.TopicName).Get(ctx)
 	must(err)
 	assertInt64("topic id unchanged across re-run", afterRerun.Id, metricsTopic.Id)

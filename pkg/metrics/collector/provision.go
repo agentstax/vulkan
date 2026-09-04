@@ -18,7 +18,7 @@ func (d *MetricsCollectorProvisioner) Declare(ctx context.Context, owner *common
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *MetricsCollectorProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
+func (d *MetricsCollectorProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	parsed, err := controller.ParseMetadata[metricsCollectorMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err

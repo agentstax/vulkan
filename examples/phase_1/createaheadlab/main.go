@@ -140,17 +140,17 @@ func inTxScenario(ctx context.Context, pool *pgxpool.Pool) {
 
 // ---- helpers ----
 
-func register(ctx context.Context, pool *pgxpool.Pool, scenario string) (*vulkan.Client, *vulkan.TopicData, *vulkan.ProducerInstance[common.Work], *WarnCounter, func()) {
+func register(ctx context.Context, pool *pgxpool.Pool, scenario string) (*vulkan.Client, *vulkan.Topic, *vulkan.ProducerInstance[common.Work], *WarnCounter, func()) {
 	warns, err := NewWarnCounter(logging.NewDefaultLogger(os.Stdout))
 	must(err)
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true, Logger: warns})
 	must(err)
 
 	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	cleanup := func() {

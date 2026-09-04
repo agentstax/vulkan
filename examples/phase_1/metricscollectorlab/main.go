@@ -108,7 +108,7 @@ func run() (err error) {
 	}
 	for t := range topicCount {
 		name := fmt.Sprintf("metricscollectorlab.%d.%d", run, t)
-		registered, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{})
+		registered, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{})
 		must(err)
 		topicNames = append(topicNames, name)
 		defer func() {
@@ -120,7 +120,7 @@ func run() (err error) {
 			must(err)
 		}
 
-		instance, err := client.RegisterProducer[common.Work](ctx, name, nil)
+		instance, err := client.Producer(name).Register[common.Work](ctx, nil)
 		must(err)
 		for range messagesPerTopic {
 			work, err := common.NewWork(30, "admin@example.com")
@@ -190,9 +190,9 @@ func run() (err error) {
 			}
 		}
 	}
-	var heads []*vulkan.MessageData[metrics.Measurement]
+	var heads []*vulkan.Message[metrics.Measurement]
 	must(waitFor(30*time.Second, func() (bool, error) {
-		heads, err = client.ListMeasurements(ctx)
+		heads, err = client.System().Measurements(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -235,11 +235,12 @@ func run() (err error) {
 		messagesPerTopic, messagesPerTopic, topicCount*groupsPerTopic)
 
 	step("history accumulates under the head -- one row per collection pass")
-	historyKey := metrics.MeasurementKey(metrics.MetricCursorBacklog, map[string]string{
+	historyAttributes := map[string]string{
 		"group": groupNames[0], "topic": topicNames[0],
-	})
+	}
+	historySeries := client.System().Measurement(metrics.MetricCursorBacklog, historyAttributes)
 	must(waitFor(10*time.Second, func() (bool, error) {
-		history, err := client.ListMeasurementMessages(ctx, historyKey, 10)
+		history, err := historySeries.Messages(ctx, 10)
 		if err != nil {
 			return false, err
 		}

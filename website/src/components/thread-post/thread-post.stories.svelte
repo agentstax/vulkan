@@ -51,7 +51,7 @@
 	{#snippet template(args)}
 		{@const { children: _children, ...storyProps } = args}
 		<ThreadPost {...storyProps}>
-			<p><strong>register it with Client.RegisterTopic first</strong></p>
+			<p><strong>register it with Client.Topic(name).Register first</strong></p>
 		</ThreadPost>
 	{/snippet}
 </Story>

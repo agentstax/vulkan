@@ -21,6 +21,12 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
+- **Register returns what you run, the client holds the assemblers** --
+  in flight in TODO.md: RegisterSchedule returns a SchedulerInstance like
+  its siblings, and ConsumerConfig / ProducerConfig split into the
+  assembler's `{Logger, Retry}` plus the declaration the Register verb
+  takes (consume.GroupConfig, producer.ProducerInstanceConfig), restoring
+  [0625]'s ambient-held-once clause.
 - **Step 3 -- the public-API review**, resumed where the playground
   gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
   HISTORY). The catalog (`examples/playground/`) is the measuring
@@ -216,9 +222,9 @@ documentation; the latter want a surface that has stopped moving.
   overwrite as a Warn and the value bought is reporting only — an API
   for what the log says. One thing to settle before it is worth
   building: where a schedule's outcome would live, since
-  `client.RegisterSchedule` returns the handle and a handle is not the
-  product of one call. The handle cannot carry it; the options are
-  returning `*SchedulerInstance` with the client's `SystemManager`
+  `client.Scheduler(name).Register` returns an instance, so the outcome can
+  live on that product of one call. The option is returning
+  `*SchedulerInstance` with the client's `SystemManager`
   passed in (a `Schedule` call builds a manager per call, which
   scheduleconcurrencylab covers -- rival loops are no longer the
   objection, since the row's claim gate arbitrates them) or dropping

@@ -20,7 +20,7 @@ func (d *ManagerProvisioner) Declare(ctx context.Context, owner *common.Owner) e
 // instance's reconcile scope -- the deeper the declared.Owner, the shorter the chain.
 // nil = declined: the row is suspended, or its instances are already at
 // target.
-func (d *ManagerProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
+func (d *ManagerProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	if declared.Owner == nil {
 		return nil, errors.New("declared.Owner must not be nil")
 	}

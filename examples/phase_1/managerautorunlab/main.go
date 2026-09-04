@@ -68,7 +68,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("managerautorunlab.%d", time.Now().UnixNano())
-	_, err = client.RegisterTopic(ctx, topicName, nil)
+	_, err = client.Topic(topicName).Register(ctx, nil)
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -139,7 +139,7 @@ func run() (err error) {
 	step("PHASE 5: an explicit RunManager beside a Consume is still one claim")
 	explicitCtx, stopExplicit := context.WithCancel(ctx)
 	explicitDone := make(chan error, 1)
-	go func() { explicitDone <- client.RunManager(explicitCtx) }()
+	go func() { explicitDone <- client.Manager().Run(explicitCtx) }()
 	session := start(ctx, client, topicName, "managerautorunlab-a")
 	assertLive(ctx, ds, "the explicit run and the session share one claim", 1)
 
@@ -172,7 +172,7 @@ func (s *runningSession) stop() {
 
 func start(ctx context.Context, client *vulkan.Client, topicName string, group string) *runningSession {
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := client.RegisterConsumer[common.Work](lifecycleCtx, group, topicName, nil)
+	instance, err := client.Consumer(group, topicName).Register[common.Work](lifecycleCtx, nil)
 	must(err)
 
 	done := make(chan error, 1)

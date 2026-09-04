@@ -6,7 +6,7 @@ import "time"
 // topic, not globally. Children (cursor, lease, binding) reference Id and
 // carry no topic_id of their own; the topic_id FK cascade is the group's
 // lifecycle -- destroying the topic destroys it.
-type GroupData struct {
+type Group struct {
 	Id        int64     `json:"group_id"`
 	TopicId   int64     `json:"topic_id"`
 	Name      string    `json:"group"`

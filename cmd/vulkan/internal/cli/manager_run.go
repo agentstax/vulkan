@@ -87,7 +87,7 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 			}
 
 			// a signal cancels ctx; Run drains its worker claims and returns nil
-			if err := client.RunManager(runCtx); err != nil {
+			if err := client.Manager().Run(runCtx); err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
 					return errSystemNotRegistered()
 				}

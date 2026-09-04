@@ -13,7 +13,7 @@ import (
 )
 
 // GetSchedule returns (nil, nil), not an error, if name isn't registered.
-func (a *MessageAdmin) GetSchedule(ctx context.Context, name string) (*schedule.ScheduleData, error) {
+func (a *MessageAdmin) GetSchedule(ctx context.Context, name string) (*schedule.Schedule, error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}
@@ -21,7 +21,7 @@ func (a *MessageAdmin) GetSchedule(ctx context.Context, name string) (*schedule.
 }
 
 // ListSchedules returns every schedule, ordered by name.
-func (a *MessageAdmin) ListSchedules(ctx context.Context) ([]*schedule.ScheduleData, error) {
+func (a *MessageAdmin) ListSchedules(ctx context.Context) ([]*schedule.Schedule, error) {
 	return a.scheduleController.List(ctx)
 }
 
@@ -109,10 +109,10 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 	})
 }
 
-// ScheduleStatus is one GroupStatus per consumer group that receives the
+// ScheduleStatus is one ScheduleGroupSummary per consumer group that receives the
 // schedule's messages. Counts cover the target topic's retention window.
 // Returns ErrScheduleNotFound if name isn't registered.
-func (a *MessageAdmin) ScheduleStatus(ctx context.Context, name string) ([]*schedule.GroupStatus, error) {
+func (a *MessageAdmin) ScheduleStatus(ctx context.Context, name string) ([]*schedule.ScheduleGroupSummary, error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}
@@ -128,11 +128,11 @@ func (a *MessageAdmin) ScheduleStatus(ctx context.Context, name string) ([]*sche
 	return a.scheduleController.Status(ctx, found.TopicId, found.Name)
 }
 
-// ScheduleMessages is the schedule's newest messages, one MessageStatus
+// ScheduleMessages is the schedule's newest messages, one ScheduleMessageStatus
 // per (message, consumer group that receives it), newest message first.
 // Messages older than the target topic's retention window are gone.
 // Returns ErrScheduleNotFound if name isn't registered.
-func (a *MessageAdmin) ScheduleMessages(ctx context.Context, name string, limit int) ([]*schedule.MessageStatus, error) {
+func (a *MessageAdmin) ScheduleMessages(ctx context.Context, name string, limit int) ([]*schedule.ScheduleMessageStatus, error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}

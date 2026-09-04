@@ -11,7 +11,7 @@ import (
 // singleton system row, returning it. Idempotent. cfg may be nil or a sparse
 // struct -- WithDefaults fills every field left unset, Validate rejects
 // what's out of range.
-func (c *SystemController) Register(ctx context.Context, cfg *system.SystemConfig) (*system.SystemData, error) {
+func (c *SystemController) Register(ctx context.Context, cfg *system.SystemConfig) (*system.System, error) {
 	if cfg == nil {
 		cfg = &system.SystemConfig{}
 	}
@@ -34,17 +34,17 @@ func (c *SystemController) Register(ctx context.Context, cfg *system.SystemConfi
 			return nil, err
 		}
 	}
-	return toSystemData(registered), nil
+	return toSystem(registered), nil
 }
 
 // Get returns the singleton system config, or (nil, nil) if the system
 // hasn't been registered.
-func (c *SystemController) Get(ctx context.Context) (*system.SystemData, error) {
+func (c *SystemController) Get(ctx context.Context) (*system.System, error) {
 	found, err := c.datastore.Get(ctx)
 	if err != nil || found == nil {
 		return nil, err
 	}
-	return toSystemData(found), nil
+	return toSystem(found), nil
 }
 
 // Delete drops the shared control-plane tables -- every table

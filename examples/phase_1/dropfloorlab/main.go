@@ -90,7 +90,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8a.dropfloorlab.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -102,7 +102,7 @@ func run() (err error) {
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
@@ -260,4 +260,4 @@ func assertPartitions(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.Group, err error) int64 { must(err); return g.Id }

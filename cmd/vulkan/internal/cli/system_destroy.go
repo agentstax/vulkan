@@ -64,7 +64,7 @@ messages).`,
 			// 2. the guards, pre-flighted so --force is asked for before the
 			// prompt. The client doesn't expose worker snapshots, so build a
 			// metrics controller over the same pool (public API, no pkg change).
-			topics, err := client.ListTopics(ctx)
+			topics, err := client.Topics(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

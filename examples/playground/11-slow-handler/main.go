@@ -60,10 +60,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	transcodes, err := client.RegisterConsumer[TranscodeRequested](ctx, "transcoder", "videos.transcode", &vulkan.ConsumerConfig{
+	transcodes, err := client.Consumer("transcoder", "videos.transcode").Register[TranscodeRequested](ctx, &vulkan.ConsumerConfig{
 		Message:    &vulkan.MessageOptions{Timeout: 2 * time.Minute},
 		MessageMax: &vulkan.MessageOptions{Timeout: time.Hour},
 	})
+
 	if err != nil {
 		return err
 	}

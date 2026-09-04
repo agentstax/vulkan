@@ -38,8 +38,8 @@ type ScheduleDeclaration struct {
 	Metadata      any
 }
 
-// GroupStatus is one consumer group's Status counts.
-type GroupStatus struct {
+// ScheduleGroupSummaryRow is one consumer group's Status counts.
+type ScheduleGroupSummaryRow struct {
 	ConsumerGroup string
 	Ran           int64
 	Succeeded     int64
@@ -47,8 +47,8 @@ type GroupStatus struct {
 	Failed        int64
 }
 
-// MessageStatus is one (consumer group, message) ListMessages row.
-type MessageStatus struct {
+// ScheduleMessageStatusRow is one (consumer group, message) ListMessages row.
+type ScheduleMessageStatusRow struct {
 	ConsumerGroup string
 	MessageId     int64
 	ScheduledAt   time.Time

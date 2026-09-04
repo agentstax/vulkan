@@ -8,7 +8,7 @@ import (
 // or topic was never registered, or migration_log is missing.
 var ErrNotRegistered = diagnostic.NewDiagnosticError("VK0017", diagnostic.RecoveryPermanent,
 	"system not registered",
-	"register the system with Client.RegisterSystem first")
+	"register the system with Client.System().Register first")
 
 // ErrSchemaOlderThanBuild means the stored schema version is below what this
 // build requires.

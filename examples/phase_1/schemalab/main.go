@@ -87,8 +87,8 @@ func run() (err error) {
 	defer rightDs.Pool.Close()
 	defer dropSchemas(ctx, leftDs, leftSchema, rightSchema)
 
-	must(left.RegisterSystem(ctx, nil))
-	must(right.RegisterSystem(ctx, nil))
+	must(left.System().Register(ctx, nil))
+	must(right.System().Register(ctx, nil))
 
 	fmt.Println("=== 1. isolation ===")
 
@@ -101,15 +101,15 @@ func run() (err error) {
 
 	// the same name in both -- a name is unique per installation, not per database
 	const sharedName = "schemalab.orders"
-	leftTopic, err := left.RegisterTopic(ctx, sharedName, nil)
+	leftTopic, err := left.Topic(sharedName).Register(ctx, nil)
 	must(err)
-	rightTopic, err := right.RegisterTopic(ctx, sharedName, nil)
+	rightTopic, err := right.Topic(sharedName).Register(ctx, nil)
 	must(err)
 	fmt.Printf("   ✅ %q registered in both, each numbered by its own schema's sequence: left id %d, right id %d\n", sharedName, leftTopic.Id, rightTopic.Id)
 
-	leftTopics, err := left.ListTopics(ctx)
+	leftTopics, err := left.Topics(ctx)
 	must(err)
-	rightTopics, err := right.ListTopics(ctx)
+	rightTopics, err := right.Topics(ctx)
 	must(err)
 	if countNamed(leftTopics, sharedName) != 1 || countNamed(rightTopics, sharedName) != 1 {
 		die("each client should list its own topic exactly once")
@@ -127,7 +127,7 @@ func run() (err error) {
 
 	fmt.Println("\n=== 2. independence ===")
 
-	leftProducer, err := left.RegisterProducer[labMessage](ctx, sharedName, nil)
+	leftProducer, err := left.Producer(sharedName).Register[labMessage](ctx, nil)
 	must(err)
 	_, err = leftProducer.Produce(ctx, &labMessage{Value: "left only"}, nil)
 	must(err)
@@ -192,9 +192,9 @@ func run() (err error) {
 	// that public happens to be empty.
 	publicClient, publicDs := openClient(ctx, "public", shared)
 	defer publicDs.Pool.Close()
-	must(publicClient.RegisterSystem(ctx, nil))
+	must(publicClient.System().Register(ctx, nil))
 	defer func() { must(publicClient.System().Destroy(ctx, &vulkan.DestroyOptions{Force: true})) }()
-	_, err = publicClient.RegisterTopic(ctx, sharedName, nil)
+	_, err = publicClient.Topic(sharedName).Register(ctx, nil)
 	must(err)
 
 	found, err = empty.Topic(sharedName).Get(ctx)
@@ -245,14 +245,14 @@ func run() (err error) {
 
 	blocked, cancelBlocked := context.WithTimeout(ctx, 2*time.Second)
 	defer cancelBlocked()
-	if _, err := left.RegisterTopic(blocked, lockedName, nil); err == nil {
+	if _, err := left.Topic(lockedName).Register(blocked, nil); err == nil {
 		die("registering under the held key should have waited, it returned")
 	}
 	fmt.Println("   ✅ the same schema's register waits on the held key")
 
 	free, cancelFree := context.WithTimeout(ctx, 2*time.Second)
 	defer cancelFree()
-	if _, err := right.RegisterTopic(free, lockedName, nil); err != nil {
+	if _, err := right.Topic(lockedName).Register(free, nil); err != nil {
 		die("the other schema's register must not wait on it: " + err.Error())
 	}
 	fmt.Println("   ✅ the other schema's register takes a different key and completes")
@@ -317,7 +317,7 @@ func messageCount(ctx context.Context, ds *iDatastore.PostgresDatastore, schema 
 	return count
 }
 
-func countNamed(topics []*vulkan.TopicData, name string) int {
+func countNamed(topics []*vulkan.Topic, name string) int {
 	found := 0
 	for _, data := range topics {
 		if data.Name == name {

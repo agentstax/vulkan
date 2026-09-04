@@ -77,13 +77,13 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("metricslab.%d", run)
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	for range 4 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {

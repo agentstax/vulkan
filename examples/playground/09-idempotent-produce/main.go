@@ -51,12 +51,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.RegisterTopic(ctx, "webhooks.received", nil)
+	registered, err := client.Topic("webhooks.received").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	webhooks, err := client.RegisterProducer[WebhookEvent](ctx, registered.Name, nil)
+	webhooks, err := client.Producer(registered.Name).Register[WebhookEvent](ctx, nil)
 	if err != nil {
 		return err
 	}

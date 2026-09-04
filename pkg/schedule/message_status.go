@@ -14,9 +14,9 @@ const (
 	MessagePending    MessageOutcome = "pending"    // produced, not yet run
 )
 
-// MessageStatus is one of a schedule's messages' outcome for one consumer
+// ScheduleMessageStatus is one of a schedule's messages' outcome for one consumer
 // group, newest message first in a ScheduleMessages listing.
-type MessageStatus struct {
+type ScheduleMessageStatus struct {
 	ConsumerGroup string         `json:"group"`
 	MessageId     int64          `json:"message_id"`
 	ScheduledAt   time.Time      `json:"scheduled_at"`

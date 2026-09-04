@@ -69,13 +69,13 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8a.partitionlab.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	step("publish 14 messages -- each partition's 80% trigger creates the next ahead")

@@ -72,7 +72,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.deletetopiclab.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: 1000})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 
 	cd, err := consumecontroller.NewConsumeController(ds, nil)
@@ -81,7 +81,7 @@ func run() (err error) {
 	must(err)
 	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerGroupController(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	step("seed a row in every topic-scoped table")
@@ -232,4 +232,4 @@ func die(msg string) {
 	panic(labFailure{message: msg})
 }
 
-func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.Group, err error) int64 { must(err); return g.Id }

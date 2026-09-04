@@ -80,7 +80,7 @@ an under-provisioned fleet, a
 Retention is per-topic config, set at registration:
 
 ```go
-registered, err := client.RegisterTopic(ctx, "orders",
+registered, err := client.Topic("orders").Register(ctx,
 	&vulkan.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
 ```
 

@@ -17,7 +17,7 @@ func (d *JanitorProvisioner) Declare(ctx context.Context, owner *common.Owner) e
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *JanitorProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
+func (d *JanitorProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	parsed, err := controller.ParseMetadata[janitorMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err

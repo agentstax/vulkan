@@ -62,7 +62,7 @@ func run() (err error) {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds := client.Datastore()
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 
 	metricsTopic, err := client.Topic(iMetrics.TopicName).Get(ctx)
 	must(err)
@@ -71,7 +71,7 @@ func run() (err error) {
 	}
 
 	topicName := fmt.Sprintf("%s.%d", group, run)
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -80,7 +80,7 @@ func run() (err error) {
 	before := metricsRowCount(ctx, ds, metricsTopic.Id)
 
 	step("driving a hard timeout so one message gets abandoned then self-clears")
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	seed(ctx, wpInstance, 3)
 

@@ -49,7 +49,7 @@ func newScheduleRunCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			produced, err := client.Schedule(name).Run(ctx, cfg)
+			produced, err := client.Scheduler(name).Run(ctx, cfg)
 			if err != nil {
 				if errors.Is(err, schedule.ErrScheduleNotFound) {
 					return errScheduleNotFound(name)

@@ -7,21 +7,27 @@ import (
 	"github.com/agentstax/vulkan/pkg/migrate"
 )
 
-// System is a handle on the singleton system, holding no row. Get is the
+// SystemHandle is a handle on the singleton system, holding no row. Get is the
 // comma-ok read; every other verb returns the not-registered error itself.
-type System struct {
+type SystemHandle struct {
 	client *Client
 }
 
 // System names the system on the client. No I/O and no failure -- each
 // verb on the handle resolves the system when called.
-func (c *Client) System() *System {
-	return &System{client: c}
+func (c *Client) System() *SystemHandle {
+	return &SystemHandle{client: c}
+}
+
+// Register declares the system's own knobs and built-in alert schedules.
+// Safe to run on every startup; cfg may be nil.
+func (s *SystemHandle) Register(ctx context.Context, cfg *RegisterSystemConfig) error {
+	return s.client.admin.RegisterSystem(ctx, cfg)
 }
 
 // Get reads the system's row. Returns (nil, nil) when no system is
 // registered.
-func (s *System) Get(ctx context.Context) (*SystemData, error) {
+func (s *SystemHandle) Get(ctx context.Context) (*System, error) {
 	sys, err := s.client.admin.GetSystem(ctx)
 	if errors.Is(err, migrate.ErrNotRegistered) {
 		return nil, nil
@@ -30,13 +36,22 @@ func (s *System) Get(ctx context.Context) (*SystemData, error) {
 }
 
 // Migrate moves the system's tables to targetVersion.
-func (s *System) Migrate(ctx context.Context, targetVersion int64) error {
+func (s *SystemHandle) Migrate(ctx context.Context, targetVersion int64) error {
 	return s.client.admin.MigrateSystem(ctx, targetVersion)
+}
+
+// MigrateTopics moves every registered topic to targetVersion.
+func (s *SystemHandle) MigrateTopics(ctx context.Context, targetVersion int64) error {
+	return s.client.admin.MigrateTopics(ctx, targetVersion)
+}
+
+func (s *SystemHandle) ListBindingDeclarations(ctx context.Context) ([]*BindingDeclaration, error) {
+	return s.client.admin.ListBindingDeclarations(ctx)
 }
 
 // Destroy permanently deletes every topic, schedule, consumer group,
 // worker, and the shared control-plane tables. Refused unless
 // ClientConfig.AllowDestroy is set.
-func (s *System) Destroy(ctx context.Context, options *DestroyOptions) error {
+func (s *SystemHandle) Destroy(ctx context.Context, options *DestroyOptions) error {
 	return s.client.admin.DestroySystem(ctx, options)
 }

@@ -31,7 +31,7 @@ func newTopicListCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			topics, err := client.ListTopics(ctx)
+			topics, err := client.Topics(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -55,13 +55,13 @@ func newTopicListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printTopicNames(w io.Writer, topics []*topic.TopicData) {
+func printTopicNames(w io.Writer, topics []*topic.Topic) {
 	for _, t := range topics {
 		fmt.Fprintln(w, t.Name)
 	}
 }
 
-func printTopicsTable(w io.Writer, topics []*topic.TopicData) {
+func printTopicsTable(w io.Writer, topics []*topic.Topic) {
 	if len(topics) == 0 {
 		fmt.Fprintln(w, "no topics registered")
 		return

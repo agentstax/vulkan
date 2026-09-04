@@ -9,12 +9,8 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/metrics"
-	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/systemmanager"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -96,118 +92,6 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, cfg *ClientConfig) (*Cli
 // query. One client is one datastore, so its Schema is always the client's.
 func (c *Client) Datastore() *datastore.PostgresDatastore {
 	return c.ds
-}
-
-// RegisterConsumer resolves the named topic and registers the consumer
-// group on it, returning an instance that consumes Message from it.
-// cfg is the group's declaration -- nil or sparse for the defaults, with
-// cfg.Bindings the group's full pattern set (nil = the whole topic). A
-// Logger or Retry left nil takes the client's.
-// ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Client) RegisterConsumer[Message Versioned](ctx context.Context, consumerGroup string, topicName string, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
-	if cfg == nil {
-		cfg = &ConsumerConfig{}
-	}
-	if cfg.Logger == nil {
-		cfg.Logger = c.Logger
-	}
-	if cfg.Retry == nil {
-		cfg.Retry = c.Config.Retry
-	}
-
-	messageConsumer, err := consumer.NewConsumer(c.ds, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	instance, err := messageConsumer.Register[Message](ctx, consumerGroup, topicName)
-	if err != nil {
-		return nil, err
-	}
-	return newConsumerInstance(instance, c.manager, !c.Config.DisableManager)
-}
-
-// RegisterProducer resolves the named topic and returns an instance that
-// produces Message to it. cfg may be nil or a sparse struct; a Logger or
-// Retry left nil takes the client's.
-func (c *Client) RegisterProducer[Message Versioned](ctx context.Context, topicName string, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
-	if cfg == nil {
-		cfg = &ProducerConfig{}
-	}
-	if cfg.Logger == nil {
-		cfg.Logger = c.Logger
-	}
-	if cfg.Retry == nil {
-		cfg.Retry = c.Config.Retry
-	}
-
-	messageProducer, err := producer.NewProducer(c.ds, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	instance, err := messageProducer.Register[Message](ctx, topicName)
-	if err != nil {
-		return nil, err
-	}
-	return newProducerInstance(instance)
-}
-
-// RegisterSchedule declares the schedule spec names on its target topic and
-// returns its handle. The newest declaration wins. cfg may be nil or
-// sparse.
-func (c *Client) RegisterSchedule[Message Versioned](ctx context.Context, spec *ScheduleSpec, payload *Message, cfg *ScheduleConfig) (*Schedule, error) {
-	if _, err := c.scheduler.Register[Message](ctx, spec, payload, cfg); err != nil {
-		return nil, err
-	}
-	return c.Schedule(spec.Name), nil
-}
-
-// RegisterTopic declares the named topic, creating its tables on first
-// registration. Idempotent; cfg may be nil or sparse.
-func (c *Client) RegisterTopic(ctx context.Context, name string, cfg *TopicConfig) (*TopicData, error) {
-	return c.admin.RegisterTopic(ctx, name, cfg)
-}
-
-// RegisterSystem declares the system's own knobs -- the built-in alert
-// schedules. Safe to run on every startup; cfg may be nil.
-func (c *Client) RegisterSystem(ctx context.Context, cfg *RegisterSystemConfig) error {
-	return c.admin.RegisterSystem(ctx, cfg)
-}
-
-func (c *Client) ListTopics(ctx context.Context) ([]*TopicData, error) {
-	return c.admin.ListTopics(ctx)
-}
-
-func (c *Client) ListSchedules(ctx context.Context) ([]*ScheduleData, error) {
-	return c.admin.ListSchedules(ctx)
-}
-
-func (c *Client) ListBindingDeclarations(ctx context.Context) ([]*BindingDeclaration, error) {
-	return c.admin.ListBindingDeclarations(ctx)
-}
-
-func (c *Client) ListAlerts(ctx context.Context) ([]*MessageData[alert.Alert], error) {
-	return c.admin.ListAlerts(ctx)
-}
-
-func (c *Client) ListMeasurements(ctx context.Context) ([]*MessageData[metrics.Measurement], error) {
-	return c.admin.ListMeasurements(ctx)
-}
-
-func (c *Client) ListMeasurementMessages(ctx context.Context, messageKey string, limit int) ([]*MessageData[metrics.Measurement], error) {
-	return c.admin.ListMeasurementMessages(ctx, messageKey, limit)
-}
-
-func (c *Client) MigrateTopics(ctx context.Context, targetVersion int64) error {
-	return c.admin.MigrateTopics(ctx, targetVersion)
-}
-
-// RunManager claims the system's manager row and reconciles every worker
-// row in the deployment until ctx cancels, then returns nil. Safe to run
-// N-way -- the row admits one reconcile loop at a time.
-func (c *Client) RunManager(ctx context.Context) error {
-	return c.manager.Run(ctx)
 }
 
 // InTransaction opens one transaction, runs transactionFunc against it, and

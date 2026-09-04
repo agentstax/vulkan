@@ -114,7 +114,7 @@ func (d *BaseProvisioner[Message]) Declare(ctx context.Context, owner *common.Ow
 
 // GetTopic resolves the topic a consumer's owner points at; a missing topic
 // is an error, not an expected absence -- nothing can consume from it.
-func (d *BaseProvisioner[Message]) GetTopic(ctx context.Context, topicId int64) (*topic.TopicData, error) {
+func (d *BaseProvisioner[Message]) GetTopic(ctx context.Context, topicId int64) (*topic.Topic, error) {
 	current, err := d.topics.GetById(ctx, topicId)
 	if err != nil {
 		return nil, err

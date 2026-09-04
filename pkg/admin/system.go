@@ -86,7 +86,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 
 // GetSystem returns the singleton system config. Returns
 // migrate.ErrNotRegistered if RegisterSystem hasn't run.
-func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.SystemData, error) {
+func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
 	sys, err := a.systemController.Get(ctx)
 	if err != nil {
 		return nil, err

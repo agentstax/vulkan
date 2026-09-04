@@ -70,7 +70,7 @@ func run() (err error) {
 	client, err := vulkan.NewClient(ctx, pool, nil)
 	must(err)
 	ds := client.Datastore()
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 
 	controller, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{Logger: logging.NewDefaultLogger(os.Stderr, slog.LevelError)})
 	must(err)

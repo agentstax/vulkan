@@ -5,8 +5,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/system/controller/datastore"
 )
 
-func toSystemData(data *datastore.SystemConfigRow) *system.SystemData {
-	return &system.SystemData{
+func toSystem(data *datastore.SystemConfigRow) *system.System {
+	return &system.System{
 		Id:        data.Id,
 		CreatedAt: data.CreatedAt,
 		UpdatedAt: data.UpdatedAt,

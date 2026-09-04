@@ -25,7 +25,7 @@ func newMigrateInitCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			if err := client.RegisterSystem(ctx, nil); err != nil {
+			if err := client.System().Register(ctx, nil); err != nil {
 				return translateAdminError(err)
 			}
 

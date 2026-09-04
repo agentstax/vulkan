@@ -83,7 +83,7 @@ func run() (err error) {
 
 	suffix := time.Now().UnixNano()
 	topicName := fmt.Sprintf("groupconfiglab.%d", suffix)
-	registered, err := clientA.RegisterTopic(ctx, topicName, nil)
+	registered, err := clientA.Topic(topicName).Register(ctx, nil)
 	must(err)
 	defer func() {
 		if destroyErr := clientA.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}); destroyErr != nil {
@@ -93,10 +93,11 @@ func run() (err error) {
 	group := fmt.Sprintf("groupconfiglab.group.%d", suffix)
 
 	step("RegisterConsumer stores the declared config as a sparse document")
-	instanceA, err := clientA.RegisterConsumer[labMessage](ctx, group, topicName, &vulkan.ConsumerConfig{
+	instanceA, err := clientA.Consumer(group, topicName).Register[labMessage](ctx, &vulkan.ConsumerConfig{
 		Message:                 &vulkan.MessageOptions{Retry: &vulkan.RetryPolicy{MaxRetries: 5, BaseDelay: 100 * time.Millisecond}},
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 	})
+
 	must(err)
 
 	var groupId int64
@@ -119,10 +120,11 @@ func run() (err error) {
 	fmt.Println("  ✓ declared keys stored, undeclared keys absent")
 
 	step("a differing second declaration replaces the document and warns")
-	_, err = clientB.RegisterConsumer[labMessage](ctx, group, topicName, &vulkan.ConsumerConfig{
+	_, err = clientB.Consumer(group, topicName).Register[labMessage](ctx, &vulkan.ConsumerConfig{
 		Message:                 &vulkan.MessageOptions{Retry: &vulkan.RetryPolicy{MaxRetries: 2, BaseDelay: 100 * time.Millisecond}},
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 	})
+
 	must(err)
 
 	if count := captureB.countCode("warn", "VK0059"); count < 1 {
@@ -153,7 +155,7 @@ func run() (err error) {
 	fmt.Println("  ✓ VK0059 on the second declarer only; log snapshots carry declared_by")
 
 	step("an instance registered before the replace consumes under the stored document")
-	produced, err := clientA.RegisterProducer[labMessage](ctx, topicName, nil)
+	produced, err := clientA.Producer(topicName).Register[labMessage](ctx, nil)
 	must(err)
 	_, err = produced.Produce(ctx, &labMessage{N: 1}, nil)
 	must(err)
@@ -195,12 +197,12 @@ func run() (err error) {
 
 	step("a running instance picks up a redeclared retry budget on refresh")
 	liveGroup := fmt.Sprintf("groupconfiglab.live.%d", suffix)
-	instanceLive, err := clientA.RegisterConsumer[labMessage](ctx, liveGroup, topicName, &vulkan.ConsumerConfig{
-		// BaseDelay == MaxDelay flattens the backoff curve: every retry waits
-		// 3s, so the redeclare below has a full 3s window to land and refresh
+	instanceLive, err := clientA.Consumer(liveGroup, topicName).Register[labMessage](ctx, &vulkan.ConsumerConfig{
+
 		Message:                 &vulkan.MessageOptions{Retry: &vulkan.RetryPolicy{MaxRetries: 3, BaseDelay: 3 * time.Second, MaxDelay: 3 * time.Second}},
 		ExceptionInitialBackoff: 300 * time.Millisecond,
 	})
+
 	must(err)
 	var liveGroupId int64
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.consumer_group_config WHERE topic_id = $1 AND name = $2;`, ds.Schema), registered.Id, liveGroup).Scan(&liveGroupId))
@@ -242,10 +244,11 @@ func run() (err error) {
 	}
 
 	// redeclare under the running instance: budget 3 -> 5, same backoff curve
-	_, err = clientB.RegisterConsumer[labMessage](ctx, liveGroup, topicName, &vulkan.ConsumerConfig{
+	_, err = clientB.Consumer(liveGroup, topicName).Register[labMessage](ctx, &vulkan.ConsumerConfig{
 		Message:                 &vulkan.MessageOptions{Retry: &vulkan.RetryPolicy{MaxRetries: 5, BaseDelay: 3 * time.Second, MaxDelay: 3 * time.Second}},
 		ExceptionInitialBackoff: 300 * time.Millisecond,
 	})
+
 	if err != nil {
 		stopLiveConsumer()
 		must(err)

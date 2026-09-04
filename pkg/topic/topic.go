@@ -18,7 +18,7 @@ const (
 )
 
 // Id addresses this topic's own message_log_<id>.
-type TopicData struct {
+type Topic struct {
 	Id                     int64           `json:"topic_id"`
 	SystemId               int64           `json:"system_id"`
 	Name                   string          `json:"topic"`

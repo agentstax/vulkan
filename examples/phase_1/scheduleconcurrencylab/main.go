@@ -1,9 +1,10 @@
 package main
 
-// Schedule concurrency lab: Schedule(ctx) runs the system manager, so two
-// concurrent runs in one process are both admitted and the manager row's
-// claim gate is what admits one reconcile loop between them. Also proves
-// RegisterSchedule returns the handle whose Get reads the declared row.
+// Schedule concurrency lab: SchedulerInstance.Schedule(ctx) and
+// SchedulerInstance.Schedule(ctx) and Client.Manager().Run(ctx) run the system manager, so two concurrent runs in
+// one process are both admitted and the manager row's claim gate is what
+// admits one reconcile loop between them. Also proves the Scheduler handle's
+// Get reads the declared row.
 
 import (
 	"context"
@@ -58,21 +59,21 @@ func run() (err error) {
 	must(err)
 
 	topicName := fmt.Sprintf("scheduleconcurrencylab.reports.%d", run)
-	_, err = client.RegisterTopic(ctx, topicName, nil)
+	_, err = client.Topic(topicName).Register(ctx, nil)
 	must(err)
 
-	step("RegisterSchedule returns the handle; Get reads the row")
+	step("RegisterSchedule returns an instance; Scheduler.Get reads the row")
 	scheduleName := fmt.Sprintf("scheduleconcurrencylab.nightly.%d", run)
-	nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx, &vulkan.ScheduleSpec{Name: scheduleName, Topic: topicName, Cron: "0 3 * * *"}, &ReportRequestedV1{Kind: "nightly"}, nil)
+	nightly, err := client.Scheduler(scheduleName).Register[ReportRequestedV1](ctx, topicName, "0 3 * * *", &ReportRequestedV1{Kind: "nightly"}, nil)
 	must(err)
-	row, err := nightly.Get(ctx)
+	row, err := client.Scheduler(scheduleName).Get(ctx)
 	must(err)
 	if row == nil {
 		die("expected the declared schedule row, got nil")
 	}
 	assertString("schedule name", row.Name, scheduleName)
 
-	step("two concurrent Schedule runs are both admitted")
+	step("an instance Schedule and RunManager are both admitted")
 	runCtx, stopRun := context.WithCancel(ctx)
 	defer stopRun()
 	firstDone := make(chan error, 1)
@@ -84,15 +85,15 @@ func run() (err error) {
 	defer stopSecond()
 	secondDone := make(chan error, 1)
 	go func() {
-		secondDone <- client.Schedule(scheduleName).Schedule(secondCtx)
+		secondDone <- client.Manager().Run(secondCtx)
 	}()
 
 	time.Sleep(5 * time.Second)
 	select {
 	case err := <-firstDone:
-		die(fmt.Sprintf("first Schedule run exited early: %v", err))
+		die(fmt.Sprintf("first scheduler instance run exited early: %v", err))
 	case err := <-secondDone:
-		die(fmt.Sprintf("second Schedule run was refused: %v", err))
+		die(fmt.Sprintf("second manager run was refused: %v", err))
 	default:
 	}
 	live := scalar(ctx, client, `
@@ -110,16 +111,16 @@ func run() (err error) {
 	step("each run stops clean on its own ctx")
 	stopSecond()
 	if err := <-secondDone; err != nil {
-		die(fmt.Sprintf("second Schedule run: expected nil on requested stop, got %v", err))
+		die(fmt.Sprintf("second manager run: expected nil on requested stop, got %v", err))
 	}
 	stopRun()
 	if err := <-firstDone; err != nil {
-		die(fmt.Sprintf("first Schedule run: expected nil on requested stop, got %v", err))
+		die(fmt.Sprintf("first scheduler instance run: expected nil on requested stop, got %v", err))
 	}
 	fmt.Println("  ✓ both returned nil on a requested stop")
 
 	step("cleanup")
-	must(nightly.Destroy(ctx))
+	must(client.Scheduler(scheduleName).Destroy(ctx))
 	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	fmt.Println("\n✅ SCHEDULE CONCURRENCY LAB PASSED")

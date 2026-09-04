@@ -62,20 +62,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	_, err = client.RegisterTopic(ctx, "orders.placed", nil)
+	_, err = client.Topic("orders.placed").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
-	_, err = client.RegisterTopic(ctx, "inventory.reserved", nil)
+	_, err = client.Topic("inventory.reserved").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	orders, err := client.RegisterProducer[OrderPlacedV1](ctx, "orders.placed", nil)
+	orders, err := client.Producer("orders.placed").Register[OrderPlacedV1](ctx, nil)
 	if err != nil {
 		return err
 	}
-	inventory, err := client.RegisterProducer[InventoryReservedV1](ctx, "inventory.reserved", nil)
+	inventory, err := client.Producer("inventory.reserved").Register[InventoryReservedV1](ctx, nil)
 	if err != nil {
 		return err
 	}

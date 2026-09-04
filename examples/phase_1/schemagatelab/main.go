@@ -73,9 +73,9 @@ func run() (err error) {
 
 	name := fmt.Sprintf("schemagate.lab.%d", time.Now().UnixNano())
 	siblingName := name + ".sibling"
-	topicRow, err := client.RegisterTopic(ctx, name, nil)
+	topicRow, err := client.Topic(name).Register(ctx, nil)
 	must(err)
-	_, err = client.RegisterTopic(ctx, siblingName, nil)
+	_, err = client.Topic(siblingName).Register(ctx, nil)
 	must(err)
 
 	controller, err := migratecontroller.NewController(ds, nil)
@@ -89,20 +89,20 @@ func run() (err error) {
 
 	// 1. supported schema -> Register succeeds -----------------------------------
 	section("producer Register succeeds at the supported schema (v1)")
-	_, err = client.RegisterProducer[event](ctx, name, nil)
+	_, err = client.Producer(name).Register[event](ctx, nil)
 	check(err == nil, "Register accepted at v1")
 
 	// 2. additive skew: schema ahead, nothing breaking -> Register succeeds ------
 	section("system schema ahead by an additive step -> Register still succeeds")
 	bump(ctx, pool, ds.Schema, sysOwner, 2, 0)
-	_, err = client.RegisterProducer[event](ctx, name, nil)
+	_, err = client.Producer(name).Register[event](ctx, nil)
 	check(err == nil, "Register accepted at v2 with no breaking step -- the rolling-deploy window")
 	unbump(ctx, pool, ds.Schema, sysOwner, 2)
 
 	// 3. breaking step past the binary (system) -> Register refused --------------
 	section("system schema ahead by a breaking step -> Register refused")
 	bump(ctx, pool, ds.Schema, sysOwner, 2, 2)
-	_, err = client.RegisterProducer[event](ctx, name, nil)
+	_, err = client.Producer(name).Register[event](ctx, nil)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind system, version 2") && strings.Contains(err.Error(), "min_compatible_version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version, the requirement, and the fix")
@@ -112,11 +112,11 @@ func run() (err error) {
 	section("breaking step past one topic -> that topic refused, sibling accepted")
 	topicOwner := mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name))
 	bump(ctx, pool, ds.Schema, topicOwner, 2, 2)
-	_, err = client.RegisterProducer[event](ctx, name, nil)
+	_, err = client.Producer(name).Register[event](ctx, nil)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind topic, version 2") && strings.Contains(err.Error(), "min_compatible_version 2"),
 		"refused, naming the topic version and the requirement")
-	_, err = client.RegisterProducer[event](ctx, siblingName, nil)
+	_, err = client.Producer(siblingName).Register[event](ctx, nil)
 	check(err == nil, "sibling topic still registers -- each family gates on its own rows")
 	unbump(ctx, pool, ds.Schema, topicOwner, 2)
 

@@ -79,13 +79,13 @@ func run() (err error) {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds = client.Datastore()
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 
 	step("seed a user topic with messages")
 	topicName := fmt.Sprintf("destroysystemlab.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, nil)
+	tp, err := client.Topic(topicName).Register(ctx, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	for range 3 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
@@ -99,7 +99,7 @@ func run() (err error) {
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("a running consumer refuses it first -- the worker guard outranks the topic guard")
-	wcInstance, err := client.RegisterConsumer[common.Work](ctx, "destroysystemlab-group", tp.Name, nil)
+	wcInstance, err := client.Consumer("destroysystemlab-group", tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	consumeCtx, stopConsumer := context.WithCancel(ctx)
 	consumeDone := make(chan error, 1)
@@ -143,7 +143,7 @@ func run() (err error) {
 	fmt.Println("  ✓ destroy of an already-destroyed system returned nil")
 
 	step("RegisterSystem stands the schema back up")
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 	for _, table := range controlPlaneTables {
 		assertTableExists(ctx, ds.Schema+"."+table, true)
 	}

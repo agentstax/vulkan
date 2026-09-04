@@ -5,7 +5,7 @@
 // the __system.metrics topic -- the pull side an ops dashboard would use.
 //
 // Concepts held before domain code (11): the 7 from scenario 03, plus
-// ListMeasurements / ListMeasurementMessages, the MessageData envelope,
+// ListMeasurements / ListMeasurementMessages, the Message envelope,
 // and pkg/metrics for the metric names. The collector runs because Consume
 // runs the manager -- errgroup is here for the print loop, not for it.
 //
@@ -62,12 +62,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.RegisterTopic(ctx, "orders.placed", nil)
+	registered, err := client.Topic("orders.placed").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	orders, err := client.RegisterProducer[OrderPlaced](ctx, registered.Name, nil)
+	orders, err := client.Producer(registered.Name).Register[OrderPlaced](ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func run() error {
 		}
 	}
 
-	ledger, err := client.RegisterConsumer[OrderPlaced](ctx, "ledger", registered.Name, nil)
+	ledger, err := client.Consumer("ledger", registered.Name).Register[OrderPlaced](ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func printLedgerMeasurements(ctx context.Context, client *vulkan.Client) error {
 		case <-ticker.C:
 		}
 
-		heads, err := client.ListMeasurements(ctx)
+		heads, err := client.System().Measurements(ctx)
 		if err != nil {
 			return err
 		}
@@ -118,7 +118,8 @@ func printLedgerMeasurements(ctx context.Context, client *vulkan.Client) error {
 			fmt.Printf("%s = %g\n", measurement.Name, measurement.Value)
 
 			if measurement.Name == metrics.MetricCursorBacklog {
-				history, err := client.ListMeasurementMessages(ctx, head.MessageKey, 5)
+				series := client.System().Measurement(measurement.Name, measurement.Attributes)
+				history, err := series.Messages(ctx, 5)
 				if err != nil {
 					return err
 				}

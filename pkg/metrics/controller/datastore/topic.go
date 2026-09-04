@@ -61,11 +61,11 @@ func (d *MetricsDatastore) schemaVersionCounts(ctx context.Context, topicId int6
 	return pgx.CollectRows(rows, pgx.RowToStructByName[SchemaVersionCountRow])
 }
 
-// GroupSchemaVersionLag is, per consumer group on the topic, how many rows at
+// ConsumerGroupSchemaVersionLag is, per consumer group on the topic, how many rows at
 // schemaVersion sit above the group's committed cursor and how many of its
 // exception rows at that version are unresolved.
-func (d *MetricsDatastore) GroupSchemaVersionLag(ctx context.Context, topicId int64, schemaVersion int64) ([]GroupSchemaVersionLagRow, error) {
-	var lags []GroupSchemaVersionLagRow
+func (d *MetricsDatastore) ConsumerGroupSchemaVersionLag(ctx context.Context, topicId int64, schemaVersion int64) ([]ConsumerGroupSchemaVersionLagRow, error) {
+	var lags []ConsumerGroupSchemaVersionLagRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		lags, err = d.groupSchemaVersionLag(ctx, topicId, schemaVersion)
@@ -74,7 +74,7 @@ func (d *MetricsDatastore) GroupSchemaVersionLag(ctx context.Context, topicId in
 	return lags, err
 }
 
-func (d *MetricsDatastore) groupSchemaVersionLag(ctx context.Context, topicId int64, schemaVersion int64) ([]GroupSchemaVersionLagRow, error) {
+func (d *MetricsDatastore) groupSchemaVersionLag(ctx context.Context, topicId int64, schemaVersion int64) ([]ConsumerGroupSchemaVersionLagRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: metrics.groupSchemaVersionLag
 		SELECT
@@ -99,5 +99,5 @@ func (d *MetricsDatastore) groupSchemaVersionLag(ctx context.Context, topicId in
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByName[GroupSchemaVersionLagRow])
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ConsumerGroupSchemaVersionLagRow])
 }

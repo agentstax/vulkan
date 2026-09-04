@@ -87,11 +87,11 @@ func main() {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds := client.Datastore()
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 
 	// fresh topic per cell -- clean tables, no cross-cell contamination
 	topicName := fmt.Sprintf("compactionbench.%d", time.Now().UnixNano())
-	registered, err := client.RegisterTopic(ctx, topicName, nil)
+	registered, err := client.Topic(topicName).Register(ctx, nil)
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -107,7 +107,7 @@ func main() {
 
 	instances := make([]*vulkan.ProducerInstance[benchMessage], *producers)
 	for i := range instances {
-		instance, err := client.RegisterProducer[benchMessage](ctx, topicName, nil)
+		instance, err := client.Producer(topicName).Register[benchMessage](ctx, nil)
 		must(err)
 		instances[i] = instance
 	}

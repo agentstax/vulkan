@@ -54,7 +54,7 @@ func run() error {
 		return err
 	}
 
-	receipts, err := client.RegisterConsumer[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil)
+	receipts, err := client.Consumer("email-receipts", "orders.placed").Register[OrderPlacedV1](ctx, nil)
 	if err != nil {
 		return err
 	}

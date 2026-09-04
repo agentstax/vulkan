@@ -9,13 +9,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule/controller/datastore"
 )
 
-func toScheduleData(data *datastore.ScheduleConfigRow) (*schedule.ScheduleData, error) {
+func toSchedule(data *datastore.ScheduleConfigRow) (*schedule.Schedule, error) {
 	concurrency, err := concurrencyEnum(data.Concurrency)
 	if err != nil {
 		return nil, err
 	}
 
-	return &schedule.ScheduleData{
+	return &schedule.Schedule{
 		Id:              data.Id,
 		SystemId:        data.SystemId,
 		TopicId:         data.TopicId,
@@ -32,8 +32,8 @@ func toScheduleData(data *datastore.ScheduleConfigRow) (*schedule.ScheduleData, 
 	}, nil
 }
 
-func toGroupStatus(data *datastore.GroupStatus) *schedule.GroupStatus {
-	return &schedule.GroupStatus{
+func toScheduleGroupSummary(data *datastore.ScheduleGroupSummaryRow) *schedule.ScheduleGroupSummary {
+	return &schedule.ScheduleGroupSummary{
 		ConsumerGroup: data.ConsumerGroup,
 		Ran:           data.Ran,
 		Succeeded:     data.Succeeded,
@@ -42,8 +42,8 @@ func toGroupStatus(data *datastore.GroupStatus) *schedule.GroupStatus {
 	}
 }
 
-func toMessageStatus(data *datastore.MessageStatus) *schedule.MessageStatus {
-	status := &schedule.MessageStatus{
+func toScheduleMessageStatus(data *datastore.ScheduleMessageStatusRow) *schedule.ScheduleMessageStatus {
+	status := &schedule.ScheduleMessageStatus{
 		ConsumerGroup: data.ConsumerGroup,
 		MessageId:     data.MessageId,
 		ScheduledAt:   data.ScheduledAt,
@@ -57,7 +57,7 @@ func toMessageStatus(data *datastore.MessageStatus) *schedule.MessageStatus {
 	return status
 }
 
-func toMessageOutcome(data *datastore.MessageStatus) schedule.MessageOutcome {
+func toMessageOutcome(data *datastore.ScheduleMessageStatusRow) schedule.MessageOutcome {
 	switch {
 	case data.Succeeded:
 		return schedule.MessageSucceeded

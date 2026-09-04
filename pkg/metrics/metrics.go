@@ -53,9 +53,9 @@ type ExceptionSnapshot struct {
 	OldestUnresolvedAge time.Duration `json:"oldest_unresolved_age"` // age of the oldest ready/inflight/deferred row; 0 if none outstanding
 }
 
-// GroupLag is a group's drain progress -- the retire-relevant distillation
+// ConsumerGroupLag is a group's drain progress -- the retire-relevant distillation
 // of its snapshot.
-type GroupLag struct {
+type ConsumerGroupLag struct {
 	ConsumerGroup        string `json:"group"`
 	Committed            int64  `json:"committed"`
 	Head                 int64  `json:"head"`
@@ -63,8 +63,9 @@ type GroupLag struct {
 	UnresolvedExceptions int64  `json:"unresolved_exceptions"` // delivery rows still 'ready', 'inflight', or 'deferred'
 }
 
-func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
-	return GroupLag{
+// Lag returns the group's drain progress.
+func (s *ConsumerGroupSnapshot) Lag() ConsumerGroupLag {
+	return ConsumerGroupLag{
 		ConsumerGroup:        s.ConsumerGroup,
 		Committed:            s.Cursor.Committed,
 		Head:                 s.Cursor.Head,

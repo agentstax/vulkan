@@ -57,14 +57,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.RegisterTopic(ctx, "accounts.balance", nil)
+	registered, err := client.Topic("accounts.balance").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	balances, err := client.RegisterProducer[BalanceChanged](ctx, registered.Name, &vulkan.ProducerConfig{
+	balances, err := client.Producer(registered.Name).Register[BalanceChanged](ctx, &vulkan.ProducerConfig{
 		Message: &vulkan.MessageOptions{Concurrency: vulkan.ConcurrencyOrdered},
 	})
+
 	if err != nil {
 		return err
 	}
@@ -77,7 +78,7 @@ func run() error {
 		}
 	}
 
-	ledger, err := client.RegisterConsumer[BalanceChanged](ctx, "ledger", registered.Name, nil)
+	ledger, err := client.Consumer("ledger", registered.Name).Register[BalanceChanged](ctx, nil)
 	if err != nil {
 		return err
 	}

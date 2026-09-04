@@ -94,7 +94,7 @@ func run() (err error) {
 	ds = client.Datastore()
 
 	topicName := fmt.Sprintf("keyleaselab.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	topicId = tp.Id
 
@@ -104,7 +104,7 @@ func run() (err error) {
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[Rec](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[Rec](ctx, nil)
 	must(err)
 	g, err := cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning())
 	must(err)

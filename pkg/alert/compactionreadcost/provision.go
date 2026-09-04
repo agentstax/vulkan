@@ -47,7 +47,7 @@ func (d *CompactionReadCostProvisioner) Declare(ctx context.Context, owner *comm
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *CompactionReadCostProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
+func (d *CompactionReadCostProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	parsed, err := workercontroller.ParseMetadata[compactionReadCostMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err

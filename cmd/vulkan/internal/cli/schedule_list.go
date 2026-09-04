@@ -31,7 +31,7 @@ func newScheduleListCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			schedules, err := client.ListSchedules(ctx)
+			schedules, err := client.Schedulers(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -55,13 +55,13 @@ func newScheduleListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printScheduleNames(w io.Writer, schedules []*schedule.ScheduleData) {
+func printScheduleNames(w io.Writer, schedules []*schedule.Schedule) {
 	for _, row := range schedules {
 		fmt.Fprintln(w, row.Name)
 	}
 }
 
-func printSchedulesTable(w io.Writer, schedules []*schedule.ScheduleData) {
+func printSchedulesTable(w io.Writer, schedules []*schedule.Schedule) {
 	if len(schedules) == 0 {
 		fmt.Fprintln(w, "no schedules registered")
 		return

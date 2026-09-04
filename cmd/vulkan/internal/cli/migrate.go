@@ -118,7 +118,7 @@ func gatherTargets(ctx context.Context, client *vulkan.Client, controller *migra
 		return []migrateTarget{{owner: owner, current: current}}, nil
 
 	default: // scopeTopics
-		topics, err := client.ListTopics(ctx)
+		topics, err := client.Topics(ctx)
 		if err != nil {
 			return nil, translateAdminError(err)
 		}

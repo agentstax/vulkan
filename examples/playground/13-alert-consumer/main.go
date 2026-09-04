@@ -60,7 +60,7 @@ func run() error {
 	}
 
 	// newest declaration wins: every minute instead of the @hourly default
-	if err := client.RegisterSystem(ctx, &vulkan.RegisterSystemConfig{
+	if err := client.System().Register(ctx, &vulkan.RegisterSystemConfig{
 		PartitionCount:     &alert.PartitionCountJobConfig{Expression: "* * * * *"},
 		CompactionReadCost: &alert.CompactionReadCostJobConfig{Expression: "* * * * *"},
 		WorkerLiveness:     &alert.WorkerLivenessJobConfig{Expression: "* * * * *"},
@@ -69,13 +69,13 @@ func run() error {
 	}
 
 	// the pull side: what is active or resolved right now
-	heads, err := client.ListAlerts(ctx)
+	heads, err := client.System().Alerts(ctx)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("%d alert heads at startup\n", len(heads))
 
-	pager, err := client.RegisterConsumer[alert.Alert](ctx, "alert-pager", alert.TopicName, nil)
+	pager, err := client.Consumer("alert-pager", alert.TopicName).Register[alert.Alert](ctx, nil)
 	if err != nil {
 		return err
 	}

@@ -15,7 +15,7 @@ import (
 // Message's schema version; every produce carries both. cfg may be nil or a
 // sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func (c *ScheduleController) Register[Message common.Versioned](ctx context.Context, systemId int64, spec *schedule.ScheduleSpec, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) (*schedule.ScheduleData, error) {
+func (c *ScheduleController) Register[Message common.Versioned](ctx context.Context, systemId int64, spec *schedule.ScheduleSpec, topicId int64, payload *Message, cfg *schedule.ScheduleConfig) (*schedule.Schedule, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
@@ -56,11 +56,11 @@ func (c *ScheduleController) Register[Message common.Versioned](ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	return toScheduleData(registered)
+	return toSchedule(registered)
 }
 
 // Get returns (nil, nil) if name isn't registered.
-func (c *ScheduleController) Get(ctx context.Context, name string) (*schedule.ScheduleData, error) {
+func (c *ScheduleController) Get(ctx context.Context, name string) (*schedule.Schedule, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
@@ -69,19 +69,19 @@ func (c *ScheduleController) Get(ctx context.Context, name string) (*schedule.Sc
 	if err != nil || found == nil {
 		return nil, err
 	}
-	return toScheduleData(found)
+	return toSchedule(found)
 }
 
 // List returns every schedule, ordered by name.
-func (c *ScheduleController) List(ctx context.Context) ([]*schedule.ScheduleData, error) {
+func (c *ScheduleController) List(ctx context.Context) ([]*schedule.Schedule, error) {
 	listed, err := c.datastore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var schedules []*schedule.ScheduleData
+	var schedules []*schedule.Schedule
 	for _, data := range listed {
-		found, err := toScheduleData(&data)
+		found, err := toSchedule(&data)
 		if err != nil {
 			return nil, err
 		}
@@ -119,9 +119,9 @@ func (c *ScheduleController) Delete(ctx context.Context, name string) error {
 }
 
 // ListMessages is the schedule's messages on its target topic, one
-// MessageStatus per (message, consumer group that receives it), newest
+// ScheduleMessageStatus per (message, consumer group that receives it), newest
 // message first. Messages older than the topic's retention window are gone.
-func (c *ScheduleController) ListMessages(ctx context.Context, topicId int64, name string, limit int) ([]*schedule.MessageStatus, error) {
+func (c *ScheduleController) ListMessages(ctx context.Context, topicId int64, name string, limit int) ([]*schedule.ScheduleMessageStatus, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -137,16 +137,16 @@ func (c *ScheduleController) ListMessages(ctx context.Context, topicId int64, na
 		return nil, err
 	}
 
-	var messages []*schedule.MessageStatus
+	var messages []*schedule.ScheduleMessageStatus
 	for _, data := range listed {
-		messages = append(messages, toMessageStatus(&data))
+		messages = append(messages, toScheduleMessageStatus(&data))
 	}
 	return messages, nil
 }
 
-// Status is one GroupStatus per consumer group that receives the
+// Status is one ScheduleGroupSummary per consumer group that receives the
 // schedule's messages. Counts cover the topic's retention window.
-func (c *ScheduleController) Status(ctx context.Context, topicId int64, name string) ([]*schedule.GroupStatus, error) {
+func (c *ScheduleController) Status(ctx context.Context, topicId int64, name string) ([]*schedule.ScheduleGroupSummary, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -159,9 +159,9 @@ func (c *ScheduleController) Status(ctx context.Context, topicId int64, name str
 		return nil, err
 	}
 
-	var statuses []*schedule.GroupStatus
+	var statuses []*schedule.ScheduleGroupSummary
 	for _, data := range listed {
-		statuses = append(statuses, toGroupStatus(&data))
+		statuses = append(statuses, toScheduleGroupSummary(&data))
 	}
 	return statuses, nil
 }

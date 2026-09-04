@@ -118,11 +118,11 @@ func main() {
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 	ds := client.Datastore()
-	must(client.RegisterSystem(ctx, nil))
+	must(client.System().Register(ctx, nil))
 
 	// fresh topic per cell -- clean tables, no cross-cell contamination
 	topicName := fmt.Sprintf("fillfactorbench.%d", time.Now().UnixNano())
-	registered, err := client.RegisterTopic(ctx, topicName, nil)
+	registered, err := client.Topic(topicName).Register(ctx, nil)
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -202,7 +202,7 @@ func main() {
 
 	var consumeWg sync.WaitGroup
 	for group := range *groups {
-		instance, err := client.RegisterConsumer[benchMessage](ctx, fmt.Sprintf("bench-group-%02d", group), topicName, consumerConfig)
+		instance, err := client.Consumer(fmt.Sprintf("bench-group-%02d", group), topicName).Register[benchMessage](ctx, consumerConfig)
 		must(err)
 
 		consumeWg.Add(1)
@@ -274,7 +274,7 @@ func main() {
 func prefillTopic(ctx context.Context, client *vulkan.Client, topicName string, prefill int, failureRate float64, record func(error)) {
 	instances := make([]*vulkan.ProducerInstance[benchMessage], prefillProducers)
 	for i := range instances {
-		instance, err := client.RegisterProducer[benchMessage](ctx, topicName, nil)
+		instance, err := client.Producer(topicName).Register[benchMessage](ctx, nil)
 		must(err)
 		instances[i] = instance
 	}

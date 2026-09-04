@@ -39,9 +39,9 @@ func (c *MetricsController) TopicSnapshot(ctx context.Context, topicId int64) (*
 	return &metrics.TopicSnapshot{TopicId: topicId, Compacted: compacted, Groups: groups}, nil
 }
 
-// SchemaVersionSnapshots is every payload version present in the topic's
+// TopicSchemaVersionSnapshots is every payload version present in the topic's
 // log, each with every group's lag against it.
-func (c *MetricsController) SchemaVersionSnapshots(ctx context.Context, topicId int64) ([]metrics.SchemaVersionSnapshot, error) {
+func (c *MetricsController) TopicSchemaVersionSnapshots(ctx context.Context, topicId int64) ([]metrics.TopicSchemaVersionSnapshot, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -51,13 +51,13 @@ func (c *MetricsController) SchemaVersionSnapshots(ctx context.Context, topicId 
 		return nil, err
 	}
 
-	snapshots := make([]metrics.SchemaVersionSnapshot, 0, len(counts))
+	snapshots := make([]metrics.TopicSchemaVersionSnapshot, 0, len(counts))
 	for _, count := range counts {
-		lags, err := c.datastore.GroupSchemaVersionLag(ctx, topicId, count.SchemaVersion)
+		lags, err := c.datastore.ConsumerGroupSchemaVersionLag(ctx, topicId, count.SchemaVersion)
 		if err != nil {
 			return nil, err
 		}
-		snapshots = append(snapshots, toSchemaVersionSnapshot(&count, lags))
+		snapshots = append(snapshots, toTopicSchemaVersionSnapshot(&count, lags))
 	}
 	return snapshots, nil
 }

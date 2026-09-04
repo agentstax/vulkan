@@ -13,7 +13,7 @@ import (
 
 // SchedulerInstance is a registered schedule: Schedule keeps the system producing it.
 type SchedulerInstance[Message common.Versioned] struct {
-	Registered *schedule.ScheduleData
+	Registered *schedule.Schedule
 	Payload    *Message
 	Config     *SchedulerConfig
 	Logger     logging.Logger
@@ -22,7 +22,7 @@ type SchedulerInstance[Message common.Versioned] struct {
 }
 
 // cfg arrives already resolved by NewScheduler -- Register is the only caller.
-func newSchedulerInstance[Message common.Versioned](registered *schedule.ScheduleData, payload *Message, ds *datastore.PostgresDatastore, cfg *SchedulerConfig) (*SchedulerInstance[Message], error) {
+func newSchedulerInstance[Message common.Versioned](registered *schedule.Schedule, payload *Message, ds *datastore.PostgresDatastore, cfg *SchedulerConfig) (*SchedulerInstance[Message], error) {
 	if registered == nil {
 		return nil, errors.New("schedule must not be nil")
 	}

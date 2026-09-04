@@ -55,7 +55,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	shipping, err := client.RegisterConsumer[OrderPlaced](ctx, "shipping", "orders.placed", nil)
+	shipping, err := client.Consumer("shipping", "orders.placed").Register[OrderPlaced](ctx, nil)
 	if err != nil {
 		return err
 	}

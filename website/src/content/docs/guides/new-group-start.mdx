@@ -11,8 +11,8 @@ group's cursor row; an existing group keeps its position no matter
 what the config says on a later `Register`.
 
 ```go
-scoring, err := client.RegisterConsumer[OrderPlaced](ctx, "fraud-scoring",
-	"orders.placed", &vulkan.ConsumerConfig{
+scoring, err := client.Consumer("fraud-scoring", "orders.placed").Register[OrderPlaced](ctx,
+	&vulkan.ConsumerConfig{
 		Start: vulkan.Head(),
 	})
 must(err)

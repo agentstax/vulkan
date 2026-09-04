@@ -9,7 +9,7 @@ import (
 )
 
 // a nil Execution is a declined claim, not an error -- try again later.
-func (d *ExceptionConsumerProvisioner[Message]) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
+func (d *ExceptionConsumerProvisioner[Message]) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	parsed, err := workercontroller.ParseMetadata[ExceptionConsumerMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err

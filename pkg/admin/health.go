@@ -10,22 +10,22 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// VersionHealth is one payload version's retire verdict on a topic: safe
+// TopicVersionHealth is one payload version's retire verdict on a topic: safe
 // once no compaction head points at it and every group has read past it.
-type VersionHealth struct {
-	Topic           *topic.TopicData                `json:"topic"`
-	Version         int                             `json:"version"`
-	Messages        int64                           `json:"messages"`
-	CompactionHeads int64                           `json:"compaction_heads"`
-	Groups          []metrics.GroupSchemaVersionLag `json:"groups"`
-	Safe            bool                            `json:"safe"`
-	Reason          string                          `json:"reason"`
+type TopicVersionHealth struct {
+	Topic           *topic.Topic                            `json:"topic"`
+	Version         int                                     `json:"version"`
+	Messages        int64                                   `json:"messages"`
+	CompactionHeads int64                                   `json:"compaction_heads"`
+	Groups          []metrics.ConsumerGroupSchemaVersionLag `json:"groups"`
+	Safe            bool                                    `json:"safe"`
+	Reason          string                                  `json:"reason"`
 }
 
 // TopicHealth is every payload version present in the named topic's log,
 // each with its own retire verdict. Returns ErrTopicNotFound if name isn't
 // registered; an empty topic has no versions.
-func (a *MessageAdmin) TopicHealth(ctx context.Context, name string) ([]*VersionHealth, error) {
+func (a *MessageAdmin) TopicHealth(ctx context.Context, name string) ([]*TopicVersionHealth, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -38,14 +38,14 @@ func (a *MessageAdmin) TopicHealth(ctx context.Context, name string) ([]*Version
 		return nil, topic.ErrTopicNotFound.With("topic", name)
 	}
 
-	snapshots, err := a.metricsController.SchemaVersionSnapshots(ctx, found.Id)
+	snapshots, err := a.metricsController.TopicSchemaVersionSnapshots(ctx, found.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	health := make([]*VersionHealth, 0, len(snapshots))
+	health := make([]*TopicVersionHealth, 0, len(snapshots))
 	for _, snapshot := range snapshots {
-		h := &VersionHealth{
+		h := &TopicVersionHealth{
 			Topic:           found,
 			Version:         snapshot.Version,
 			Messages:        snapshot.Messages,
@@ -60,7 +60,7 @@ func (a *MessageAdmin) TopicHealth(ctx context.Context, name string) ([]*Version
 
 // evaluate settles Safe/Reason. A compaction head at this version is live
 // state no group drain removes -- the bridge must re-produce it first.
-func (h *VersionHealth) evaluate() {
+func (h *TopicVersionHealth) evaluate() {
 	if h.CompactionHeads > 0 {
 		h.Reason = fmt.Sprintf("compaction heads remain: %d keys still resolve to this version", h.CompactionHeads)
 		return

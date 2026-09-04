@@ -6,7 +6,7 @@
 //
 // Concepts held before domain code (13): the 5 from scenario 01, plus
 // MessageKey, CompactionOptions (+NewCompactionOptions), Rank,
-// InTransaction, GetCompactionHeadInTx, ProduceInTx, MessageData, and the
+// InTransaction, GetCompactionHeadInTx, ProduceInTx, Message, and the
 // Topic handle for reads outside a transaction.
 //
 // Traps hit:
@@ -63,12 +63,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.RegisterTopic(ctx, "devices.config", nil)
+	registered, err := client.Topic("devices.config").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	configs, err := client.RegisterProducer[DeviceConfig](ctx, registered.Name, nil)
+	configs, err := client.Producer(registered.Name).Register[DeviceConfig](ctx, nil)
 	if err != nil {
 		return err
 	}

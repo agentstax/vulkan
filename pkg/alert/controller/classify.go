@@ -9,7 +9,7 @@ import (
 
 // classify compares the alert a run built (nil when it built none) against
 // the compaction head it last published, and returns what to publish now.
-func classify(found *alert.Alert, head *common.MessageData[alert.Alert], repeat time.Duration, now time.Time) (*alert.Alert, error) {
+func classify(found *alert.Alert, head *common.Message[alert.Alert], repeat time.Duration, now time.Time) (*alert.Alert, error) {
 	activeHead := head != nil && head.Message.Status == alert.AlertStatusActive
 
 	if found != nil {
@@ -36,7 +36,7 @@ func classify(found *alert.Alert, head *common.MessageData[alert.Alert], repeat 
 }
 
 // statusChanged treats a missing head as a change -- the first publish logs.
-func statusChanged(published *alert.Alert, head *common.MessageData[alert.Alert]) bool {
+func statusChanged(published *alert.Alert, head *common.Message[alert.Alert]) bool {
 	if head == nil {
 		return true
 	}

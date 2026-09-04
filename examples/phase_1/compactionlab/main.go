@@ -99,7 +99,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionlab.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -113,7 +113,7 @@ func run() (err error) {
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[KeyedRecord](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[KeyedRecord](ctx, nil)
 	must(err)
 	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup, consume.Beginning()))
 
@@ -388,4 +388,4 @@ func assertTrue(label string, cond bool) {
 	fmt.Printf("  ✓ %s\n", label)
 }
 
-func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.Group, err error) int64 { must(err); return g.Id }

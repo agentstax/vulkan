@@ -27,7 +27,7 @@ func newScheduleSuspendCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			if err := client.Schedule(name).Suspend(ctx); err != nil {
+			if err := client.Scheduler(name).Suspend(ctx); err != nil {
 				if errors.Is(err, schedule.ErrScheduleNotFound) {
 					return errScheduleNotFound(name)
 				}
@@ -61,14 +61,14 @@ func newScheduleUnsuspendCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			if err := client.Schedule(name).Unsuspend(ctx); err != nil {
+			if err := client.Scheduler(name).Unsuspend(ctx); err != nil {
 				if errors.Is(err, schedule.ErrScheduleNotFound) {
 					return errScheduleNotFound(name)
 				}
 				return translateAdminError(err)
 			}
 
-			row, err := client.Schedule(name).Get(ctx)
+			row, err := client.Scheduler(name).Get(ctx)
 			if err != nil || row == nil {
 				// the unsuspend itself succeeded -- report that even if the
 				// follow-up read for the next-scheduled-time detail didn't cooperate

@@ -88,9 +88,9 @@ func run() (err error) {
 	must(err)
 
 	suffix := time.Now().UnixNano()
-	topicA, err := client.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.a.%d", suffix), nil)
+	topicA, err := client.Topic(fmt.Sprintf("consumergrouplab.a.%d", suffix)).Register(ctx, nil)
 	must(err)
-	topicB, err := client.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.b.%d", suffix), nil)
+	topicB, err := client.Topic(fmt.Sprintf("consumergrouplab.b.%d", suffix)).Register(ctx, nil)
 	must(err)
 
 	step("RegisterGroup registers the group with its children in one txn")
@@ -138,7 +138,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ 10 concurrent registrations -> one registry row\n")
 
 	step("Start: consume.Head() places a new group's cursor at MAX(id); an existing group keeps its position")
-	producing, err := client.RegisterProducer[labMessage](ctx, topicA.Name, nil)
+	producing, err := client.Producer(topicA.Name).Register[labMessage](ctx, nil)
 	must(err)
 	var seededHead int64
 	for n := 1; n <= 3; n++ {
@@ -147,9 +147,10 @@ func run() (err error) {
 		seededHead = produced.Id
 	}
 	headGroup := fmt.Sprintf("consumergrouplab.head.%d", suffix)
-	headInstance, err := client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, &vulkan.ConsumerConfig{
+	headInstance, err := client.Consumer(headGroup, topicA.Name).Register[labMessage](ctx, &vulkan.ConsumerConfig{
 		Start: vulkan.Head(),
 	})
+
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, seededHead, "after Register at the head")
 	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, nil)
@@ -169,7 +170,7 @@ func run() (err error) {
 		die(fmt.Sprintf("group at the head saw %v, want only the post-register message 4 (id %d)", seen, fresh.Id))
 	}
 	before := readCursor(ctx, ds, topicA.Id, headGroup)
-	_, err = client.RegisterConsumer[labMessage](ctx, headGroup, topicA.Name, nil)
+	_, err = client.Consumer(headGroup, topicA.Name).Register[labMessage](ctx, nil)
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, before, "after a second Register at the beginning")
 	fmt.Printf("  ✓ cursor created at %d, only message 4 delivered, a later Register left the row alone\n", seededHead)
@@ -217,7 +218,7 @@ func run() (err error) {
 	return nil
 }
 
-func destroySection(ctx context.Context, pool *pgxpool.Pool, client *vulkan.Client, cd *consumecontroller.ConsumeController, topicA *topic.TopicData, suffix int64) {
+func destroySection(ctx context.Context, pool *pgxpool.Pool, client *vulkan.Client, cd *consumecontroller.ConsumeController, topicA *topic.Topic, suffix int64) {
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)

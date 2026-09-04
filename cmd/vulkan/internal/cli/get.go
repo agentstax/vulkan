@@ -121,7 +121,7 @@ type groupVersionLagDocument struct {
 	UnresolvedExceptions int64  `json:"unresolved_exceptions"`
 }
 
-func toTopicDocument(found *topic.TopicData) topicDocument {
+func toTopicDocument(found *topic.Topic) topicDocument {
 	return topicDocument{
 		TopicId:                found.Id,
 		SystemId:               found.SystemId,
@@ -134,7 +134,7 @@ func toTopicDocument(found *topic.TopicData) topicDocument {
 	}
 }
 
-func toTopicDocuments(topics []*topic.TopicData) []topicDocument {
+func toTopicDocuments(topics []*topic.Topic) []topicDocument {
 	documents := make([]topicDocument, 0, len(topics))
 	for _, found := range topics {
 		documents = append(documents, toTopicDocument(found))
@@ -142,7 +142,7 @@ func toTopicDocuments(topics []*topic.TopicData) []topicDocument {
 	return documents
 }
 
-func toTopicGetDocument(name string, found *topic.TopicData, health []*vulkan.VersionHealth) topicGetDocument {
+func toTopicGetDocument(name string, found *topic.Topic, health []*vulkan.TopicVersionHealth) topicGetDocument {
 	document := topicGetDocument{Topic: name, Exists: found != nil, Versions: make([]versionHealthDocument, 0, len(health))}
 	if found != nil {
 		config := toTopicDocument(found)
@@ -154,7 +154,7 @@ func toTopicGetDocument(name string, found *topic.TopicData, health []*vulkan.Ve
 	return document
 }
 
-func toVersionHealthDocument(versionHealth *vulkan.VersionHealth) versionHealthDocument {
+func toVersionHealthDocument(versionHealth *vulkan.TopicVersionHealth) versionHealthDocument {
 	groups := make([]groupVersionLagDocument, 0, len(versionHealth.Groups))
 	for _, group := range versionHealth.Groups {
 		groups = append(groups, groupVersionLagDocument{
@@ -175,7 +175,7 @@ func toVersionHealthDocument(versionHealth *vulkan.VersionHealth) versionHealthD
 
 // printTopicDetail shows the columns fixed at creation; the declared config
 // lives under topic config get.
-func printTopicDetail(w io.Writer, t *topic.TopicData) {
+func printTopicDetail(w io.Writer, t *topic.Topic) {
 	fmt.Fprintf(w, "\n(id=%d)\n", t.Id)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
@@ -186,7 +186,7 @@ func printTopicDetail(w io.Writer, t *topic.TopicData) {
 // printVersionHealth is one payload version's picture: how many rows sit at
 // it, how many compaction heads point at it, each group's lag against it,
 // and the resulting retire verdict.
-func printVersionHealth(w io.Writer, h *vulkan.VersionHealth) {
+func printVersionHealth(w io.Writer, h *vulkan.TopicVersionHealth) {
 	fmt.Fprintf(w, "  v%d\n", h.Version)
 
 	ctw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)

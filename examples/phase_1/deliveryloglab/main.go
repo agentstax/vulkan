@@ -367,13 +367,13 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, pool *pgxpool.Pool) {
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan.TopicConfig) (*topic.TopicData, *messageconsumercontroller.MessageConsumerGroupController, *vulkan.ProducerInstance[common.Work], int64) {
+func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan.TopicConfig) (*topic.Topic, *messageconsumercontroller.MessageConsumerGroupController, *vulkan.ProducerInstance[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{AllowDestroy: true})
 	must(err)
 
 	ds := client.Datastore()
-	tp, err := client.RegisterTopic(ctx, name, &cfg)
+	tp, err := client.Topic(name).Register(ctx, &cfg)
 	must(err)
 
 	cd, err := consumecontroller.NewConsumeController(ds, nil)
@@ -381,7 +381,7 @@ func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	return tp, messageConsumers, wpInstance, groupId
 }
@@ -398,7 +398,7 @@ func seed(ctx context.Context, wpInstance *vulkan.ProducerInstance[common.Work],
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *messageconsumercontroller.MessageConsumerGroupController, wpInstance *vulkan.ProducerInstance[common.Work], tp *topic.TopicData, groupId int64, n int) int64 {
+func failOne(ctx context.Context, cd *messageconsumercontroller.MessageConsumerGroupController, wpInstance *vulkan.ProducerInstance[common.Work], tp *topic.Topic, groupId int64, n int) int64 {
 	seed(ctx, wpInstance, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, n, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
@@ -496,4 +496,4 @@ func die(msg string) {
 	panic(labFailure{message: msg})
 }
 
-func mustGroupID(g *consume.GroupData, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consume.Group, err error) int64 { must(err); return g.Id }

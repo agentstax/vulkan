@@ -5,10 +5,10 @@ description: The shape of the whole API — one client over your pool, resources
 
 import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
-One client wraps the pool and holds the ambient config. Every
-resource is either registered on it (`RegisterConsumer`,
-`RegisterTopic`) or named from it as a handle (`client.Topic("orders")`),
-and the verbs live on the thing they act on. Before it, the same
+One client wraps the pool and holds the ambient config. Every resource is
+named from it as a handle (`client.Topic("orders")`,
+`client.Consumer("billing", "orders")`), and the verbs live on the thing
+they act on. Before it, the same
 program needed `NewConsumer`, `NewProducer`, `NewScheduler`,
 `NewMessageAdmin`, and `NewSystemManager`, each with its own config
 carrying its own `Logger` and `Retry`. The group-config half of this,
@@ -17,13 +17,12 @@ what is stored and how instances read it back, has its own page:
 
 ## Two grammars
 
-The client names the noun: `RegisterTopic`, `ListTopics`, `Topic(name)`.
-It spans every resource so the noun has to be in the method. A handle
-uses the bare verb: `orders.Rename`, `orders.Destroy`, `nightly.Suspend`.
-It already knows what it is, and `orders.DestroyTopic` says topic twice.
-The act verbs on typed instances (`Consume`, `Produce`) are handle verbs
-too. JetStream, Temporal, and Pub/Sub all land on this split; a user
-coming from any of them has nothing new to learn here.
+The client selects the noun: `Topic(name)`, `Consumer(group, topic)`,
+`Scheduler(name)`. A handle uses the bare verb: `orders.Register`,
+`orders.Destroy`, `nightly.Suspend`. It already knows what it is, and
+`orders.DestroyTopic` says topic twice. A plural method reads the materialized
+collection: `Topics`, `Schedulers`. The act verbs on typed instances
+(`Consume`, `Produce`, `Schedule`) follow the same split.
 
 ## Connect
 
@@ -59,7 +58,7 @@ one for redelivery.
 
 A first program imports `vulkan` and nothing else of ours. Every type a user
 spells lives in `vulkan`: `ConsumerConfig`, `ConsumeOptions`,
-`ProducerConfig`, `ProduceOptions`, `ScheduleSpec`, `ScheduleConfig`,
+`ProducerConfig`, `ProduceOptions`, `ScheduleConfig`,
 `TopicConfig`, `DestroyOptions`, `MessageOptions`, `RetryPolicy`, `Tx`,
 `MetaFromContext`, `Terminal`, `Delay`. A consumer's first program used to import
 `topiccontroller` for `TopicConfig` and `schedulecontroller` for
@@ -123,7 +122,7 @@ client, err := vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{Schema: "payment
 One schema is one installation. Two clients on two schemas in the same
 database each get their own catalog, their own topics, their own
 sequences, and neither can read the other's rows — `orders` registers
-in both and they are different topics. `RegisterSystem` creates the
+in both and they are different topics. `client.System().Register` creates the
 schema if it is missing, which needs CREATE on the database; without
 that you get [VK0064](/errors/VK0064/), and the fix is to create the
 schema yourself and grant the role USAGE and CREATE on it.
@@ -144,7 +143,7 @@ looking in the wrong place.
 ## Consume
 
 ```go
-payments, err := client.RegisterConsumer[PaymentRequestedV1](ctx, "charge-cards", "payments.requested",
+payments, err := client.Consumer("charge-cards", "payments.requested").Register[PaymentRequestedV1](ctx,
 	&vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
 			Timeout: 10 * time.Second,
@@ -199,7 +198,7 @@ waiting. Not built.
 ## Produce
 
 ```go
-requests, err := client.RegisterProducer[PaymentRequestedV1](ctx, "payments.requested",
+requests, err := client.Producer("payments.requested").Register[PaymentRequestedV1](ctx,
 	&vulkan.ProducerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
 	})
@@ -217,12 +216,12 @@ defaults and batching.
 
 ## Schedule
 
-A schedule is a declaration that returns its handle, and the handle is
-what you run, the same three calls as a consumer or a producer.
+A schedule is a declaration that returns a runnable `SchedulerInstance`;
+the `Scheduler` handle administers its stored row.
 
 ```go
-nightly, err := client.RegisterSchedule[ReportRequestedV1](ctx,
-	&vulkan.ScheduleSpec{Name: "nightly-report", Topic: "reports.requested", Cron: "0 3 * * *"},
+nightly, err := client.Scheduler("nightly-report").Register[ReportRequestedV1](ctx,
+	"reports.requested", "0 3 * * *",
 	&ReportRequestedV1{Kind: "nightly"}, &vulkan.ScheduleConfig{
 		Timeout:     time.Minute,
 		Concurrency: vulkan.ConcurrencyExclusive,
@@ -234,8 +233,8 @@ if err != nil {
 return nightly.Schedule(ctx)
 ```
 
-`Schedule` runs the system manager. The schedule producer is a fleet
-worker and it produces every registered schedule, not just this one,
+`SchedulerInstance.Schedule` runs the system manager. The schedule producer is a
+fleet worker and it produces every registered schedule, not just this one,
 so the verb's name is a bit deceptive: a program that calls
 `nightly.Schedule` is running every worker in the fleet without having
 said so. `Consume` does the same thing, which is what makes the
@@ -243,17 +242,14 @@ symmetry honest — a user who has learned `Register` then `Consume` and
 `Register` then `Produce` gets `Register` then `Schedule` and nothing
 new, and none of the three is quietly doing more than the others. The
 alternative weighed against it was a handle with no run verb and
-`client.RunManager` as the only way to make a schedule fire. A program
+`client.Manager().Run` as the only way to make a schedule fire. A program
 that registers a schedule and exits has registered one that never
 fires until something in the deployment runs a manager — which any
 consumer does.
 
-`ScheduleSpec` exists because three adjacent strings is where a swap
-stops being caught. `name` and `topic` transposed registers a schedule
-named `reports.requested` that produces onto a topic called
-`nightly-report`, with no error at any point until someone asks why
-nothing arrived. Two strings (`group, topic` on the consumer) stay
-positional. A schedule's redeclaration warns
+The schedule name sits on `SchedulerHandle`, so it cannot trade places with
+the target topic in `Register`. Two strings (`group, topic` on the consumer)
+stay positional. A schedule's redeclaration warns
 [VK0062](/errors/VK0062/), the consumer's sibling.
 
 ## Handles
@@ -264,7 +260,7 @@ called:
 
 ```go
 orders := client.Topic("payments.requested")
-data, err := orders.Get(ctx) // *vulkan.TopicData; (nil, nil) when not registered
+topic, err := orders.Get(ctx) // *vulkan.Topic; (nil, nil) when not registered
 renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // vulkan.ErrTopicNotFound if it is gone
 ```
@@ -284,7 +280,7 @@ needs both `CachedInfo()` and `Info(ctx)`. Pub/Sub's
 are legitimate; the no-I/O one was picked so a handle can never hold a
 row that has gone stale and so a one-shot CLI verb is one round trip.
 And a `client.GetSchedule(ctx, name)` returning the handle with its
-row as sugar over `Schedule(name).Get(ctx)` would fit; it was left out
+row as sugar over `Scheduler(name).Get(ctx)` would fit; it was left out
 to keep one read path, and I'm not sure that is the right call for
 scripts.
 
@@ -294,15 +290,15 @@ Every block reads the same way: list the collection, name one, read
 it, act on it.
 
 ```go
-// topics
-topics, err := client.ListTopics(ctx)
+// plural reads materialized values; singular selectors return handles
+topics, err := client.Topics(ctx)
 orders := client.Topic("payments.requested")
-data, err := orders.Get(ctx)
+topic, err := orders.Get(ctx)
 if err != nil {
 	return err
 }
-if data == nil {
-	data, err = client.RegisterTopic(ctx, "payments.requested", nil)
+if topic == nil {
+	topic, err = orders.Register(ctx, nil)
 	...
 }
 err = orders.Migrate(ctx, 3)
@@ -314,18 +310,18 @@ current, err := orders.CompactionHead[ReadingV1](ctx, "device-7")
 versions, err := orders.ListKeyMessages[ReadingV1](ctx, "device-7", 20)
 
 // groups hang off their topic
-groups, err := orders.ListGroups(ctx)
+groups, err := orders.Groups(ctx)
 group := orders.Group("charge-cards")
-data, err := group.Get(ctx)
+registeredGroup, err := group.Get(ctx)
 workers, err := group.ListWorkers(ctx)
 err = group.Destroy(ctx, nil)
 dead, err := group.ListDeadMessages(ctx, 50) // proposed verbs land here
 err = group.Rewind(ctx, vulkan.AtTime(t))    // proposed
 
 // schedules
-schedules, err := client.ListSchedules(ctx)
-nightly := client.Schedule("nightly-report")
-data, err := nightly.Get(ctx)
+schedules, err := client.Schedulers(ctx)
+nightly := client.Scheduler("nightly-report")
+schedule, err := nightly.Get(ctx)
 err = nightly.Suspend(ctx)
 err = nightly.Unsuspend(ctx)
 result, err := nightly.Run(ctx, nil)
@@ -335,19 +331,24 @@ err = nightly.Destroy(ctx)
 
 // system -- the same handle grammar; today it takes no name
 sys := client.System()
-data, err := sys.Get(ctx)
-err = client.RegisterSystem(ctx, nil)
+system, err := sys.Get(ctx)
+err = sys.Register(ctx, nil)
 err = sys.Migrate(ctx, 5)
 err = sys.Destroy(ctx, nil)
+
+// system-owned collections and their singular handles
+alerts, err := sys.Alerts(ctx)
+currentAlert, err := sys.Alert("partition_count:orders").Get(ctx)
+measurements, err := sys.Measurements(ctx)
+series := sys.Measurement("vulkan.cursor.backlog", map[string]string{"group": "charge-cards"})
+history, err := series.Messages(ctx, 20)
 ```
 
-A verb that returns a collection of a child resource is `List<Child>`
-wherever it sits: `client.ListTopics`, `orders.ListGroups`,
-`group.ListWorkers`, `nightly.ListMessages`. Every resource with
-children has its list (today there is no way to list a topic's groups
-at all), and a reader knows the return is a slice before reading the
-signature. A read that returns a report keeps its own name: `Health`,
-`Metrics`, `Status`.
+A plural noun lists materialized resources: `client.Topics`,
+`orders.Groups`, `client.Schedulers`, `sys.Alerts`, `sys.Measurements`.
+Its singular noun returns a no-I/O handle. Terminal reports and retained
+history keep the verb that says what they return: `Health`, `Metrics`,
+`Status`, `ListWorkers`, `ListMessages`, and `Messages`.
 
 The key read sits on the topic. It used to be read inside a transaction
 on the producer instance and outside one on a separate
@@ -358,57 +359,59 @@ decode a stored payload.
 
 The system is a singleton and a handle anyway — one schema is one
 installation, so there is only ever one row to name. The day that
-changes the API grows by one parameter: `client.RegisterSystem(ctx,
-name, cfg)`, `client.System(name)`, topics nesting under it as
+changes the API grows by one parameter: `client.System(name).Register(ctx,
+cfg)`, topics nesting under it as
 `client.System(name).Topic(name)` the way groups nest under topics, and
 `client.Topic(name)` staying as the default system's shortcut. The
-verbs that span a system's resources (`ListTopics`, `MigrateTopics`,
-`ListBindingDeclarations`, `RunManager`) move with it that day; until then
-they sit on the client.
+verbs that own system state already sit there: `Register`, `MigrateTopics`,
+`ListBindingDeclarations`, `Alerts`, and `Measurements`. The manager is its
+own `client.Manager()` handle because it is a running subsystem.
 
 ## Where the old verbs went
 
 | before (`MessageAdmin`) | now |
 | --- | --- |
-| `RegisterTopic` | `client.RegisterTopic`, returns `*vulkan.TopicData` |
+| `RegisterTopic` | `client.Topic(name).Register(ctx, cfg)`, returns `*vulkan.Topic` |
 | `GetTopic` | `client.Topic(name).Get(ctx)` |
-| `ListTopics` | `client.ListTopics` |
+| `ListTopics` | `client.Topics` |
 | `MigrateTopic` | `Topic.Migrate` |
-| `MigrateTopics` | `client.MigrateTopics` |
+| `MigrateTopics` | `client.System().MigrateTopics` |
 | `RenameTopic` | `Topic.Rename` |
 | `DestroyTopic` | `Topic.Destroy` |
 | `TopicHealth` / `TopicMetrics` | `Topic.Health` / `Topic.Metrics` |
 | `GetGroup` | `Topic.Group(name).Get(ctx)`; its worker rows become `Group.ListWorkers` |
-| (none) | `Topic.ListGroups` |
+| (none) | `TopicHandle.Groups` |
 | `DestroyGroup` | `Group.Destroy` |
-| `ListBindingDeclarations` | `client.ListBindingDeclarations` |
-| `GetSchedule` | `client.Schedule(name).Get(ctx)` |
-| `ListSchedules` | `client.ListSchedules` |
-| `SuspendSchedule` / `UnsuspendSchedule` | `Schedule.Suspend` / `Schedule.Unsuspend` |
-| `RunSchedule` | `Schedule.Run` |
-| `ScheduleStatus` / `ScheduleMessages` | `Schedule.Status` / `Schedule.ListMessages` |
-| `DestroySchedule` | `Schedule.Destroy` |
-| `RegisterSystem` | `client.RegisterSystem` |
+| `ListBindingDeclarations` | `client.System().ListBindingDeclarations` |
+| `GetSchedule` | `client.Scheduler(name).Get(ctx)` |
+| `ListSchedules` | `client.Schedulers` |
+| `SuspendSchedule` / `UnsuspendSchedule` | `Scheduler.Suspend` / `Scheduler.Unsuspend` |
+| `RunSchedule` | `Scheduler.Run` |
+| `ScheduleStatus` / `ScheduleMessages` | `Scheduler.Status` / `Scheduler.ListMessages` |
+| `DestroySchedule` | `Scheduler.Destroy` |
+| `RegisterSystem` | `client.System().Register` |
 | `GetSystem` / `MigrateSystem` / `DestroySystem` | `client.System().Get` / `.Migrate` / `.Destroy` |
-| `ListAlerts` / `ListMeasurements` / `ListMeasurementMessages` | `client`, unchanged |
+| `ListAlerts` | `client.System().Alerts` |
+| `ListMeasurements` / `ListMeasurementMessages` | `client.System().Measurements` / `.Measurement(...).Messages` |
 | `CompactionController.GetHead` / `ListKeyMessages` | `Topic.CompactionHead` / `Topic.ListKeyMessages` |
-| `SchedulerInstance.Schedule` | `Schedule.Schedule`, on the same handle as the admin verbs |
+| `RegisterSchedule` | `client.Scheduler(name).Register`, returns `SchedulerInstance` |
 
 ## The manager
 
 ```go
-return client.RunManager(ctx)
+return client.Manager().Run(ctx)
 ```
 
 Most deployments never call this. `Consume` runs the system manager
 beside the session, so a process with one live consumer already keeps
 the fleet-wide workers running — the topic janitor, the schedule
 producer, the metrics collector, the built-in checks — for every topic
-in the deployment, not just its own. `RunManager` is for the process
+in the deployment, not just its own. `ManagerHandle.Run` is for the process
 with no consumer to hang upkeep on: `vulkan manager run`, or a service
 that wants to carry it explicitly.
 
-Nothing is refused. Every `Consume`, `RunManager`, and `Schedule` call
+Nothing is refused. Every `Consume`, `ManagerHandle.Run`, and
+`SchedulerInstance.Schedule` call
 in the fleet starts its own reconcile loop, and they all try to claim
 the same row: `manager` under the system's owner, declared
 `target_instances = 1`. One claim wins, the losers retry every 30
@@ -443,15 +446,15 @@ and has none live. Nothing is running it.
 It reports the way both other built-ins do, once at register and once
 on a schedule:
 
-- `RegisterProducer` logs [VK0063](/errors/VK0063/) naming the topic,
+- `ProducerHandle.Register` logs [VK0063](/errors/VK0063/) naming the topic,
   the unclaimed rows, and who declared them. The pass reads only:
   nothing is published, and `Register` never fails on it.
 - Hourly under the manager, the check publishes an active alert to
   `__system.alerts` and resolves it once the rows are claimed again.
   `vulkan alert list` reads both states.
 
-Worked case: `orders-api` runs only `RegisterProducer` on
-`orders.placed`. Its register-time line names
+Worked case: `orders-api` runs only `client.Producer("orders.placed").Register`.
+Its register-time line names
 `orders.placed (topic_janitor)`, so nothing is dropping that topic's
 expired partitions. `fulfillment` starts its `Consume` on the
 `pack-orders` group, its manager claims that row, and the next
@@ -467,19 +470,11 @@ live and says nothing; a longer gap logs one line and clears itself.
 
 ## Testing your code
 
-Handles are the seam. The package publishes one interface per typed
-instance, satisfied by the concrete instance the client returns, so a
-unit test injects a fake and never opens a pool:
-
-- `vulkan.Producer[T]` — `Produce`, `ProduceBatch`, `ProduceFunc`,
-  `ProduceInTx`, `ProduceFuncInTx`, `GetCompactionHeadInTx`
-- `vulkan.Consumer[T]` — `Consume`
-
-Each one is the instance's whole public surface, not a curated subset.
-A subset is a second definition of what a producer is, and anyone who
-batches would write their own interface anyway. The client itself stays
-concrete; a test that wants to fake the whole client defines the subset
-it uses.
+The library returns concrete `ProducerInstance[T]`, `ConsumerInstance[T]`,
+and `SchedulerInstance[T]` values. A package that needs a fake declares the
+small interface it consumes beside its own code; Vulkan does not publish a
+second, partial definition of those instances. The client stays concrete for
+integration tests.
 
 <ThreadAside label="PROPOSED" title="A test helper">
 A `vulkantest.NewClient(t)` that stands up the real library against a
@@ -491,31 +486,35 @@ it is much cheaper to create per test. Not built.
 
 ## Names
 
-The handle is the bare noun and the row a user reads takes `Data`:
-`vulkan.Topic` is what you act on, `vulkan.TopicData` is what `Get`
-returns. The read-models renamed in one sweep (`topic.Topic` ->
-`vulkan.TopicData`, `schedule.Schedule` -> `vulkan.ScheduleData`,
-`worker.Worker` -> `vulkan.WorkerData`, `producer.MessageRow[T]` ->
-`vulkan.MessageData[T]`), all or nothing, since a half-sweep leaves two
-grammars. JSON is unaffected; the wire names live in field tags.
+The suffix says what a value does. A handle is the lazy identity plus
+client (`TopicHandle`, `GroupHandle`, `SchedulerHandle`); the bare noun is
+the materialized domain value returned by `Get` (`Topic`, `Group`,
+`Schedule`). `Message[T]`, `Alert`, and `Measurement` follow the same rule:
+they are values, not handles. JSON is unaffected; wire names live in field
+tags.
 
-`Data` is the user's suffix, so the library's own layers gave it up.
-`*Data` used to name the table-exact scan structs in every datastore
-package (`datastore.TopicData`, 63 of them); those are now `*Row`,
-named for the table they scan: `TopicConfigRow`, `WorkerConfigRow`,
-`ScheduleConfigRow`. A scan destination is a row and its name says
-which table's, and `MessageRow` moving to `MessageData` is what freed
-the suffix. `Info` was the first draft and was dropped: it is
-JetStream's word, and a user reading `TopicData` needs no second
-library to know what it is. The cost was a rename across every
-datastore package for the users' sake, compile-time only.
+The rest of the public grammar follows the value's role: `Config` for
+declarations, `Options` and `Item` for command inputs, `Result` for command
+outputs, `Snapshot` for point-in-time observability, `Status` for current
+state, `Summary` for an aggregate projection, `Health` for a verdict,
+`Declaration` for a declared relationship, `Row` for a table-exact scan, and
+`Instance` for running process state. A projection includes its subject when
+the bare role would be vague: `ScheduleGroupSummary`,
+`ScheduleMessageStatus`, `TopicVersionHealth`, and
+`ConsumerGroupSchemaVersionLag`.
+
+`Data` and `Info` are not roles, so neither is a public suffix. `TopicData`
+does not say whether it is a row, snapshot, configuration, or handle;
+`Topic` says it is the domain value while its package and return site provide
+the context. Datastore scan structs keep `Row` and name the
+table they scan: `TopicConfigRow`, `WorkerConfigRow`, `ScheduleConfigRow`.
 
 ## Worked case
 
 `charge-cards` runs three replicas on `payments.requested` (topic id
 `1`) with the default retry budget. A fourth service, `reconciliation`,
 also consumes the group by mistake and declares `MaxRetries: 5`. Its
-`RegisterConsumer` overwrites the stored document, its logger warns
+`ConsumerHandle.Register` overwrites the stored document, its logger warns
 [VK0059](/errors/VK0059/) with the `metadata` change as `old -> new`,
 and the three replicas pick the new budget up on their next config
 refresh. When the owning service next restarts it declares the default

@@ -18,7 +18,7 @@ func (d *JanitorProvisioner) Declare(ctx context.Context, owner *common.Owner) e
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *JanitorProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
+func (d *JanitorProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	// the owner is read before the claim (topic resolution below), so its check
 	// cannot wait for RegisterInstance's
 	if err := controller.ValidateOwner(declared.Owner, common.OwnerTopic, WorkerTopicJanitor); err != nil {

@@ -84,7 +84,7 @@ func run() (err error) {
 	ds = client.Datastore()
 
 	topicName = fmt.Sprintf("bindinglab.%d", time.Now().UnixNano())
-	registered, err := client.RegisterTopic(ctx, topicName, nil)
+	registered, err := client.Topic(topicName).Register(ctx, nil)
 	must(err)
 	topicId = registered.Id
 	defer func() {
@@ -172,7 +172,7 @@ func run() (err error) {
 	}
 	fmt.Println("  ✓ swapped once the incumbent's heartbeats lapsed; wait left the listing")
 
-	wpInstance, err := client.RegisterProducer[labMessage](ctx, topicName, nil)
+	wpInstance, err := client.Producer(topicName).Register[labMessage](ctx, nil)
 	must(err)
 	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, &vulkan.ProduceOptions{RoutingKey: "payments.charge"})
 	must(err)
@@ -222,9 +222,10 @@ func run() (err error) {
 
 // registerConsumer declares the lab group's set.
 func registerConsumer(ctx context.Context, bindings []string) (*vulkan.ConsumerInstance[labMessage], error) {
-	return client.RegisterConsumer[labMessage](ctx, groupName, topicName, &vulkan.ConsumerConfig{
+	return client.Consumer(groupName, topicName).Register[labMessage](ctx, &vulkan.ConsumerConfig{
 		Bindings: bindings,
 	})
+
 }
 
 // consumeOptions holds the lab's tight heartbeat and retry knobs, passed to
@@ -299,7 +300,7 @@ func bindingDisplays(ctx context.Context) string {
 // labDeclarations reads the listing surface and returns the lab group's
 // installed row and open waiting row (nil when absent).
 func labDeclarations(ctx context.Context) (*consume.BindingDeclaration, *consume.BindingDeclaration) {
-	declarations, err := client.ListBindingDeclarations(ctx)
+	declarations, err := client.System().ListBindingDeclarations(ctx)
 	must(err)
 	var installed *consume.BindingDeclaration
 	var waiter *consume.BindingDeclaration

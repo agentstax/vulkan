@@ -110,13 +110,13 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	name := fmt.Sprintf("phase14a.schemaevolutionlab.%d", time.Now().UnixNano())
-	registered, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{})
+	registered, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
 		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp1Instance, err := client.RegisterProducer[V1Order](ctx, name, nil)
+	wp1Instance, err := client.Producer(name).Register[V1Order](ctx, nil)
 	must(err)
 
 	step("the topic holds live keyed V1Order traffic for 5 users")
@@ -130,7 +130,7 @@ func run() (err error) {
 	}
 
 	step("a V2Order producer registers on the same topic -- its rows carry schema_version 2")
-	wp2Instance, err := client.RegisterProducer[V2Order](ctx, name, nil)
+	wp2Instance, err := client.Producer(name).Register[V2Order](ctx, nil)
 	must(err)
 
 	step("user:1 cuts over to v2 BEFORE the bridge ever sees it (live-then-backfill)")
@@ -248,10 +248,11 @@ func bridgeIdempotencyKey(sourceID int64) string {
 // out the library's production-sized defaults; the session knobs are
 // bridgeConsumeOptions.
 func newBridgeConsumer(ctx context.Context, client *vulkan.Client, name string) *vulkan.ConsumerInstance[V1Order] {
-	cInstance, err := client.RegisterConsumer[V1Order](ctx, group, name, &vulkan.ConsumerConfig{
+	cInstance, err := client.Consumer(group, name).Register[V1Order](ctx, &vulkan.ConsumerConfig{
 		Message:                 &vulkan.MessageOptions{Timeout: 2 * time.Second},
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 	})
+
 	must(err)
 	return cInstance
 }
@@ -291,13 +292,13 @@ func waitForCommitted(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 	return nil
 }
 
-func versionHealth(all []*vulkan.VersionHealth, version int) *vulkan.VersionHealth {
+func versionHealth(all []*vulkan.TopicVersionHealth, version int) *vulkan.TopicVersionHealth {
 	for _, h := range all {
 		if h.Version == version {
 			return h
 		}
 	}
-	die(fmt.Sprintf("no VersionHealth entry for version %d", version))
+	die(fmt.Sprintf("no TopicVersionHealth entry for version %d", version))
 	return nil
 }
 

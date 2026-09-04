@@ -47,6 +47,18 @@ each func param has explicit type, never combined
   the receiver matches the initial of the type's FINAL word -- `d` on
   `*TopicDatastore`, `c` on `*ControllerConfig`, `i` on `*JanitorInstance`,
   `d` on every `*Definition`. A single letter never holds a domain value.
+- Exported type suffixes name the type's semantic role, not the fact that it
+  contains fields. A lazy identity plus client is `<Noun>Handle`; a
+  materialized domain resource or payload is the bare `<Noun>`; configuration
+  is `<Noun>Config`; command inputs are `<Verb>Options` and `<Verb>Item`;
+  command output is `<Verb>Result`; point-in-time observability is
+  `<Noun>Snapshot`; current state is `<Noun>Status`; an aggregate projection is
+  `<Noun>Summary`; a readiness or retirement verdict is `<Noun>Health`; a
+  declared relationship is `<Noun>Declaration`; a table-exact datastore scan
+  is `<Noun>Row`; and running process state is `<Noun>Instance`.
+- `Data` and `Info` are not exported type suffixes. They describe
+  representation without identifying the value's role. Qualify a projection
+  by its subject instead (`ScheduleGroupSummary`, `TopicVersionHealth`).
 
 ## Vocabulary
 
@@ -168,10 +180,9 @@ Every package is exactly one of three kinds:
   agent noun (produce -> producer, consume -> consumer, schedule ->
   scheduler). Declares no codes, owns no SQL, holds no vocabulary.
   `vulkan` is the client plus aliases: it declares Client, ClientConfig,
-  the pool and its config, the handles, the two instance wrappers, and
-  the Producer/Consumer interfaces; every other exported name is an
-  alias or var into the declaring package, and the client holds
-  assemblers only.
+  the pool and its config, the handles, and the three instance wrappers;
+  every other exported name is an alias or var into the declaring package,
+  and the client holds assemblers only.
 
 The seam law: anything another stack imports is a seam -- a vocabulary
 root or a domain controller. What only your own tree imports nests freely

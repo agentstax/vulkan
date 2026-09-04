@@ -89,13 +89,13 @@ func fixedCostScenario(ctx context.Context, pool *pgxpool.Pool) {
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadwritelab.fixed.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	unkeyedMs := timeSequential(ctx, wpInstance, n, func(i int) string { return "" })
@@ -181,10 +181,10 @@ func timeConcurrent(ctx context.Context, pool *pgxpool.Pool, label string, gorou
 	must(err)
 
 	name := fmt.Sprintf("phase8c.compactionheadwritelab.%s.%d", label, time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{PartitionSize: largePartitionSize})
+	tp, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	start := time.Now()

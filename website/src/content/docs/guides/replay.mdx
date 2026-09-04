@@ -28,8 +28,7 @@ starts at zero by default — it reads everything retention still holds
 [`Start: vulkan.Head()`](/guides/new-group-start/)):
 
 ```go
-indexer, err := client.RegisterConsumer[OrderPlaced](ctx, "search-indexer",
-	registered.Name, nil)
+indexer, err := client.Consumer("search-indexer", registered.Name).Register[OrderPlaced](ctx, nil)
 must(err)
 must(indexer.Consume(ctx, indexOrder, nil))
 ```
@@ -92,7 +91,7 @@ does. The real budget question is **retention**: how much history to
 keep, set per topic at registration:
 
 ```go
-registered, err := client.RegisterTopic(ctx, "orders",
+registered, err := client.Topic("orders").Register(ctx,
 	&vulkan.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
 ```
 

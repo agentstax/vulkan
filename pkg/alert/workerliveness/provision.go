@@ -47,7 +47,7 @@ func (p *WorkerLivenessProvisioner) Declare(ctx context.Context, owner *common.O
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (p *WorkerLivenessProvisioner) Provision(ctx context.Context, declared *worker.WorkerData) (worker.Execution, error) {
+func (p *WorkerLivenessProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	parsed, err := workercontroller.ParseMetadata[workerLivenessMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err

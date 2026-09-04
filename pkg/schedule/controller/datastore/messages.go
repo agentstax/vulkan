@@ -10,8 +10,8 @@ import (
 
 // ListMessages is the schedule's newest limit messages, one row per
 // (message, consumer group that receives it), newest message first.
-func (d *ScheduleDatastore) ListMessages(ctx context.Context, topicId int64, name string, limit int) ([]MessageStatus, error) {
-	var requests []MessageStatus
+func (d *ScheduleDatastore) ListMessages(ctx context.Context, topicId int64, name string, limit int) ([]ScheduleMessageStatusRow, error) {
+	var requests []ScheduleMessageStatusRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		requests, err = d.listMessages(ctx, topicId, name, limit)
@@ -20,7 +20,7 @@ func (d *ScheduleDatastore) ListMessages(ctx context.Context, topicId int64, nam
 	return requests, err
 }
 
-func (d *ScheduleDatastore) listMessages(ctx context.Context, topicId int64, name string, limit int) ([]MessageStatus, error) {
+func (d *ScheduleDatastore) listMessages(ctx context.Context, topicId int64, name string, limit int) ([]ScheduleMessageStatusRow, error) {
 	groups, err := d.matchingGroups(ctx, topicId, name)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func (d *ScheduleDatastore) listMessages(ctx context.Context, topicId int64, nam
 	}
 
 	ids := messageIds(messages)
-	var statuses []MessageStatus
+	var statuses []ScheduleMessageStatusRow
 	for _, group := range groups {
 		outcomes, err := d.messageOutcomes(ctx, topicId, group.Id, ids)
 		if err != nil {
@@ -95,11 +95,11 @@ func (d *ScheduleDatastore) keyMessages(ctx context.Context, topicId int64, name
 
 // groupMessageStatuses is one consumer group's row per message, newest
 // message first.
-func groupMessageStatuses(group matchingGroupRow, messages []keyMessageRow, headId int64, outcomes map[int64]messageOutcomeRow) []MessageStatus {
-	var statuses []MessageStatus
+func groupMessageStatuses(group matchingGroupRow, messages []keyMessageRow, headId int64, outcomes map[int64]messageOutcomeRow) []ScheduleMessageStatusRow {
+	var statuses []ScheduleMessageStatusRow
 	for i, message := range messages {
 		outcome := outcomes[message.Id]
-		status := MessageStatus{
+		status := ScheduleMessageStatusRow{
 			ConsumerGroup: group.Name,
 			MessageId:     message.Id,
 			ScheduledAt:   message.ScheduledAt,

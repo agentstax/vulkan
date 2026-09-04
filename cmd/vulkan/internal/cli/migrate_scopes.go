@@ -173,7 +173,7 @@ func runScopeMigrate(ctx context.Context, client *vulkan.Client, s scope, name s
 	case scopeTopic:
 		return client.Topic(name).Migrate(ctx, to)
 	default:
-		return client.MigrateTopics(ctx, to)
+		return client.System().MigrateTopics(ctx, to)
 	}
 }
 

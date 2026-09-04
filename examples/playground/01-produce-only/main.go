@@ -54,12 +54,12 @@ func run() error {
 		return err
 	}
 
-	registered, err := client.RegisterTopic(ctx, "orders.placed", nil)
+	registered, err := client.Topic("orders.placed").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	orders, err := client.RegisterProducer[OrderPlacedV1](ctx, registered.Name, nil)
+	orders, err := client.Producer(registered.Name).Register[OrderPlacedV1](ctx, nil)
 	if err != nil {
 		return err
 	}

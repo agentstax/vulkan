@@ -65,7 +65,7 @@ func run() (err error) {
 	name := fmt.Sprintf("registeridempotency.lab.%d", time.Now().UnixNano())
 
 	step("first register creates the topic")
-	created, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 720 * time.Hour})
+	created, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{RetentionTTL: 720 * time.Hour})
 	must(err)
 	defer func() {
 		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
@@ -78,7 +78,7 @@ func run() (err error) {
 	step("re-register SAME config is idempotent, not a mismatch")
 	// Fresh Config with the identical caller-set field -- RegisterTopic mutates
 	// what it's given via WithDefaults, so don't reuse the first one.
-	again, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 720 * time.Hour})
+	again, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{RetentionTTL: 720 * time.Hour})
 	if err != nil {
 		die(fmt.Sprintf("re-register with identical config must succeed, got: %v", err))
 	}
@@ -91,7 +91,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ re-register resolved same id=%d, no mismatch, nothing appended\n", again.Id)
 
 	step("re-register DIFFERENT config replaces the stored mutable config")
-	redeclared, err := client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 168 * time.Hour})
+	redeclared, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{RetentionTTL: 168 * time.Hour})
 	must(err)
 	if redeclared.Id != created.Id {
 		die(fmt.Sprintf("re-declare resolved a different id: got %d, want %d", redeclared.Id, created.Id))
@@ -105,7 +105,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ newest declaration won: retention now %v on the same id=%d, snapshot appended\n", redeclared.RetentionTTL, redeclared.Id)
 
 	step("re-register DIFFERENT PartitionSize is rejected")
-	_, err = client.RegisterTopic(ctx, name, &vulkan.TopicConfig{RetentionTTL: 168 * time.Hour, PartitionSize: created.PartitionSize + 1})
+	_, err = client.Topic(name).Register(ctx, &vulkan.TopicConfig{RetentionTTL: 168 * time.Hour, PartitionSize: created.PartitionSize + 1})
 	if !errors.Is(err, topic.ErrTopicConfigMismatch) {
 		die(fmt.Sprintf("re-register with a different PartitionSize must return ErrTopicConfigMismatch, got: %v", err))
 	}

@@ -15,7 +15,7 @@ var ErrTopicConfigMismatch = diagnostic.NewDiagnosticError("VK0004", diagnostic.
 // Diagnose queries: vulkan explain VK0005
 var ErrTopicNotFound = diagnostic.NewDiagnosticError("VK0005", diagnostic.RecoveryPermanent,
 	"topic not found",
-	"register it with Client.RegisterTopic first").
+	"register it with Client.Topic(name).Register first").
 	Diagnose(
 		diagnostic.NewDiagnosticQuery("the topic row under this name", `
 SELECT id, name, created_at FROM {schema}.topic_config WHERE name = '{topic}';`),

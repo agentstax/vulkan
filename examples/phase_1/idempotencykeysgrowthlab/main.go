@@ -96,13 +96,13 @@ func accumulationScenario(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 
 	idkTable := fmt.Sprintf("%s.%s", ds.Schema, topic.IdempotencyKeyTable(tp.Id))
@@ -144,13 +144,13 @@ func sweepKeepUpScenario(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.keepup.%d", time.Now().UnixNano())
-	tp, err := client.RegisterTopic(ctx, topicName, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
+	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
 	must(err)
 	defer func() {
 		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.RegisterProducer[common.Work](ctx, tp.Name, nil)
+	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
