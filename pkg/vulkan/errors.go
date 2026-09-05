@@ -5,6 +5,7 @@ package vulkan
 
 import (
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/compaction"
 	"github.com/agentstax/vulkan/pkg/consume"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/produce"
@@ -19,6 +20,7 @@ var (
 	ErrCommitConfirmationLost         = common.ErrCommitConfirmationLost
 	ErrLeaseLost                      = common.ErrLeaseLost
 	ErrLifecycleContextNotCancellable = common.ErrLifecycleContextNotCancellable
+	ErrCompactionHeadNotFound         = compaction.ErrCompactionHeadNotFound
 	ErrDeliveryDelayed                = consume.ErrDeliveryDelayed
 	ErrDeliveryTerminal               = consume.ErrDeliveryTerminal
 	ErrGroupDeliveriesPending         = consume.ErrGroupDeliveriesPending

@@ -66,11 +66,14 @@ Steps, in order:
 2. **Decision record 0646** superseding [0619]'s generic-only-for-state
    clause and recording the settled points above; [0619] status ->
    superseded, linked both ways.
-3. **Vocabulary.** `common.RawPayload` with its three methods;
-   `pkg/compaction/errors.go` declaring `ErrCompactionHeadNotFound`
-   (VK0066, Permanent); the docs page
-   `website/src/content/docs/errors/VK0066.md`; link the compaction
-   root in tools/conventions and tools/codeexport.
+3. **Vocabulary.** DONE 2026-09-04: `common.RawPayload` with its three
+   methods; `pkg/compaction/errors.go` declaring
+   `ErrCompactionHeadNotFound` (VK0066, Permanent) and its docs page;
+   the compaction root linked in tools/conventions and tools/codeexport;
+   `message_key` added to the attribute registry. The conventions walk
+   requires a raise site, so `MessageAdmin.GetCompactionHead` raises it
+   now and `AlertHandle.Get` / `MeasurementHandle.Get` already map it
+   back to `(nil, nil)`.
 4. **The handle tree in pkg/vulkan.** `TopicHandle[Message]`,
    `KeyHandle[Message]`, `GroupHandle[Message]` with Register,
    `ProducerHandle[Message]`; `ConsumerHandle` deleted; Alert and

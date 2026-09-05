@@ -734,6 +734,7 @@ the code is the line's breadcrumb to its own explanation.
       target_instances  the worker row's live-instance cap -- 0 is
                     suspended, -1 is no cap
       message_id    message id
+      message_key   message key
       schedule      schedule name
       schedule_id   schedule id
       low, high     id range bounds

@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"context"
+	"errors"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 )
@@ -30,7 +31,11 @@ func (a *AlertHandle) MessageKey() string {
 // Get returns the alert's current value, or nil if no retained message has the
 // key.
 func (a *AlertHandle) Get(ctx context.Context) (*Message[Alert], error) {
-	return a.client.Topic(alert.TopicName).CompactionHead[Alert](ctx, a.messageKey)
+	head, err := a.client.Topic(alert.TopicName).CompactionHead[Alert](ctx, a.messageKey)
+	if errors.Is(err, ErrCompactionHeadNotFound) {
+		return nil, nil
+	}
+	return head, err
 }
 
 // Messages returns the alert's retained values, newest first.

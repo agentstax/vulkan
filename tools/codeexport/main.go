@@ -17,6 +17,7 @@ import (
 	// complete. tools/conventions holds the walk that proves it.
 	_ "github.com/agentstax/vulkan/pkg/alert"
 	_ "github.com/agentstax/vulkan/pkg/common"
+	_ "github.com/agentstax/vulkan/pkg/compaction"
 	_ "github.com/agentstax/vulkan/pkg/consume"
 	_ "github.com/agentstax/vulkan/pkg/metrics"
 	_ "github.com/agentstax/vulkan/pkg/migrate"

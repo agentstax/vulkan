@@ -785,6 +785,37 @@
       "code": "VK0065",
       "kind": "event",
       "message": "system manager stopped -- nothing reconciles the deployment's workers until the loop re-claims the row after its backoff"
+    },
+    "VK0066": {
+      "code": "VK0066",
+      "kind": "error",
+      "problem": "compaction head not found",
+      "recovery": "permanent",
+      "fix": "produce under message key \"{message_key}\" on topic \"{topic}\" with CompactionOptions.Enable set",
+      "fix_placeholders": [
+        "message_key",
+        "topic"
+      ],
+      "queries": [
+        {
+          "label": "the key's compaction_head row, if one exists",
+          "sql": "SELECT\n\tcompaction_key,\n\thead_id,\n\tschema_version,\n\tcompaction_rank\nFROM {schema}.compaction_head_{topic_id}\nWHERE compaction_key = '{message_key}';",
+          "placeholders": [
+            "schema",
+            "topic_id",
+            "message_key"
+          ]
+        },
+        {
+          "label": "the messages produced under the key -- a NULL compaction_rank never opted into compaction",
+          "sql": "SELECT\n\tid,\n\tschema_version,\n\tcompaction_rank,\n\tcreated_at\nFROM {schema}.message_log_{topic_id}\nWHERE message_key = '{message_key}'\nORDER BY id DESC\nLIMIT 20;",
+          "placeholders": [
+            "schema",
+            "topic_id",
+            "message_key"
+          ]
+        }
+      ]
     }
   }
 }

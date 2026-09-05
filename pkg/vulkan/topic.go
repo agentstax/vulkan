@@ -57,8 +57,8 @@ func (t *TopicHandle) Metrics(ctx context.Context) (*TopicSnapshot, error) {
 	return t.client.admin.TopicMetrics(ctx, t.name)
 }
 
-// CompactionHead returns messageKey's current compaction head, or nil if
-// nothing has been produced under it.
+// CompactionHead returns messageKey's current compaction head, or
+// ErrCompactionHeadNotFound if no compacted message was produced under it.
 func (t *TopicHandle) CompactionHead[Payload Versioned](ctx context.Context, messageKey string) (*Message[Payload], error) {
 	return t.client.admin.GetCompactionHead[Payload](ctx, t.name, messageKey)
 }
