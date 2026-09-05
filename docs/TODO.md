@@ -79,7 +79,7 @@ definitions remain parked.
 - Implement deterministic all-definition and scope-filtered reads over
   `diagnostic.Metrics()`. They perform no I/O and expose Vulkan built-ins only.
 
-### 3. Drive every built-in producer from its declaration — review pending
+### 3. Drive every built-in producer from its declaration — approved
 
 - Change the metrics collector, consumer session producer, and built-in alert
   checks to construct `Measurement` values from their declaration's name,
@@ -94,7 +94,7 @@ definitions remain parked.
 - Add the hand-written metric pages for VK0067-VK0093 and regenerate the site
   code export after it carries scope and attribute keys.
 
-### 4. Reuse and regularize the read paths
+### 4. Reuse and regularize the read paths — review pending
 
 - Reuse compaction-head listing for `SystemMetricsHandle.Latest`, exact-key
   compaction-head lookup for `MetricHandle.Latest`, and exact-key message

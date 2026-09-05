@@ -155,7 +155,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	}
 
 	// every delivery row is a failure that needs a retry or a dead-letter record
-	group, err := a.metricsController.ConsumerGroupSnapshot(ctx, topicId, groupName)
+	group, err := a.metricsController.ConsumerGroupSnapshot(ctx, topicId, groupId, groupName)
 	if err != nil {
 		return err
 	}

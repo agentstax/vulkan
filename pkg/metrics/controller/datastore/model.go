@@ -35,6 +35,12 @@ type ScheduleSnapshotRow struct {
 	DueForSecs      float64    `db:"due_for_secs"`
 }
 
+// ConsumerGroupIdentityRow is one group's id and name used by TopicSnapshot.
+type ConsumerGroupIdentityRow struct {
+	Id   int64  `db:"id"`
+	Name string `db:"name"`
+}
+
 // ConsumerGroupSnapshotRow is one (group, topic)'s cursor row plus the
 // counted delivery/lease state around it.
 type ConsumerGroupSnapshotRow struct {

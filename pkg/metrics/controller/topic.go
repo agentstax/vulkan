@@ -22,14 +22,14 @@ func (c *MetricsController) TopicSnapshot(ctx context.Context, topicId int64) (*
 		return nil, err
 	}
 
-	groupNames, err := c.ListConsumerGroups(ctx, topicId)
+	consumerGroups, err := c.datastore.ListConsumerGroups(ctx, topicId)
 	if err != nil {
 		return nil, err
 	}
 
-	groups := make([]metrics.ConsumerGroupSnapshot, 0, len(groupNames))
-	for _, name := range groupNames {
-		group, err := c.ConsumerGroupSnapshot(ctx, topicId, name)
+	groups := make([]metrics.ConsumerGroupSnapshot, 0, len(consumerGroups))
+	for _, consumerGroup := range consumerGroups {
+		group, err := c.ConsumerGroupSnapshot(ctx, topicId, consumerGroup.Id, consumerGroup.Name)
 		if err != nil {
 			return nil, err
 		}

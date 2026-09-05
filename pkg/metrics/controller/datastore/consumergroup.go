@@ -2,33 +2,26 @@ package datastore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/jackc/pgx/v5"
 )
 
 // ConsumerGroupSnapshot is the current cursor/delivery/lease picture for
-// (topicId, consumerGroup).
-func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotRow, error) {
+// (topicId, consumerGroupId).
+func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroupId int64) (*ConsumerGroupSnapshotRow, error) {
 	var snapshot *ConsumerGroupSnapshotRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		snapshot, err = d.consumerGroupSnapshot(ctx, topicId, consumerGroup)
+		snapshot, err = d.consumerGroupSnapshot(ctx, topicId, consumerGroupId)
 		return err
 	})
 	return snapshot, err
 }
 
-func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotRow, error) {
-	consumerGroupIdSql := fmt.Sprintf(`
-		-- vulkan: metrics.consumerGroupSnapshot
-		SELECT id FROM %[1]s.consumer_group_config WHERE topic_id = $1 AND name = $2;
-	`, d.Datastore.Schema)
-	var consumerGroupId int64
-	if err := d.Datastore.Pool.QueryRow(ctx, consumerGroupIdSql, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
-		return nil, err
-	}
-
+func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroupId int64) (*ConsumerGroupSnapshotRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: metrics.consumerGroupSnapshot
 		SELECT
@@ -84,6 +77,9 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId in
 		&data.OldestUnresolvedAt,
 		&data.OpenLeases,
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -91,10 +87,9 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId in
 	return &data, nil
 }
 
-// ListConsumerGroups is every group registered on topicId -- the groups a
-// health view must account for before the topic can be considered drained.
-func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicId int64) ([]string, error) {
-	var groups []string
+// ListConsumerGroups is every group's id and name on topicId, ordered by name.
+func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicId int64) ([]ConsumerGroupIdentityRow, error) {
+	var groups []ConsumerGroupIdentityRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		groups, err = d.listConsumerGroups(ctx, topicId)
@@ -103,26 +98,17 @@ func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicId int64
 	return groups, err
 }
 
-func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicId int64) ([]string, error) {
+func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicId int64) ([]ConsumerGroupIdentityRow, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: metrics.listConsumerGroups
-		SELECT name
+		SELECT id, name
 		FROM %[1]s.consumer_group_config
-		WHERE topic_id = $1 ORDER BY name;
+		WHERE topic_id = $1
+		ORDER BY name;
 	`, d.Datastore.Schema)
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var groups []string
-	for rows.Next() {
-		var g string
-		if err := rows.Scan(&g); err != nil {
-			return nil, err
-		}
-		groups = append(groups, g)
-	}
-	return groups, rows.Err()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ConsumerGroupIdentityRow])
 }

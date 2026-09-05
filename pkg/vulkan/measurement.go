@@ -2,7 +2,6 @@ package vulkan
 
 import (
 	"context"
-	"errors"
 
 	"github.com/agentstax/vulkan/pkg/metrics"
 )
@@ -33,14 +32,10 @@ func (m *MeasurementHandle) MessageKey() string {
 // Get returns the measurement series' current value, or nil if no retained
 // message has the key.
 func (m *MeasurementHandle) Get(ctx context.Context) (*StoredMessage[Measurement], error) {
-	head, err := m.client.Topic[Measurement](metrics.TopicName).Key(m.messageKey).CompactionHead(ctx)
-	if errors.Is(err, ErrCompactionHeadNotFound) {
-		return nil, nil
-	}
-	return head, err
+	return m.client.admin.GetMeasurement(ctx, m.messageKey)
 }
 
 // Messages returns the measurement series' retained values, newest first.
 func (m *MeasurementHandle) Messages(ctx context.Context, limit int) ([]*StoredMessage[Measurement], error) {
-	return m.client.Topic[Measurement](metrics.TopicName).Key(m.messageKey).Messages(ctx, limit)
+	return m.client.admin.ListMeasurementMessages(ctx, m.messageKey, limit)
 }
