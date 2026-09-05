@@ -72,6 +72,43 @@ A missing topic exits non-zero, so `get -q` doubles as an existence check:
 if vulkan topic get -q orders.created; then echo "exists"; fi
 ```
 
+### Read a message key (proposed)
+
+Not shipped yet; this section is the spec. `topic key get` prints the
+key's compaction head, the message that currently wins under it. The
+CLI has no message type in scope, so the payload prints as the JSON the
+row stores:
+
+```console
+$ vulkan topic key get orders.created order-42
+✓ compaction head for "order-42" on "orders.created"
+
+  MessageId        4187
+  CreatedAt        2026-09-04 13:02
+  RoutingKey
+  CompactionRank   3
+  Message
+    {"order_id": "order-42", "status": "shipped", "total_cents": 1299}
+```
+
+A key nothing was produced under exits non-zero with VK0066. `--output
+json` prints the message document with the payload inline under
+`message`, not string-escaped.
+
+`topic key messages` prints the key's retained history, newest first:
+
+```console
+$ vulkan topic key messages orders.created order-42 --limit 3
+MESSAGE_ID   CREATED            RANK   MESSAGE
+4187         2026-09-04 13:02   3      {"order_id": "order-42", "status": "shipped", ...}
+4102         2026-09-04 11:47   2      {"order_id": "order-42", "status": "packed", ...}
+3990         2026-09-04 09:15   1      {"order_id": "order-42", "status": "placed", ...}
+
+3 messages
+```
+
+- `--limit` — newest N messages, default 20
+
 ### Destroy a topic
 
 Prompts for the topic name before deleting anything:

@@ -6,23 +6,66 @@ description: The shape of the whole API — one client over your pool, resources
 import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 One client wraps the pool and holds the ambient config. Every resource is
-named from it as a handle (`client.Topic("orders")`,
-`client.Consumer("billing", "orders")`), and the verbs live on the thing
-they act on. Before it, the same
+named from it as a handle (`client.Topic[OrderPlaced]("orders")`,
+`client.Topic[OrderPlaced]("orders").Group("billing")`), and the verbs
+live on the thing they act on. Before it, the same
 program needed `NewConsumer`, `NewProducer`, `NewScheduler`,
 `NewMessageAdmin`, and `NewSystemManager`, each with its own config
 carrying its own `Logger` and `Retry`. The group-config half of this,
 what is stored and how instances read it back, has its own page:
 [consumer group config](/guides/consumer-group-config/).
 
+<ThreadAside label="PROPOSED" title="The typed topic handle">
+The samples on this page show the topic handle carrying the message
+type, `client.Topic[OrderPlaced]("orders")`, with the group, producer,
+and key handles under it. The shipped library still spells the type on
+each verb: `client.Consumer(group, topic).Register[T]`,
+`client.Producer(topic).Register[T]`, `orders.CompactionHead[T]`.
+This page is the spec for the move; the samples compile once it lands.
+
+</ThreadAside>
+
 ## Two grammars
 
-The client selects the noun: `Topic(name)`, `Consumer(group, topic)`,
-`Scheduler(name)`. A handle uses the bare verb: `orders.Register`,
+The client selects the noun: `Topic[T](name)`, `Scheduler(name)`, and a
+topic handle selects its own: `Group(name)`, `Key(messageKey)`,
+`Producer()`. A handle uses the bare verb: `orders.Register`,
 `orders.Destroy`, `nightly.Suspend`. It already knows what it is, and
 `orders.DestroyTopic` says topic twice. A plural method reads the materialized
 collection: `Topics`, `Schedulers`. The act verbs on typed instances
 (`Consume`, `Produce`, `Schedule`) follow the same split.
+
+## The type argument
+
+The topic carries the message type and everything under it inherits
+it. `client.Topic[OrderPlaced]("orders")` is spelled once, and the
+group's `Register`, the producer's `Register`, and the key reads take
+no type of their own. Go cannot infer a type from a string, so the
+argument is always written, and a wrong type on a consumer becomes
+impossible to spell: the handler's parameter type is the topic's.
+
+The admin verbs never look at it. `Register`, `Destroy`, `Migrate`,
+`Rename`, `Health`, and `Metrics` run the same for any type, so a
+topic holding two schema versions is two handles on the same rows:
+`Topic[OrderPlacedV1]` reads V1 payloads, `Topic[OrderPlacedV2]` reads
+V2, and either one destroys the topic.
+
+A caller that does not know the type, the CLI and any admin-only
+script, uses `vulkan.RawPayload`: the stored JSON bytes as they are,
+declaring version `0`. It works on every admin and key read and is
+refused by the three `Register` verbs that write or filter by version,
+since nothing should produce or consume at version 0.
+
+```go
+// an operator script -- no message type in scope
+orders := client.Topic[vulkan.RawPayload]("orders")
+health, err := orders.Health(ctx)
+head, err := orders.Key("order-42").CompactionHead(ctx) // head.Message is the raw JSON
+```
+
+The schedule is the one handle outside the tree. Its `Register` takes
+the payload value, and Go infers the type from that argument, so no
+type is written there either.
 
 ## Connect
 
@@ -60,7 +103,7 @@ A first program imports `vulkan` and nothing else of ours. Every type a user
 spells lives in `vulkan`: `ConsumerConfig`, `ConsumeOptions`,
 `ProducerConfig`, `ProduceOptions`, `ScheduleConfig`,
 `TopicConfig`, `DestroyOptions`, `MessageOptions`, `RetryPolicy`, `Tx`,
-`MetaFromContext`, `Terminal`, `Delay`. A consumer's first program used to import
+`RawPayload`, `MetaFromContext`, `Terminal`, `Delay`. A consumer's first program used to import
 `topiccontroller` for `TopicConfig` and `schedulecontroller` for
 `ScheduleConfig`; "controller" is the library's word for its
 persistence layer and a user should never have to type it.
@@ -143,7 +186,7 @@ looking in the wrong place.
 ## Consume
 
 ```go
-payments, err := client.Consumer("charge-cards", "payments.requested").Register[PaymentRequestedV1](ctx,
+payments, err := client.Topic[PaymentRequestedV1]("payments.requested").Group("charge-cards").Register(ctx,
 	&vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
 			Timeout: 10 * time.Second,
@@ -198,7 +241,7 @@ waiting. Not built.
 ## Produce
 
 ```go
-requests, err := client.Producer("payments.requested").Register[PaymentRequestedV1](ctx,
+requests, err := client.Topic[PaymentRequestedV1]("payments.requested").Producer().Register(ctx,
 	&vulkan.ProducerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 10 * time.Second},
 	})
@@ -220,7 +263,7 @@ A schedule is a declaration that returns a runnable `SchedulerInstance`;
 the `Scheduler` handle administers its stored row.
 
 ```go
-nightly, err := client.Scheduler("nightly-report").Register[ReportRequestedV1](ctx,
+nightly, err := client.Scheduler("nightly-report").Register(ctx,
 	"reports.requested", "0 3 * * *",
 	&ReportRequestedV1{Kind: "nightly"}, &vulkan.ScheduleConfig{
 		Timeout:     time.Minute,
@@ -248,18 +291,21 @@ fires until something in the deployment runs a manager — which any
 consumer does.
 
 The schedule name sits on `SchedulerHandle`, so it cannot trade places with
-the target topic in `Register`. Two strings (`group, topic` on the consumer)
-stay positional. A schedule's redeclaration warns
+the target topic in `Register`. The schedule stays outside the typed tree
+on purpose: only `Register` knows a payload type, and every other verb on
+it is keyed by the schedule's name alone, so a topic on the handle would
+be a redundant argument on seven of eight verbs and would put a topic on
+every `vulkan schedule` command. A schedule's redeclaration warns
 [VK0062](/errors/VK0062/), the consumer's sibling.
 
 ## Handles
 
-`client.Topic("payments.requested")` does no I/O and cannot fail. It is
-a name plus the client, and every verb on it resolves the name when
-called:
+`client.Topic[PaymentRequestedV1]("payments.requested")` does no I/O and
+cannot fail. It is a name plus the client, and every verb on it resolves
+the name when called:
 
 ```go
-orders := client.Topic("payments.requested")
+orders := client.Topic[PaymentRequestedV1]("payments.requested")
 topic, err := orders.Get(ctx) // *vulkan.Topic; (nil, nil) when not registered
 renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // vulkan.ErrTopicNotFound if it is gone
@@ -292,7 +338,7 @@ it, act on it.
 ```go
 // plural reads materialized values; singular selectors return handles
 topics, err := client.Topics(ctx)
-orders := client.Topic("payments.requested")
+orders := client.Topic[ReadingV1]("device.readings")
 topic, err := orders.Get(ctx)
 if err != nil {
 	return err
@@ -306,8 +352,12 @@ health, err := orders.Health(ctx)
 snapshot, err := orders.Metrics(ctx)
 renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // refused unless ClientConfig.AllowDestroy
-current, err := orders.CompactionHead[ReadingV1](ctx, "device-7")
-versions, err := orders.KeyMessages[ReadingV1](ctx, "device-7", 20)
+heads, err := orders.CompactionHeads(ctx, 100)
+
+// a message key hangs off its topic
+device := orders.Key("device-7")
+current, err := device.CompactionHead(ctx) // vulkan.ErrCompactionHeadNotFound when nothing is under the key
+versions, err := device.Messages(ctx, 20)
 
 // groups hang off their topic
 groups, err := orders.Groups(ctx)
@@ -352,12 +402,18 @@ history keep the verb that says what they return: `Health`, `Metrics`,
 under the group, `orders.Group("charge-cards").Binding().Get(ctx)`, nil
 when the group never declared one.
 
-The key read sits on the topic. It used to be read inside a transaction
-on the producer instance and outside one on a separate
-`CompactionController` keyed by topic id, two objects for one fact;
-`orders.CompactionHead` and `orders.KeyMessages` put the read beside
-the topic that holds the row. Both carry the message type, because both
-decode a stored payload.
+A message key is a handle under its topic. `orders.Key("device-7")`
+names it, `CompactionHead` reads the key's winning message and returns
+[VK0066](/errors/VK0066/) when nothing has been produced under it, and
+`Messages` reads the retained history newest first. The key is a
+message property with two readers, compaction and the concurrency
+policy, which is why the handle is named for the key and not for
+compaction: the lease facts belong on the same handle when they get a
+read. The head used to be read inside a transaction on the producer
+instance and outside one on a separate `CompactionController` keyed by
+topic id, two objects for one fact. `orders.CompactionHeads` lists
+every key's head on the topic, with a limit, since a topic can hold a
+million keys.
 
 The system is a singleton and a handle anyway — one schema is one
 installation, so there is only ever one row to name. The day that
@@ -395,7 +451,9 @@ own `client.Manager()` handle because it is a running subsystem.
 | `GetSystem` / `MigrateSystem` / `DestroySystem` | `client.System().Get` / `.Migrate` / `.Destroy` |
 | `ListAlerts` | `client.System().Alerts` |
 | `ListMeasurements` / `ListMeasurementMessages` | `client.System().Measurements` / `.Measurement(...).Messages` |
-| `CompactionController.GetHead` / `ListKeyMessages` | `Topic.CompactionHead` / `Topic.KeyMessages` |
+| `CompactionController.GetHead` / `ListKeyMessages` | `Topic.Key(k).CompactionHead` / `Topic.Key(k).Messages` |
+| `CompactionController.ListHeads` | `Topic.CompactionHeads` |
+| `Consumer.Register[T]` / `Producer.Register[T]` | `Topic[T].Group(name).Register` / `Topic[T].Producer().Register` |
 | `RegisterSchedule` | `client.Scheduler(name).Register`, returns `SchedulerInstance` |
 
 ## The manager
@@ -455,7 +513,7 @@ on a schedule:
   `__system.alerts` and resolves it once the rows are claimed again.
   `vulkan alert list` reads both states.
 
-Worked case: `orders-api` runs only `client.Producer("orders.placed").Register`.
+Worked case: `orders-api` runs only `client.Topic[OrderPlaced]("orders.placed").Producer().Register`.
 Its register-time line names
 `orders.placed (topic_janitor)`, so nothing is dropping that topic's
 expired partitions. `fulfillment` starts its `Consume` on the
@@ -489,7 +547,7 @@ it is much cheaper to create per test. Not built.
 ## Names
 
 The suffix says what a value does. A handle is the lazy identity plus
-client (`TopicHandle`, `GroupHandle`, `SchedulerHandle`); the bare noun is
+client (`TopicHandle`, `GroupHandle`, `KeyHandle`, `SchedulerHandle`); the bare noun is
 the materialized domain value returned by `Get` (`Topic`, `Group`,
 `Schedule`). `Message[T]`, `Alert`, and `Measurement` follow the same rule:
 they are values, not handles. JSON is unaffected; wire names live in field
@@ -516,7 +574,7 @@ table they scan: `TopicConfigRow`, `WorkerConfigRow`, `ScheduleConfigRow`.
 `charge-cards` runs three replicas on `payments.requested` (topic id
 `1`) with the default retry budget. A fourth service, `reconciliation`,
 also consumes the group by mistake and declares `MaxRetries: 5`. Its
-`ConsumerHandle.Register` overwrites the stored document, its logger warns
+`GroupHandle.Register` overwrites the stored document, its logger warns
 [VK0059](/errors/VK0059/) with the `metadata` change as `old -> new`,
 and the three replicas pick the new budget up on their next config
 refresh. When the owning service next restarts it declares the default
@@ -534,10 +592,11 @@ WHERE g.name = 'charge-cards';
 --  message_consumer | {"message": {"timeout": "10s", "retry": {"max_retries": 5}}, ...}
 ```
 
-An operator checking the group from a script needs one round trip:
+An operator checking the group from a script needs one round trip, and
+no message type:
 
 ```go
-data, err := client.Topic("payments.requested").Group("charge-cards").Get(ctx)
+data, err := client.Topic[vulkan.RawPayload]("payments.requested").Group("charge-cards").Get(ctx)
 ```
 
 ## Open

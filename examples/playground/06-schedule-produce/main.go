@@ -61,7 +61,7 @@ func run() error {
 		return err
 	}
 
-	nightly, err := client.Scheduler("invoices.nightly").Register[InvoiceRun](ctx, invoices.Name, "0 2 * * *", &InvoiceRun{Region: "eu"}, nil)
+	nightly, err := client.Scheduler("invoices.nightly").Register(ctx, invoices.Name, "0 2 * * *", &InvoiceRun{Region: "eu"}, nil)
 	if err != nil {
 		return err
 	}
