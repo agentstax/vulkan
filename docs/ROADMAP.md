@@ -21,6 +21,11 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
+- **Alerts as first-class handles** -- the metrics shape [0647][0648]
+  applied to alerts: one declaration catalog (VK0094-VK0096), `Alerts()`
+  scope handles with `Definitions()`, typed selectors, `Alert(name)` on
+  every scope, and `Latest`/`History` returning bare `*Alert` with `At`.
+  Expanded in docs/TODO.md.
 - **The client holds the assemblers' ambient config once** -- the
   half of "Register returns what you run" that [0646] did not carry:
   ConsumerConfig / ProducerConfig split into the assembler's

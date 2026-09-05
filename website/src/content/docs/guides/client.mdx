@@ -374,14 +374,10 @@ system, err := sys.Get(ctx)
 err = sys.Register(ctx, nil)
 err = sys.Migrate(ctx, 5)
 err = sys.Destroy(ctx, nil)
-
-// system-owned collections and their singular handles
-alerts, err := sys.Alerts(ctx)
-currentAlert, err := sys.Alert("partition_count:orders").Get(ctx)
 ```
 
 A plural noun lists materialized resources: `client.Topics`,
-`orders.Groups`, `client.Schedulers`, `sys.Alerts`.
+`orders.Groups`, `client.Schedulers`.
 Its singular noun returns a no-I/O handle. Terminal reports and retained
 history keep the verb that says what they return: `Health`, `Status`,
 `Workers`, and `Messages`. A group's binding set is a handle
@@ -561,6 +557,93 @@ collected, err := groupMetrics.CursorBacklog().Latest(ctx)
 compares `Measurement.At` to its own threshold; the library does not silently
 turn an old collected value into live state.
 
+## Alerts
+
+<ThreadAside label="PROPOSED" title="Alerts as resources">
+An alert is a retained message on `__system.alerts` about one resource,
+keyed by the alert's name and its owner. Alerts take the metrics grammar:
+`Latest(ctx)` reads the newest retained one, `History(ctx, limit)` reads
+retained ones newest first, and `Definitions()` says what Vulkan can raise
+before anything has fired.
+
+Alerts handles sit on the system, a topic, and a consumer group:
+
+```go
+systemAlerts := client.System().Alerts()
+definitions := systemAlerts.Definitions() // []vulkan.AlertDefinition; no I/O
+alerts, err := systemAlerts.Latest(ctx)   // []*vulkan.Alert; every current alert
+
+topic := client.Topic[PaymentRequestedV1]("payments.requested")
+current, err := topic.Alerts().PartitionCount().Latest(ctx) // *vulkan.Alert; nil before the first
+history, err := topic.Group("charge-cards").Alerts().
+	WorkerLiveness().History(ctx, 20) // []*vulkan.Alert; newest first
+
+custom, err := topic.Alerts().Alert("disk_pressure").Latest(ctx) // a user-produced alert on the topic
+```
+
+`Latest` on a scope lists the newest retained alert per (name, owner) in
+that scope, active or resolved, ordered by message key. The system list is
+every alert; the topic and group lists are the ones whose owner is that
+resource.
+
+A definition is metadata, never a value:
+
+```go
+type AlertDefinition struct {
+	Code        string
+	Name        string
+	Description string
+	Scope       MetricScope
+	Severity    AlertSeverity
+}
+```
+
+Three built-ins today, one per scope: `compaction_read_cost` on the system,
+`partition_count` on a topic, `worker_liveness` on a consumer group. Each
+has a VK code, so `vulkan explain VK0094` and its errors page say what a
+fired one means, and a selector on its scope's handle. Severity sits on the
+definition because it is fixed per built-in; message, detail, hint, and
+data change per finding and stay on the value. `Definitions()` is an
+in-memory read over the same registry as errors, events, and metrics, and
+it lists built-ins only: a user-produced alert appears in `Latest` and
+nowhere else.
+
+| scope | owner |
+| --- | --- |
+| `MetricScopeSystem` | the system |
+| `MetricScopeTopic` | the topic |
+| `MetricScopeConsumerGroup` | the topic and group |
+
+The string form `Alert(name)` is on every scope. A metric name has no topic
+semantics, which is why `Metric(name, attributes)` lives on the system
+handle alone. An alert always has an owner, so
+`topic.Alerts().Alert("disk_pressure")` is exact: the alert named
+`disk_pressure` whose owner is `payments.requested`, which is where a
+user-produced alert on that topic is read. The typed selectors are the same
+call with the name filled in.
+
+`Alert` gains `At`, the time the check observed the condition, so a bare
+`*vulkan.Alert` carries when it fired or resolved. The storage envelope is
+dropped the way it is for `Measurement`.
+
+The one difference from metrics is what a read proves. A measurement's key
+is its name and attributes, so a series can be read after its topic is gone.
+An alert's key is its owner's id. `payments.requested` is topic id `41`, so
+`partition_count` on it is keyed `partition_count/topic/41`, and the read
+resolves the name to the id first. Destroy the topic and
+`topic.Alerts().PartitionCount().Latest(ctx)` returns `ErrTopicNotFound`
+rather than the last alert: the check only evaluates owners still in the
+catalog, so nothing would ever resolve that alert and reading it as current
+is wrong. A missing group is `ErrGroupNotFound` the same way. The id is also
+what makes the alert follow the topic through `Rename` instead of merging
+with a later topic that reuses the name.
+
+`Latest` returns `(nil, nil)` when the owner exists and nothing has been
+retained under the key. `History` requires a positive limit and returns an
+empty slice for that same absence.
+
+</ThreadAside>
+
 ## Where the old verbs went
 
 | before (`MessageAdmin`) | now |
@@ -585,7 +668,7 @@ turn an old collected value into live state.
 | `DestroySchedule` | `Scheduler.Destroy` |
 | `RegisterSystem` | `client.System().Register` |
 | `GetSystem` / `MigrateSystem` / `DestroySystem` | `client.System().Get` / `.Migrate` / `.Destroy` |
-| `ListAlerts` | `client.System().Alerts` |
+| `ListAlerts` | `client.System().Alerts().Latest(ctx)` (proposed) |
 | `ListMeasurements` / `ListMeasurementMessages` | `client.System().Metrics().Latest(ctx)`; a typed metric selector's `History(ctx, limit)` |
 | `CompactionController.GetHead` / `ListKeyMessages` | `Topic.Key(k).CompactionHead` / `Topic.Key(k).Messages` |
 | `CompactionController.ListHeads` | `Topic.CompactionHeads` |
