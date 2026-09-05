@@ -21,6 +21,36 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
+- **Metrics as first-class handles** — the next public-API design/build.
+  The client-guide page is the proposal and stays labeled Proposed until the
+  surface is reviewed; implementation follows it rather than leading it.
+  - Scope the first pass to `System().Metrics()`, `Topic(...).Metrics()`, and
+    `Topic(...).Group(...).Metrics()`. Consumer, producer, and possibly
+    scheduler instance metrics remain a separate Later item: those must expose
+    process/session facts, never duplicate these resource reads.
+  - Preserve the two data planes in the names. `Snapshot(ctx)` computes a
+    typed resource picture from its source tables now. A typed metric selector
+    such as `group.Metrics().CursorBacklog()` returns a metric handle whose
+    `Latest(ctx)` reads its newest collected point and whose
+    `History(ctx, limit)` reads retained points newest first. `Measurement.At`
+    is the observation time and is always returned; `Latest` promises newest
+    retained, not fresh.
+  - Make built-ins discoverable without string names: resource metrics handles
+    expose typed selectors and `Definitions()` lists what Vulkan supports with
+    no I/O. `System().Metrics().Latest(ctx)` lists the newest actually published
+    measurements, and `System().Metrics().Metric(name, attributes)` is the one
+    arbitrary escape hatch for user metrics. Resource handles do not pretend
+    an arbitrary name has topic/group semantics.
+  - Return bare `Measurement` values, not their `Message[Measurement]` storage
+    envelopes. A metric handle's `Latest` returns `(nil, nil)` before its first
+    retained point; `History` returns an empty slice and requires a positive
+    limit.
+  - One declaration catalog drives typed selectors, `Definitions()`, collector
+    output, Prometheus help, and `vulkan explain`; it includes each built-in's
+    resource scope and attribute keys. Absorb the [0567] gauge-declaration
+    follow-on here: declare the remaining collector gauges and build their
+    measurements from those declarations so name, kind, unit, description,
+    scope, and attributes cannot drift.
 - **The typed topic handle** -- in flight in TODO.md (settled
   2026-09-04): `client.Topic[Message](name)` roots the typed tree, a
   message key is a handle under it, the CLI reads through
@@ -332,6 +362,11 @@ documentation; the latter want a surface that has stopped moving.
   upgrader become claimable) and the decode step; Confluent's reader
   schema / Temporal's data converter are the precedents. Not before
   the skip behavior has been lived with.
+  - The key reads have the same gap from the other side [0646]:
+    `Topic[OrderV1].Key(k).CompactionHead` on a key whose head is V2
+    decodes the V2 payload into the V1 struct silently. "not found"
+    is the wrong word for it; the answer is whatever the upcaster
+    decides, so it waits here with it.
 
 - **Doc-site pages the 2026-08-28 link sweep found missing** — a
   compaction concept page (concepts/message-key now covers the basics
@@ -471,13 +506,6 @@ prerequisite if quorum-as-a-fraction wins.
   an off-the-shelf checker that is one config file, not a walk of our
   own.
 
-- **Gauge metric declarations** ([0567] chunk-5 follow-on) — convert the
-  remaining bare vulkan.* metric name consts (the collector's gauges in
-  pkg/metrics/measurement.go) to NewMetric declarations so their
-  descriptions reach Prometheus # HELP / vulkan explain the same way the
-  session counters' do; the collector then builds measurements from the
-  declarations (kind/unit can't drift from the comment). Mechanical
-  sweep, ~25 names.
 - **Worker-instance stop-line counters** ([0567] follow-on) — the
   standalone worker instances (janitor, schedule producer, metrics
   collector, cursor advancer) still log identity-only stopped lines;
