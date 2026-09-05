@@ -1,10 +1,12 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-21
 phase: pre-v1
 ---
 
 # Metric declarations join the shared VK registry
+
+Superseded by [0647].
 
 ## Context
 

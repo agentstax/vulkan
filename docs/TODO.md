@@ -30,7 +30,7 @@ definitions remain parked.
   VK-code/name registry. `pkg/metrics` owns the catalog entries, organized by
   subject rather than in one catalog file. There is no second registry.
 
-### 1. Write and review the public proposal — review pending
+### 1. Write and review the public proposal — approved
 
 - Replace the current metrics examples in
   `website/src/content/docs/guides/client.mdx` with a clearly labeled
@@ -61,14 +61,15 @@ definitions remain parked.
   surface settles, record the decision in the next numbered decision record;
   supersede only the clauses of [0569] that the richer declaration changes.
 
-### 2. Make the existing registry the complete built-in catalog
+### 2. Make the existing registry the complete built-in catalog — review pending
 
 - Extend `diagnostic.DiagnosticMetric` with scope and ordered attribute-key
   metadata. Its constructor validates non-empty/known metadata, duplicate
   attribute keys, and the existing unique code/name invariants.
-- Add the typed public `MetricDefinition`/`MetricScope` view in `pkg/metrics`.
-  Convert registry entries into defensive values so callers cannot mutate
-  catalog state through `AttributeKeys`.
+- Define the strongly typed `MetricScope` beside `DiagnosticMetric`, then use
+  it directly in the public `MetricDefinition` view in `pkg/metrics`. Convert
+  registry entries into defensive values so callers cannot mutate catalog
+  state through `AttributeKeys`.
 - Declare every current Vulkan metric, including the collector gauges that are
   still string constants. Keep declarations beside their subject read models:
   worker, schedule, alert, topic, consumer group, and consumer session.
@@ -90,6 +91,8 @@ definitions remain parked.
 - Keep `vulkan explain`, code export, conventions checks, and `otelvulkan`
   description/help lookup on `diagnostic.DiagnosticMetric`; extend their
   rendered/exported metadata rather than creating parallel lookup tables.
+- Add the hand-written metric pages for VK0067-VK0093 and regenerate the site
+  code export after it carries scope and attribute keys.
 - Add a catalog coverage test: every resource-scoped definition appears through
   exactly one typed selector, and every selector resolves the registered
   declaration it claims.

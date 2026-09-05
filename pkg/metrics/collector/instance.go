@@ -118,7 +118,7 @@ func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 	}
 
 	at := time.Now()
-	measurement, err := metrics.NewMeasurement(metrics.MetricUnclaimedWorkers, metrics.MetricKindGauge, float64(unclaimed), metrics.MetricUnitCount("worker"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricUnclaimedWorkers.Name, metrics.MetricKindGauge, float64(unclaimed), metrics.MetricUnitCount("worker"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricOldestUnclaimedAge, metrics.MetricKindGauge, float64(oldest.Milliseconds()), metrics.MetricUnitMilliseconds, nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricOldestUnclaimedAge.Name, metrics.MetricKindGauge, float64(oldest.Milliseconds()), metrics.MetricUnitMilliseconds, nil, at)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricFailingWorkers, metrics.MetricKindGauge, float64(failing), metrics.MetricUnitCount("worker"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricFailingWorkers.Name, metrics.MetricKindGauge, float64(failing), metrics.MetricUnitCount("worker"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (i *MetricsCollectorInstance) collectSchedules(ctx context.Context) error {
 	}
 
 	at := time.Now()
-	measurement, err := metrics.NewMeasurement(metrics.MetricOverdueSchedules, metrics.MetricKindGauge, float64(overdue), metrics.MetricUnitCount("found"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricOverdueSchedules.Name, metrics.MetricKindGauge, float64(overdue), metrics.MetricUnitCount("found"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (i *MetricsCollectorInstance) collectSchedules(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricOldestDueAge, metrics.MetricKindGauge, float64(oldest.Milliseconds()), metrics.MetricUnitMilliseconds, nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricOldestDueAge.Name, metrics.MetricKindGauge, float64(oldest.Milliseconds()), metrics.MetricUnitMilliseconds, nil, at)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func (i *MetricsCollectorInstance) collectSchedules(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedSchedules, metrics.MetricKindGauge, float64(suspended), metrics.MetricUnitCount("found"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedSchedules.Name, metrics.MetricKindGauge, float64(suspended), metrics.MetricUnitCount("found"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func (i *MetricsCollectorInstance) collectAlerts(ctx context.Context) error {
 	}
 
 	at := time.Now()
-	measurement, err := metrics.NewMeasurement(metrics.MetricActiveAlerts, metrics.MetricKindGauge, float64(active), metrics.MetricUnitCount("alert"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricActiveAlerts.Name, metrics.MetricKindGauge, float64(active), metrics.MetricUnitCount("alert"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (i *MetricsCollectorInstance) collectAlerts(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricResolvedAlerts, metrics.MetricKindGauge, float64(resolved), metrics.MetricUnitCount("alert"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricResolvedAlerts.Name, metrics.MetricKindGauge, float64(resolved), metrics.MetricUnitCount("alert"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *to
 	if snapshot.Compacted {
 		compacted = 1
 	}
-	measurement, err := metrics.NewMeasurement(metrics.MetricTopicCompacted, metrics.MetricKindGauge, compacted, "", map[string]string{
+	measurement, err := metrics.NewMeasurement(metrics.MetricTopicCompacted.Name, metrics.MetricKindGauge, compacted, "", map[string]string{
 		"topic": current.Name,
 	}, at)
 	if err != nil {
@@ -284,20 +284,20 @@ func (i *MetricsCollectorInstance) collectConsumerGroup(ctx context.Context, sna
 		value float64
 		unit  metrics.MetricUnit
 	}{
-		{metrics.MetricCursorHead, float64(snapshot.Cursor.Head), metrics.MetricUnitCount("message")},
-		{metrics.MetricCursorClaimed, float64(snapshot.Cursor.Claimed), metrics.MetricUnitCount("message")},
-		{metrics.MetricCursorCommitted, float64(snapshot.Cursor.Committed), metrics.MetricUnitCount("message")},
-		{metrics.MetricCursorBacklog, float64(snapshot.Cursor.Backlog), metrics.MetricUnitCount("message")},
-		{metrics.MetricCursorInflight, float64(snapshot.Cursor.Inflight), metrics.MetricUnitCount("message")},
-		{metrics.MetricReadyExceptions, float64(snapshot.Exceptions.Ready), metrics.MetricUnitCount("exception")},
-		{metrics.MetricInflightExceptions, float64(snapshot.Exceptions.Inflight), metrics.MetricUnitCount("exception")},
-		{metrics.MetricDeferredExceptions, float64(snapshot.Exceptions.Deferred), metrics.MetricUnitCount("exception")},
-		{metrics.MetricDeadExceptions, float64(snapshot.Exceptions.Dead), metrics.MetricUnitCount("exception")},
-		{metrics.MetricOldestUnresolvedAge, float64(snapshot.Exceptions.OldestUnresolvedAge.Milliseconds()), metrics.MetricUnitMilliseconds},
-		{metrics.MetricOpenLeases, float64(snapshot.OpenLeases), metrics.MetricUnitCount("lease")},
-		{metrics.MetricAbandonedOutstanding, float64(snapshot.AbandonedRoutines.Outstanding), metrics.MetricUnitCount("routine")},
-		{metrics.MetricAbandonedTotal, float64(snapshot.AbandonedRoutines.Total), metrics.MetricUnitCount("routine")},
-		{metrics.MetricAbandonedSelfClearLatencyAvg, float64(snapshot.AbandonedRoutines.SelfClearLatencyAvg.Milliseconds()), metrics.MetricUnitMilliseconds},
+		{metrics.MetricCursorHead.Name, float64(snapshot.Cursor.Head), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorClaimed.Name, float64(snapshot.Cursor.Claimed), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorCommitted.Name, float64(snapshot.Cursor.Committed), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorBacklog.Name, float64(snapshot.Cursor.Backlog), metrics.MetricUnitCount("message")},
+		{metrics.MetricCursorInflight.Name, float64(snapshot.Cursor.Inflight), metrics.MetricUnitCount("message")},
+		{metrics.MetricReadyExceptions.Name, float64(snapshot.Exceptions.Ready), metrics.MetricUnitCount("exception")},
+		{metrics.MetricInflightExceptions.Name, float64(snapshot.Exceptions.Inflight), metrics.MetricUnitCount("exception")},
+		{metrics.MetricDeferredExceptions.Name, float64(snapshot.Exceptions.Deferred), metrics.MetricUnitCount("exception")},
+		{metrics.MetricDeadExceptions.Name, float64(snapshot.Exceptions.Dead), metrics.MetricUnitCount("exception")},
+		{metrics.MetricOldestUnresolvedAge.Name, float64(snapshot.Exceptions.OldestUnresolvedAge.Milliseconds()), metrics.MetricUnitMilliseconds},
+		{metrics.MetricOpenLeases.Name, float64(snapshot.OpenLeases), metrics.MetricUnitCount("lease")},
+		{metrics.MetricAbandonedOutstanding.Name, float64(snapshot.AbandonedRoutines.Outstanding), metrics.MetricUnitCount("routine")},
+		{metrics.MetricAbandonedTotal.Name, float64(snapshot.AbandonedRoutines.Total), metrics.MetricUnitCount("routine")},
+		{metrics.MetricAbandonedSelfClearLatencyAvg.Name, float64(snapshot.AbandonedRoutines.SelfClearLatencyAvg.Milliseconds()), metrics.MetricUnitMilliseconds},
 	}
 
 	items := make([]*producer.ProduceItem[metrics.Measurement], 0, len(points))

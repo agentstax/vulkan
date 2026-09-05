@@ -13,57 +13,6 @@ import (
 // must not use it.
 const MetricNameReservedPrefix = "vulkan."
 
-// worker claim state, fleet-wide
-const (
-	MetricUnclaimedWorkers   = "vulkan.worker.state.unclaimed_workers"    // workers with no live instance and a nonzero target
-	MetricOldestUnclaimedAge = "vulkan.worker.state.oldest_unclaimed_age" // largest now() - expires_at among unclaimed workers, in ms
-	MetricFailingWorkers     = "vulkan.worker.state.failing_workers"      // workers with a live instance on a nonzero failure streak
-)
-
-// schedule health, fleet-wide
-const (
-	MetricOverdueSchedules   = "vulkan.schedule.state.overdue"        // unsuspended schedules due past the overdue threshold -- nothing is producing them
-	MetricOldestDueAge       = "vulkan.schedule.state.oldest_due_age" // largest now() - next_scheduled_at among unsuspended schedules, in ms
-	MetricSuspendedSchedules = "vulkan.schedule.state.suspended"      // schedules with suspended = true, excluded from the overdue count
-)
-
-// alert state, fleet-wide
-const (
-	MetricActiveAlerts   = "vulkan.alert.state.active_alerts"   // heads with status 'active'
-	MetricResolvedAlerts = "vulkan.alert.state.resolved_alerts" // heads with status 'resolved', until retention sweeps them
-)
-
-// alert check runs, one set of below per run
-const (
-	MetricCheckTopicsEvaluated = "vulkan.alert.check.topics_evaluated" // topics the run checked
-	MetricCheckTopicsFailed    = "vulkan.alert.check.topics_failed"    // topics whose evaluate or publish errored
-	MetricCheckPublishedAlerts = "vulkan.alert.check.published_alerts" // Record calls that published a new active alert
-	MetricCheckResolvedAlerts  = "vulkan.alert.check.resolved_alerts"  // Record calls that published the head resolved
-)
-
-// topic state -- attributes: topic, version
-const (
-	MetricTopicCompacted = "vulkan.topic.state.compacted" // 1 once the topic has ever seen a keyed publish, else 0
-)
-
-// consumer-group state -- attributes: group, topic, version
-const (
-	MetricCursorHead                   = "vulkan.consumer.cursor.head"                               // highest message id ever appended -- the log frontier
-	MetricCursorClaimed                = "vulkan.consumer.cursor.claimed"                            // the group's read frontier
-	MetricCursorCommitted              = "vulkan.consumer.cursor.committed"                          // everything at or below this id is done or dead
-	MetricCursorBacklog                = "vulkan.consumer.cursor.backlog"                            // head - committed
-	MetricCursorInflight               = "vulkan.consumer.cursor.inflight"                           // claimed - committed -- claimed but not yet resolved
-	MetricReadyExceptions              = "vulkan.consumer.exceptions.ready"                          // delivery rows waiting to be retried
-	MetricInflightExceptions           = "vulkan.consumer.exceptions.inflight"                       // delivery rows leased out to a retry attempt
-	MetricDeferredExceptions           = "vulkan.consumer.exceptions.deferred"                       // delivery rows waiting for their message key's lease to free
-	MetricDeadExceptions               = "vulkan.consumer.exceptions.dead"                           // dead-lettered delivery rows -- DLQ size
-	MetricOldestUnresolvedAge          = "vulkan.consumer.exceptions.oldest_unresolved_age"          // age of the oldest ready/inflight/deferred row, in ms
-	MetricOpenLeases                   = "vulkan.consumer.open_leases"                               // currently open leases for the (group, topic)
-	MetricAbandonedOutstanding         = "vulkan.consumer.abandoned_routines.outstanding"            // abandoned events with no matching cleared event
-	MetricAbandonedTotal               = "vulkan.consumer.abandoned_routines.total"                  // distinct abandoned events within the metrics topic's retention window
-	MetricAbandonedSelfClearLatencyAvg = "vulkan.consumer.abandoned_routines.self_clear_latency_avg" // mean cleared - abandoned latency over matched pairs, in ms
-)
-
 type MetricKind string
 
 const (

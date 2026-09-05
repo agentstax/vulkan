@@ -42,20 +42,20 @@ const (
 )
 
 var groupMetricNames = []string{
-	metrics.MetricCursorHead,
-	metrics.MetricCursorClaimed,
-	metrics.MetricCursorCommitted,
-	metrics.MetricCursorBacklog,
-	metrics.MetricCursorInflight,
-	metrics.MetricReadyExceptions,
-	metrics.MetricInflightExceptions,
-	metrics.MetricDeferredExceptions,
-	metrics.MetricDeadExceptions,
-	metrics.MetricOldestUnresolvedAge,
-	metrics.MetricOpenLeases,
-	metrics.MetricAbandonedOutstanding,
-	metrics.MetricAbandonedTotal,
-	metrics.MetricAbandonedSelfClearLatencyAvg,
+	metrics.MetricCursorHead.Name,
+	metrics.MetricCursorClaimed.Name,
+	metrics.MetricCursorCommitted.Name,
+	metrics.MetricCursorBacklog.Name,
+	metrics.MetricCursorInflight.Name,
+	metrics.MetricReadyExceptions.Name,
+	metrics.MetricInflightExceptions.Name,
+	metrics.MetricDeferredExceptions.Name,
+	metrics.MetricDeadExceptions.Name,
+	metrics.MetricOldestUnresolvedAge.Name,
+	metrics.MetricOpenLeases.Name,
+	metrics.MetricAbandonedOutstanding.Name,
+	metrics.MetricAbandonedTotal.Name,
+	metrics.MetricAbandonedSelfClearLatencyAvg.Name,
 }
 
 func main() {
@@ -169,17 +169,17 @@ func run() (err error) {
 
 	step("wait for full head coverage: fleet + schedules + every lab topic and group")
 	expected := map[string]bool{
-		metrics.MeasurementKey(metrics.MetricUnclaimedWorkers, nil):   false,
-		metrics.MeasurementKey(metrics.MetricOldestUnclaimedAge, nil): false,
-		metrics.MeasurementKey(metrics.MetricFailingWorkers, nil):     false,
-		metrics.MeasurementKey(metrics.MetricOverdueSchedules, nil):   false,
-		metrics.MeasurementKey(metrics.MetricOldestDueAge, nil):       false,
-		metrics.MeasurementKey(metrics.MetricSuspendedSchedules, nil): false,
-		metrics.MeasurementKey(metrics.MetricActiveAlerts, nil):       false,
-		metrics.MeasurementKey(metrics.MetricResolvedAlerts, nil):     false,
+		metrics.MeasurementKey(metrics.MetricUnclaimedWorkers.Name, nil):   false,
+		metrics.MeasurementKey(metrics.MetricOldestUnclaimedAge.Name, nil): false,
+		metrics.MeasurementKey(metrics.MetricFailingWorkers.Name, nil):     false,
+		metrics.MeasurementKey(metrics.MetricOverdueSchedules.Name, nil):   false,
+		metrics.MeasurementKey(metrics.MetricOldestDueAge.Name, nil):       false,
+		metrics.MeasurementKey(metrics.MetricSuspendedSchedules.Name, nil): false,
+		metrics.MeasurementKey(metrics.MetricActiveAlerts.Name, nil):       false,
+		metrics.MeasurementKey(metrics.MetricResolvedAlerts.Name, nil):     false,
 	}
 	for _, topicName := range topicNames {
-		expected[metrics.MeasurementKey(metrics.MetricTopicCompacted, map[string]string{
+		expected[metrics.MeasurementKey(metrics.MetricTopicCompacted.Name, map[string]string{
 			"topic": topicName,
 		})] = false
 		for _, group := range groupNames {
@@ -220,15 +220,15 @@ func run() (err error) {
 		}
 	}
 	for _, topicName := range topicNames {
-		assertValue(byKey, metrics.MetricTopicCompacted, map[string]string{
+		assertValue(byKey, metrics.MetricTopicCompacted.Name, map[string]string{
 			"topic": topicName,
 		}, 0)
 		for _, group := range groupNames {
 			attributes := map[string]string{"group": group, "topic": topicName}
-			assertValue(byKey, metrics.MetricCursorHead, attributes, messagesPerTopic)
-			assertValue(byKey, metrics.MetricCursorBacklog, attributes, messagesPerTopic)
-			assertValue(byKey, metrics.MetricCursorClaimed, attributes, 0)
-			assertValue(byKey, metrics.MetricDeadExceptions, attributes, 0)
+			assertValue(byKey, metrics.MetricCursorHead.Name, attributes, messagesPerTopic)
+			assertValue(byKey, metrics.MetricCursorBacklog.Name, attributes, messagesPerTopic)
+			assertValue(byKey, metrics.MetricCursorClaimed.Name, attributes, 0)
+			assertValue(byKey, metrics.MetricDeadExceptions.Name, attributes, 0)
 		}
 	}
 	fmt.Printf("  ✓ compacted=0, head=%d, backlog=%d, claimed=0, dead=0 across %d groups\n",
@@ -238,7 +238,7 @@ func run() (err error) {
 	historyAttributes := map[string]string{
 		"group": groupNames[0], "topic": topicNames[0],
 	}
-	historySeries := client.System().Measurement(metrics.MetricCursorBacklog, historyAttributes)
+	historySeries := client.System().Measurement(metrics.MetricCursorBacklog.Name, historyAttributes)
 	must(waitFor(10*time.Second, func() (bool, error) {
 		history, err := historySeries.Messages(ctx, 10)
 		if err != nil {

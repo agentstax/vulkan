@@ -117,7 +117,7 @@ func printLedgerMeasurements(ctx context.Context, client *vulkan.Client) error {
 			}
 			fmt.Printf("%s = %g\n", measurement.Name, measurement.Value)
 
-			if measurement.Name == metrics.MetricCursorBacklog {
+			if measurement.Name == metrics.MetricCursorBacklog.Name {
 				series := client.System().Measurement(measurement.Name, measurement.Attributes)
 				history, err := series.Messages(ctx, 5)
 				if err != nil {

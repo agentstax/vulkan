@@ -145,10 +145,10 @@ func (i *CompactionReadCostInstance) produceCheckSummary(ctx context.Context, ev
 		value int64
 		unit  metrics.MetricUnit
 	}{
-		{metrics.MetricCheckTopicsEvaluated, evaluated, metrics.MetricUnitCount("topic")},
-		{metrics.MetricCheckTopicsFailed, failed, metrics.MetricUnitCount("topic")},
-		{metrics.MetricCheckPublishedAlerts, published, metrics.MetricUnitCount("alert")},
-		{metrics.MetricCheckResolvedAlerts, resolved, metrics.MetricUnitCount("alert")},
+		{metrics.MetricCheckTopicsEvaluated.Name, evaluated, metrics.MetricUnitCount("topic")},
+		{metrics.MetricCheckTopicsFailed.Name, failed, metrics.MetricUnitCount("topic")},
+		{metrics.MetricCheckPublishedAlerts.Name, published, metrics.MetricUnitCount("alert")},
+		{metrics.MetricCheckResolvedAlerts.Name, resolved, metrics.MetricUnitCount("alert")},
 	}
 
 	items := make([]*producer.ProduceItem[metrics.Measurement], 0, len(counts))

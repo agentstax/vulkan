@@ -71,7 +71,8 @@ func TestMetricDescriptionAvoidsBannedWords(t *testing.T) {
 }
 
 // A metric declaration's kind and unit are plain text on the diagnostic
-// side; this walk holds every declaration to the pkg/metrics vocabulary.
+// side; this walk holds them to the pkg/metrics vocabulary. Scope is strongly
+// typed and validated when the declaration is constructed.
 func TestMetricDeclarationsCarryMetricsVocabulary(t *testing.T) {
 	for _, registered := range diagnostic.Metrics() {
 		if !strings.HasPrefix(registered.Name, metrics.MetricNameReservedPrefix) {
@@ -83,13 +84,16 @@ func TestMetricDeclarationsCarryMetricsVocabulary(t *testing.T) {
 		if err := metrics.MetricUnit(registered.Unit).Validate(); err != nil {
 			t.Errorf("%s: %v", registered.Code, err)
 		}
+		if err := registered.Scope.Validate(); err != nil {
+			t.Errorf("%s: %v", registered.Code, err)
+		}
 	}
 }
 
 // Codes live at roots (CONVENTIONS.md ## Package layout): every
 // NewDiagnosticError / NewDiagnosticEvent / NewDiagnosticMetric call in the
-// library initializes an exported var in a root's errors.go, events.go, or
-// metrics.go, or under pkg/common. The same walk proves the import lists in
+// library initializes an exported var in a root's errors.go, events.go,
+// metrics.go, or a subject-named *_metrics.go, or under pkg/common. The same walk proves the import lists in
 // conventions.go and tools/codeexport/main.go are complete: a code the
 // registry this binary sees does not hold, or a declaring package the
 // exporter does not link, would leave a page with no record behind it.
@@ -154,7 +158,7 @@ func TestCodesDeclaredAtRoots(t *testing.T) {
 					position := relative + ":" + strconv.Itoa(fileSet.Position(value.Pos()).Line)
 					switch {
 					case !isCodeHome(relative):
-						t.Errorf("%s declares %s outside a root's errors.go, events.go, or metrics.go", position, code)
+						t.Errorf("%s declares %s outside a root's errors.go, events.go, metrics.go, or *_metrics.go", position, code)
 					case !ast.IsExported(name.Name):
 						t.Errorf("%s declares %s under unexported name %s", position, code, name.Name)
 					}
@@ -220,8 +224,8 @@ func declaresCode(call *ast.CallExpr) bool {
 }
 
 // isCodeHome reports whether a repo-relative path is a place a code may be
-// declared: pkg/<x>/errors.go, events.go, or metrics.go, or anything under
-// pkg/common.
+// declared: pkg/<x>/errors.go, events.go, metrics.go, or *_metrics.go, or
+// anything under pkg/common.
 func isCodeHome(relative string) bool {
 	if strings.HasPrefix(relative, "pkg/common/") {
 		return true
@@ -230,11 +234,12 @@ func isCodeHome(relative string) bool {
 	if len(segments) != 3 || segments[0] != "pkg" {
 		return false
 	}
-	switch segments[2] {
+	fileName := segments[2]
+	switch fileName {
 	case "errors.go", "events.go", "metrics.go":
 		return true
 	}
-	return false
+	return strings.HasSuffix(fileName, "_metrics.go")
 }
 
 // moduleImports lists the module packages one file imports.

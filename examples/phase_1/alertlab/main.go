@@ -380,9 +380,9 @@ func executorSection(ctx context.Context) {
 	fmt.Println("  ✓ threshold-1 run published active heads with WARN edges")
 
 	summary := readCheckSummary(ctx)
-	if summary[iMetrics.MetricCheckTopicsEvaluated] < 2 ||
-		summary[iMetrics.MetricCheckTopicsFailed] != 0 ||
-		summary[iMetrics.MetricCheckPublishedAlerts] != summary[iMetrics.MetricCheckTopicsEvaluated] {
+	if summary[iMetrics.MetricCheckTopicsEvaluated.Name] < 2 ||
+		summary[iMetrics.MetricCheckTopicsFailed.Name] != 0 ||
+		summary[iMetrics.MetricCheckPublishedAlerts.Name] != summary[iMetrics.MetricCheckTopicsEvaluated.Name] {
 		die(fmt.Sprintf("threshold-1 run: want every evaluated topic published and none failed, got %v", summary))
 	}
 	fmt.Println("  ✓ check summary: every evaluated topic published, none failed")
@@ -401,8 +401,8 @@ func executorSection(ctx context.Context) {
 	fmt.Println("  ✓ a second run inside the repeat interval published nothing")
 
 	summary = readCheckSummary(ctx)
-	if summary[iMetrics.MetricCheckPublishedAlerts] != 0 ||
-		summary[iMetrics.MetricCheckTopicsFailed] != 0 {
+	if summary[iMetrics.MetricCheckPublishedAlerts.Name] != 0 ||
+		summary[iMetrics.MetricCheckTopicsFailed.Name] != 0 {
 		die(fmt.Sprintf("repeat-interval run: want a quiet summary, got %v", summary))
 	}
 	fmt.Println("  ✓ check summary: the quiet run counted zero publishes")
@@ -461,8 +461,8 @@ func isolationSection(ctx context.Context) {
 	// resolved is left unasserted here: an automatic retry may already have
 	// overwritten the summary, and only its failed/published counts repeat
 	summary := readCheckSummary(ctx)
-	if summary[iMetrics.MetricCheckTopicsFailed] != 1 ||
-		summary[iMetrics.MetricCheckPublishedAlerts] != 0 {
+	if summary[iMetrics.MetricCheckTopicsFailed.Name] != 1 ||
+		summary[iMetrics.MetricCheckPublishedAlerts.Name] != 0 {
 		die(fmt.Sprintf("isolation: the failed run must still produce its summary, got %v", summary))
 	}
 	fmt.Println("  ✓ check summary went out on the failed run: exactly 1 topic failed")
@@ -479,8 +479,8 @@ func isolationSection(ctx context.Context) {
 	fmt.Println("  ✓ retry resolved the fixed owner; healthy topics resolved exactly once")
 
 	summary = readCheckSummary(ctx)
-	if summary[iMetrics.MetricCheckTopicsFailed] != 0 ||
-		summary[iMetrics.MetricCheckResolvedAlerts] != 1 {
+	if summary[iMetrics.MetricCheckTopicsFailed.Name] != 0 ||
+		summary[iMetrics.MetricCheckResolvedAlerts.Name] != 1 {
 		die(fmt.Sprintf("isolation retry: want 0 failed and only the fixed owner resolved, got %v", summary))
 	}
 	fmt.Println("  ✓ retry summary: zero failed, only the fixed owner resolved")
@@ -640,10 +640,10 @@ func readCheckSummary(ctx context.Context) map[string]float64 {
 	}
 	summary := make(map[string]float64, 4)
 	for _, name := range []string{
-		iMetrics.MetricCheckTopicsEvaluated,
-		iMetrics.MetricCheckTopicsFailed,
-		iMetrics.MetricCheckPublishedAlerts,
-		iMetrics.MetricCheckResolvedAlerts,
+		iMetrics.MetricCheckTopicsEvaluated.Name,
+		iMetrics.MetricCheckTopicsFailed.Name,
+		iMetrics.MetricCheckPublishedAlerts.Name,
+		iMetrics.MetricCheckResolvedAlerts.Name,
 	} {
 		value, ok := byKey[iMetrics.MeasurementKey(name, attributes)]
 		if !ok {

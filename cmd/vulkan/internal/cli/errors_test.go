@@ -15,7 +15,7 @@ var errTestBroker = diagnostic.NewDiagnosticError("VK9801", diagnostic.RecoveryT
 	"could not reach the test broker", "retry the produce call")
 
 var metricTestDepth = diagnostic.NewDiagnosticMetric("VK9802",
-	"vulkan.test.queue_depth", "gauge", "{message}", "test queue depth")
+	"vulkan.test.queue_depth", "gauge", "{message}", "test queue depth", diagnostic.MetricScopeSystem)
 
 func TestRenderMetricBlockAlignsAllParts(t *testing.T) {
 	var builder strings.Builder
