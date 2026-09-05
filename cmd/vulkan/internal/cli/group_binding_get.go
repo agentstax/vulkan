@@ -2,10 +2,10 @@ package cli
 
 import (
 	"fmt"
-	"github.com/agentstax/vulkan/pkg/vulkan"
 	"log/slog"
 
 	"github.com/agentstax/vulkan/pkg/consume"
+	"github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 

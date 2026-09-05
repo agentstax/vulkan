@@ -15,6 +15,7 @@ func newTopicCmd(g *globalFlags) *cobra.Command {
 	cmd.AddCommand(newTopicListCmd(g))
 	cmd.AddCommand(newTopicGetCmd(g))
 	cmd.AddCommand(newTopicConfigCmd(g))
+	cmd.AddCommand(newTopicKeyCmd(g))
 	cmd.AddCommand(newTopicRenameCmd(g))
 	cmd.AddCommand(newTopicDestroyCmd(g))
 

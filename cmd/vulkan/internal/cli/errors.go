@@ -16,6 +16,8 @@ import (
 var cliFixes = map[string]string{
 	// VK0017 system not registered
 	"VK0017": "run `vulkan migrate init`",
+	// VK0066 compaction head not found
+	"VK0066": "run `vulkan topic key messages {topic} {message_key}` to see what was produced under the key",
 }
 
 // cliError is the one error type every command returns. It carries the process

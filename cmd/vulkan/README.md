@@ -72,39 +72,43 @@ A missing topic exits non-zero, so `get -q` doubles as an existence check:
 if vulkan topic get -q orders.created; then echo "exists"; fi
 ```
 
-### Read a message key (proposed)
+### Read a message key
 
-Not shipped yet; this section is the spec. `topic key get` prints the
-key's compaction head, the message that currently wins under it. The
-CLI has no message type in scope, so the payload prints as the JSON the
-row stores:
+`topic key get` prints the key's compaction head, the message that
+currently wins under it. The CLI has no message type in scope, so the
+payload prints as the JSON the row stores (Postgres orders the keys):
 
 ```console
-$ vulkan topic key get orders.created order-42
-✓ compaction head for "order-42" on "orders.created"
+$ vulkan topic key get devices.config dev-7
+✓ compaction head for "dev-7" on "devices.config"
 
-  MessageId        4187
-  CreatedAt        2026-09-04 13:02
+  MessageId        2
+  CreatedAt        2026-09-04 21:45
   RoutingKey
-  CompactionRank   3
+  CompactionRank   0
   Message
-    {"order_id": "order-42", "status": "shipped", "total_cents": 1299}
+    {
+      "restarts": 1,
+      "device_id": "dev-7",
+      "interval_seconds": 30
+    }
 ```
 
-A key nothing was produced under exits non-zero with VK0066. `--output
-json` prints the message document with the payload inline under
-`message`, not string-escaped.
+A key nothing was produced under with compaction enabled has no head
+and exits non-zero with VK0066; the fix line names the `messages`
+command below. `--output json` prints the message document with the
+payload inline under `message`, not string-escaped.
 
-`topic key messages` prints the key's retained history, newest first:
+`topic key messages` prints the key's retained history, newest first. A
+RANK of 0 is a message that never opted into compaction:
 
 ```console
-$ vulkan topic key messages orders.created order-42 --limit 3
+$ vulkan topic key messages devices.config dev-7 --limit 3
 MESSAGE_ID   CREATED            RANK   MESSAGE
-4187         2026-09-04 13:02   3      {"order_id": "order-42", "status": "shipped", ...}
-4102         2026-09-04 11:47   2      {"order_id": "order-42", "status": "packed", ...}
-3990         2026-09-04 09:15   1      {"order_id": "order-42", "status": "placed", ...}
+2            2026-09-04 21:45   0      {"restarts":1,"device_id":"dev-7","interval_seconds":30}
+1            2026-09-04 21:45   0      {"restarts":0,"device_id":"dev-7","interval_seconds":30}
 
-3 messages
+2 messages
 ```
 
 - `--limit` — newest N messages, default 20

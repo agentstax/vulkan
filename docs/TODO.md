@@ -95,13 +95,19 @@ Steps, in order:
    build and vet; ten directly-affected labs pass (compaction,
    compaction-rank, schedule, alert, metrics, group-config,
    producer-batch, multi-target, schema-evolution, topic).
-6. **CLI commands** `topic key get` and `topic key messages`, text and
-   `--output json` renderers, README examples verified against real
-   output.
+6. **CLI commands.** DONE 2026-09-04: `topic key get` and `topic key
+   messages --limit` (cmd/vulkan/internal/cli/topic_key*.go), text and
+   `--output json`, a VK0066 CLI fix naming the messages command;
+   README samples are the verbatim output of a devices.config run.
 7. **Docs pass.** Every page spelling `client.Consumer(` or
    `client.Producer(` moves to the tree: quickstart, replay,
    schema-versions, consumer-group-config, and the client guide's
    Proposed labels come off. VOICE.md revision checklist as its own
-   pass.
+   pass. The playground scenarios are user-facing samples too: the
+   rewrite script typed a bare string-literal `Topic("x").Register`
+   as `RawPayload` where later calls use `registered.Name` with the
+   real type (05-compacted-kv line 66 is one) -- read each scenario and
+   spell the real type. The CLI README's "created from your code"
+   line still says `client.Topic(name).Register`.
 8. **Close-out.** Full fresh-DB lab suite, HISTORY.md entry, remove
    this section and the ROADMAP Now item it absorbed.

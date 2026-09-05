@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/agentstax/vulkan/pkg/vulkan"
 	"io"
 	"log/slog"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/spf13/cobra"
 )
