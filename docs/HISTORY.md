@@ -33,8 +33,9 @@ new-group-start, schedules, consumer-group-config, lifecycle, fan-out,
 routing, and the playground scenarios spell the tree; `message_key`
 joined the attribute registry. Verified: `just verify`, ten
 directly-affected labs during the build, and the fresh-DB suite
-ran 49/49 at close-out. Absorbed the ROADMAP item "Register returns what
-you run, the client holds the assemblers". Deferred: a head read at a
+ran 49/49 at close-out. Carried the Register-verb half of the ROADMAP item
+"Register returns what you run, the client holds the assemblers"; the
+config split stays in ROADMAP Now. Deferred: a head read at a
 mismatched schema version (ROADMAP Later, beside the upcaster).
 
 ## 2026-09-03 — Binding handle under the group, client lists are bare plurals [0645]
