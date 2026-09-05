@@ -248,7 +248,7 @@ func classifySection(ctx context.Context) {
 
 	key, err := alert.MessageKey(labCheckName, labTopicOwner)
 	must(err)
-	found, err := alert.NewAlert(labCheckName, labTopicOwner, alert.AlertStatusActive, alert.AlertSeverityWarn, "labcheck condition holds", nil)
+	found, err := alert.NewAlert(labCheckName, labTopicOwner, alert.AlertStatusActive, alert.AlertSeverityWarn, "labcheck condition holds", time.Now(), nil)
 	must(err)
 
 	record := func(found *alert.Alert, want alert.RecordOutcome, arm string) {

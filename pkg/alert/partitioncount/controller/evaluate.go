@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
@@ -38,5 +39,5 @@ func (c *PartitionCountController) Evaluate(ctx context.Context, owner *common.O
 	if count < threshold {
 		return nil, nil
 	}
-	return newPartitionCountAlert(owner, count, ceiling, threshold)
+	return newPartitionCountAlert(owner, count, ceiling, threshold, time.Now())
 }

@@ -113,7 +113,7 @@ Give alerts the shape metrics got in [0647][0648]: one declaration catalog,
   `website/src/content/docs/errors/` in the same change, headed by the
   declaration's description.
 
-### 3. Put the time on the wire and build from the declaration
+### 3. Put the time on the wire and build from the declaration — done 2026-09-05 (coverage test moves to step 4)
 
 - `Alert.At time.Time` with `json:"at"`; `NewAlert(name, owner, status,
   severity, message, at, options)` rejects a zero `at`. Update the six
@@ -123,11 +123,11 @@ Give alerts the shape metrics got in [0647][0648]: one declaration catalog,
   from `alert.AlertPartitionCount` etc.; the call site supplies owner,
   status, message, at, and options. `NewAlert` keeps the string name so a
   user-produced alert needs no declaration.
+### 4. Build the handle tree
+
 - Add the coverage test: every declaration appears through exactly one typed
   selector on its scope's handle, and every selector resolves the
   declaration it claims (the metrics test's twin).
-
-### 4. Build the handle tree
 
 - Replace `pkg/vulkan/alert.go`: `SystemAlertsHandle`, `TopicAlertsHandle`,
   `GroupAlertsHandle` (one file each, following `system_metrics.go` /

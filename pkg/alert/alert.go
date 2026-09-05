@@ -3,6 +3,7 @@ package alert
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
@@ -46,6 +47,10 @@ type Alert struct {
 	// evidence -- neither map ever routes, keys, or dedups
 	Data     map[string]any `json:"data"`     // the run's measurements of the owner
 	Metadata map[string]any `json:"metadata"` // context about the report itself
+
+	// At is when the check observed the condition -- or its absence, for a
+	// resolution.
+	At time.Time `json:"at"`
 }
 
 func (Alert) SchemaVersion() int { return 1 }
@@ -58,7 +63,7 @@ type AlertOptions struct {
 	Metadata map[string]any
 }
 
-func NewAlert(name string, owner *common.Owner, status AlertStatus, severity AlertSeverity, message string, options *AlertOptions) (*Alert, error) {
+func NewAlert(name string, owner *common.Owner, status AlertStatus, severity AlertSeverity, message string, at time.Time, options *AlertOptions) (*Alert, error) {
 	if name == "" {
 		return nil, errors.New("alert name is required")
 	}
@@ -80,6 +85,9 @@ func NewAlert(name string, owner *common.Owner, status AlertStatus, severity Ale
 	if severity != AlertSeverityWarn {
 		return nil, fmt.Errorf("alert %q: severity must be %q, got %q", name, AlertSeverityWarn, severity)
 	}
+	if at.IsZero() {
+		return nil, fmt.Errorf("alert %q: at is required", name)
+	}
 
 	if options == nil {
 		options = &AlertOptions{}
@@ -94,6 +102,7 @@ func NewAlert(name string, owner *common.Owner, status AlertStatus, severity Ale
 		Hint:     options.Hint,
 		Data:     options.Data,
 		Metadata: options.Metadata,
+		At:       at,
 	}, nil
 }
 

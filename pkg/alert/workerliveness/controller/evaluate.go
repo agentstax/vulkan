@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
@@ -37,5 +38,5 @@ func (c *WorkerLivenessController) Evaluate(ctx context.Context, owner *common.O
 	if len(unclaimed) == 0 {
 		return nil, nil
 	}
-	return newWorkerLivenessAlert(owner, unclaimed)
+	return newWorkerLivenessAlert(owner, unclaimed, time.Now())
 }

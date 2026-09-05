@@ -30,7 +30,7 @@ func classify(found *alert.Alert, head *common.StoredMessage[alert.Alert], repea
 
 	// no new alert, head (previous) still active        -> publish the head resolved
 	if activeHead {
-		return alert.NewAlert(head.Message.Name, head.Message.Owner, alert.AlertStatusResolved, head.Message.Severity, "resolved: "+head.Message.Message, nil)
+		return alert.NewAlert(head.Message.Name, head.Message.Owner, alert.AlertStatusResolved, head.Message.Severity, "resolved: "+head.Message.Message, now, nil)
 	}
 	return nil, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
@@ -43,5 +44,5 @@ func (c *CompactionReadCostController) Evaluate(ctx context.Context, owner *comm
 	if count < threshold {
 		return nil, nil
 	}
-	return newCompactionReadCostAlert(owner, count, threshold)
+	return newCompactionReadCostAlert(owner, count, threshold, time.Now())
 }

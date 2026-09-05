@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
@@ -12,7 +13,7 @@ import (
 
 // The crossing decision is the caller's -- an alert built from no unclaimed
 // rows is a bug.
-func newWorkerLivenessAlert(owner *common.Owner, unclaimed []metrics.WorkerSnapshot) (*alert.Alert, error) {
+func newWorkerLivenessAlert(owner *common.Owner, unclaimed []metrics.WorkerSnapshot, at time.Time) (*alert.Alert, error) {
 	if len(unclaimed) == 0 {
 		return nil, errors.New("unclaimed must not be empty")
 	}
@@ -34,7 +35,7 @@ func newWorkerLivenessAlert(owner *common.Owner, unclaimed []metrics.WorkerSnaps
 		"unclaimed_count": len(unclaimed),
 		"workers":         rows,
 	}
-	return alert.NewAlert(alert.AlertWorkerLiveness.Name, owner, alert.AlertStatusActive, alert.AlertSeverity(alert.AlertWorkerLiveness.Severity), message, &alert.AlertOptions{
+	return alert.NewAlert(alert.AlertWorkerLiveness.Name, owner, alert.AlertStatusActive, alert.AlertSeverity(alert.AlertWorkerLiveness.Severity), message, at, &alert.AlertOptions{
 		Detail: detail,
 		Hint:   hint,
 		Data:   data,
