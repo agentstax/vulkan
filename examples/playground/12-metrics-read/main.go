@@ -106,20 +106,19 @@ func printLedgerMeasurements(ctx context.Context, client *vulkan.Client) error {
 		case <-ticker.C:
 		}
 
-		heads, err := client.System().Measurements(ctx)
+		measurements, err := client.System().Metrics().Latest(ctx)
 		if err != nil {
 			return err
 		}
-		for _, head := range heads {
-			measurement := head.Message
+		for _, measurement := range measurements {
 			if measurement.Attributes["group"] != "ledger" {
 				continue
 			}
 			fmt.Printf("%s = %g\n", measurement.Name, measurement.Value)
 
 			if measurement.Name == metrics.MetricCursorBacklog.Name {
-				series := client.System().Measurement(measurement.Name, measurement.Attributes)
-				history, err := series.Messages(ctx, 5)
+				series := client.System().Metrics().Metric(measurement.Name, measurement.Attributes)
+				history, err := series.History(ctx, 5)
 				if err != nil {
 					return err
 				}

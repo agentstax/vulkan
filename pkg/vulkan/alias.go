@@ -96,7 +96,9 @@ type (
 	ExceptionSnapshot             = metrics.ExceptionSnapshot
 	AbandonedRoutineSnapshot      = metrics.AbandonedRoutineSnapshot
 	Measurement                   = metrics.Measurement
+	MetricDefinition              = metrics.MetricDefinition
 	MetricKind                    = metrics.MetricKind
+	MetricScope                   = diagnostic.MetricScope
 	MetricUnit                    = metrics.MetricUnit
 	Alert                         = alert.Alert
 	AlertStatus                   = alert.AlertStatus
@@ -138,12 +140,16 @@ const (
 
 	NoInstanceTarget = worker.NoInstanceTarget
 
-	MetricKindCounter      = metrics.MetricKindCounter
-	MetricKindGauge        = metrics.MetricKindGauge
-	MetricUnitMilliseconds = metrics.MetricUnitMilliseconds
-	AlertStatusActive      = alert.AlertStatusActive
-	AlertStatusResolved    = alert.AlertStatusResolved
-	AlertSeverityWarn      = alert.AlertSeverityWarn
+	MetricKindCounter          = metrics.MetricKindCounter
+	MetricKindGauge            = metrics.MetricKindGauge
+	MetricScopeSystem          = diagnostic.MetricScopeSystem
+	MetricScopeTopic           = diagnostic.MetricScopeTopic
+	MetricScopeConsumerGroup   = diagnostic.MetricScopeConsumerGroup
+	MetricScopeConsumerSession = diagnostic.MetricScopeConsumerSession
+	MetricUnitMilliseconds     = metrics.MetricUnitMilliseconds
+	AlertStatusActive          = alert.AlertStatusActive
+	AlertStatusResolved        = alert.AlertStatusResolved
+	AlertSeverityWarn          = alert.AlertSeverityWarn
 )
 
 var (

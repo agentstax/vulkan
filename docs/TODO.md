@@ -94,7 +94,7 @@ definitions remain parked.
 - Add the hand-written metric pages for VK0067-VK0093 and regenerate the site
   code export after it carries scope and attribute keys.
 
-### 4. Reuse and regularize the read paths — review pending
+### 4. Reuse and regularize the read paths — approved
 
 - Reuse compaction-head listing for `SystemMetricsHandle.Latest`, exact-key
   compaction-head lookup for `MetricHandle.Latest`, and exact-key message
@@ -108,7 +108,7 @@ definitions remain parked.
 - Keep ordering explicit: definitions by VK code, system latest measurements by
   measurement key, and history newest first.
 
-### 5. Build the Vulkan handle tree
+### 5. Build the Vulkan handle tree — review pending
 
 - Replace `SystemHandle.Measurements` / `Measurement` and
   `TopicHandle.Metrics(ctx)` with no-I/O `Metrics()` handle constructors.

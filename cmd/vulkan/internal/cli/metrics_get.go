@@ -8,7 +8,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/metrics"
-	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -53,20 +52,20 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			heads, err := client.System().Measurements(ctx)
+			measurements, err := client.System().Metrics().Latest(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
 
-			matched := make([]*vulkan.StoredMessage[metrics.Measurement], 0, len(heads))
-			for _, head := range heads {
-				if head.Message.Name != name {
+			matched := make([]*metrics.Measurement, 0, len(measurements))
+			for _, measurement := range measurements {
+				if measurement.Name != name {
 					continue
 				}
-				if !attributesMatch(head.Message.Attributes, attributeFilter) {
+				if !attributesMatch(measurement.Attributes, attributeFilter) {
 					continue
 				}
-				matched = append(matched, head)
+				matched = append(matched, measurement)
 			}
 
 			if g.jsonOutput() {
@@ -77,26 +76,26 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 					SeriesTotal: len(matched),
 				}
 				if len(matched) > 0 {
-					document.Kind = string(matched[0].Message.Kind)
-					document.Unit = string(matched[0].Message.Unit)
+					document.Kind = string(matched[0].Kind)
+					document.Unit = string(matched[0].Unit)
 				}
 
 				shown := matched
 				if len(shown) > series {
 					shown = shown[:series]
 				}
-				for _, head := range shown {
-					measurement := client.System().Measurement(head.Message.Name, head.Message.Attributes)
-					messages, err := measurement.Messages(ctx, limit)
+				for _, measurement := range shown {
+					seriesHandle := client.System().Metrics().Metric(measurement.Name, measurement.Attributes)
+					history, err := seriesHandle.History(ctx, limit)
 					if err != nil {
 						return translateAdminError(err)
 					}
-					if messages == nil {
-						messages = make([]*vulkan.StoredMessage[metrics.Measurement], 0)
+					if history == nil {
+						history = make([]*metrics.Measurement, 0)
 					}
 					document.Series = append(document.Series, metricSeriesDocument{
-						Attributes:   head.Message.Attributes,
-						Measurements: messages,
+						Attributes:   measurement.Attributes,
+						Measurements: history,
 					})
 				}
 
@@ -112,19 +111,19 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 				return failPrinted()
 			}
 
-			fmt.Fprintf(out, "%s metric %q (%s)\n", glyphOK(), name, measurementKindUnitCell(matched[0].Message))
+			fmt.Fprintf(out, "%s metric %q (%s)\n", glyphOK(), name, measurementKindUnitCell(matched[0]))
 
 			shown := matched
 			if len(shown) > series {
 				shown = shown[:series]
 			}
-			for _, head := range shown {
-				measurement := client.System().Measurement(head.Message.Name, head.Message.Attributes)
-				messages, err := measurement.Messages(ctx, limit)
+			for _, measurement := range shown {
+				seriesHandle := client.System().Metrics().Metric(measurement.Name, measurement.Attributes)
+				history, err := seriesHandle.History(ctx, limit)
 				if err != nil {
 					return translateAdminError(err)
 				}
-				printMeasurementSeries(out, head.Message.Attributes, messages)
+				printMeasurementSeries(out, measurement.Attributes, history)
 			}
 
 			if len(matched) > series {
@@ -155,8 +154,8 @@ type metricGetDocument struct {
 
 // metricSeriesDocument is one attribute set's history, newest first.
 type metricSeriesDocument struct {
-	Attributes   map[string]string                            `json:"attributes"`
-	Measurements []*vulkan.StoredMessage[metrics.Measurement] `json:"measurements"`
+	Attributes   map[string]string      `json:"attributes"`
+	Measurements []*metrics.Measurement `json:"measurements"`
 }
 
 // parseAttributePairs turns repeated key=value flags into one filter map.
@@ -191,17 +190,17 @@ func measurementKindUnitCell(measurement *metrics.Measurement) string {
 
 // printMeasurementSeries is one attribute set's block, newest measurement first --
 // measurements older than the retention window are gone.
-func printMeasurementSeries(w io.Writer, attributes map[string]string, messages []*vulkan.StoredMessage[metrics.Measurement]) {
+func printMeasurementSeries(w io.Writer, attributes map[string]string, measurements []*metrics.Measurement) {
 	fmt.Fprintf(w, "\n  %s\n", seriesHeading(attributes))
-	if len(messages) == 0 {
+	if len(measurements) == 0 {
 		fmt.Fprintln(w, "  no measurements in the retention window")
 		return
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  AT\tVALUE")
-	for _, message := range messages {
-		fmt.Fprintf(tw, "  %s\t%s\n", timeCell(message.Message.At.Local()), measurementValueCell(message.Message))
+	for _, measurement := range measurements {
+		fmt.Fprintf(tw, "  %s\t%s\n", timeCell(measurement.At.Local()), measurementValueCell(measurement))
 	}
 	tw.Flush()
 }

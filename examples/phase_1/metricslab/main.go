@@ -216,7 +216,7 @@ func (g *releaseGates) release(id int64)              { close(g.gate(id)) }
 // ---- helpers ----
 
 func topicMetrics(ctx context.Context, client *vulkan.Client, name string) (*iMetrics.TopicSnapshot, error) {
-	return client.Topic[vulkan.RawPayload](name).Metrics(ctx)
+	return client.Topic[vulkan.RawPayload](name).Metrics().Snapshot(ctx)
 }
 
 func mustTopicMetrics(ctx context.Context, client *vulkan.Client, name string) *iMetrics.TopicSnapshot {

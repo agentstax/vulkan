@@ -631,12 +631,12 @@ func (c *captureLogger) count(level string, alertName string, ownerName string) 
 // name -- the latest run's counts, read the same way `vulkan metrics list`
 // reads them.
 func readCheckSummary(ctx context.Context) map[string]float64 {
-	heads, err := client.System().Measurements(ctx)
+	measurements, err := client.System().Metrics().Latest(ctx)
 	must(err)
 	attributes := map[string]string{"alert": partitioncountcontroller.AlertPartitionCount}
-	byKey := make(map[string]float64, len(heads))
-	for _, head := range heads {
-		byKey[head.MessageKey] = head.Message.Value
+	byKey := make(map[string]float64, len(measurements))
+	for _, measurement := range measurements {
+		byKey[iMetrics.MeasurementKey(measurement.Name, measurement.Attributes)] = measurement.Value
 	}
 	summary := make(map[string]float64, 4)
 	for _, name := range []string{

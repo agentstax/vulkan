@@ -55,10 +55,6 @@ func (t *TopicHandle[Message]) Health(ctx context.Context) ([]*TopicVersionHealt
 	return t.client.admin.TopicHealth(ctx, t.name)
 }
 
-func (t *TopicHandle[Message]) Metrics(ctx context.Context) (*TopicSnapshot, error) {
-	return t.client.admin.TopicMetrics(ctx, t.name)
-}
-
 // CompactionHeads returns every key's current compaction head on the
 // topic, ordered by message key.
 func (t *TopicHandle[Message]) CompactionHeads(ctx context.Context) ([]*StoredMessage[Message], error) {

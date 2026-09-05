@@ -8,7 +8,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/metrics"
-	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"github.com/spf13/cobra"
 )
 
@@ -40,21 +39,21 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			heads, err := client.System().Measurements(ctx)
+			measurements, err := client.System().Metrics().Latest(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
 
-			filtered := make([]*vulkan.StoredMessage[metrics.Measurement], 0, len(heads))
-			for _, head := range heads {
-				fromCollector := strings.HasPrefix(head.Message.Name, metrics.MetricNameReservedPrefix)
+			filtered := make([]*metrics.Measurement, 0, len(measurements))
+			for _, measurement := range measurements {
+				fromCollector := strings.HasPrefix(measurement.Name, metrics.MetricNameReservedPrefix)
 				if system && !fromCollector {
 					continue
 				}
 				if user && fromCollector {
 					continue
 				}
-				filtered = append(filtered, head)
+				filtered = append(filtered, measurement)
 			}
 
 			if g.jsonOutput() {
@@ -78,27 +77,26 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printMeasurementKeys(w io.Writer, heads []*vulkan.StoredMessage[metrics.Measurement]) {
-	for _, head := range heads {
-		fmt.Fprintln(w, head.MessageKey)
+func printMeasurementKeys(w io.Writer, measurements []*metrics.Measurement) {
+	for _, measurement := range measurements {
+		fmt.Fprintln(w, metrics.MeasurementKey(measurement.Name, measurement.Attributes))
 	}
 }
 
-func printMeasurementsTable(w io.Writer, heads []*vulkan.StoredMessage[metrics.Measurement]) {
-	if len(heads) == 0 {
+func printMeasurementsTable(w io.Writer, measurements []*metrics.Measurement) {
+	if len(measurements) == 0 {
 		fmt.Fprintln(w, "no measurements published")
 		return
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tKIND\tVALUE\tATTRIBUTES\tAT")
-	for _, head := range heads {
-		measurement := head.Message
+	for _, measurement := range measurements {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			measurement.Name, measurement.Kind, measurementValueCell(measurement),
 			measurementAttributesCell(measurement.Attributes), timeCell(measurement.At.Local()))
 	}
 	tw.Flush()
 
-	fmt.Fprintf(w, "\n%d series\n", len(heads))
+	fmt.Fprintf(w, "\n%d series\n", len(measurements))
 }

@@ -190,16 +190,17 @@ func run() (err error) {
 			}
 		}
 	}
-	var heads []*vulkan.StoredMessage[metrics.Measurement]
+	var measurements []*metrics.Measurement
 	must(waitFor(30*time.Second, func() (bool, error) {
-		heads, err = client.System().Measurements(ctx)
+		measurements, err = client.System().Metrics().Latest(ctx)
 		if err != nil {
 			return false, err
 		}
 		covered := 0
-		for _, head := range heads {
-			if _, ok := expected[head.MessageKey]; ok {
-				expected[head.MessageKey] = true
+		for _, measurement := range measurements {
+			messageKey := metrics.MeasurementKey(measurement.Name, measurement.Attributes)
+			if _, ok := expected[messageKey]; ok {
+				expected[messageKey] = true
 			}
 		}
 		for _, seen := range expected {
@@ -209,14 +210,15 @@ func run() (err error) {
 		}
 		return covered == len(expected), nil
 	}))
-	fmt.Printf("  ✓ all %d expected series present (%d heads total)\n", len(expected), len(heads))
+	fmt.Printf("  ✓ all %d expected series present (%d heads total)\n", len(expected), len(measurements))
 
 	step("head values match the seeded state -- nothing consumed yet")
-	byKey := make(map[string]*metrics.Measurement, len(heads))
-	for _, head := range heads {
-		byKey[head.MessageKey] = head.Message
-		if head.Message.Attributes["topic"] == metrics.TopicName {
-			die(fmt.Sprintf("measurement %s measures __system.metrics -- exclusion broken", head.MessageKey))
+	byKey := make(map[string]*metrics.Measurement, len(measurements))
+	for _, measurement := range measurements {
+		messageKey := metrics.MeasurementKey(measurement.Name, measurement.Attributes)
+		byKey[messageKey] = measurement
+		if measurement.Attributes["topic"] == metrics.TopicName {
+			die(fmt.Sprintf("measurement %s measures __system.metrics -- exclusion broken", messageKey))
 		}
 	}
 	for _, topicName := range topicNames {
@@ -238,9 +240,9 @@ func run() (err error) {
 	historyAttributes := map[string]string{
 		"group": groupNames[0], "topic": topicNames[0],
 	}
-	historySeries := client.System().Measurement(metrics.MetricCursorBacklog.Name, historyAttributes)
+	historySeries := client.System().Metrics().Metric(metrics.MetricCursorBacklog.Name, historyAttributes)
 	must(waitFor(10*time.Second, func() (bool, error) {
-		history, err := historySeries.Messages(ctx, 10)
+		history, err := historySeries.History(ctx, 10)
 		if err != nil {
 			return false, err
 		}
