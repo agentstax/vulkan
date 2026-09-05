@@ -25,8 +25,6 @@ need another review to make sure we are not logging any sensitive information li
 
 cleanup justfile
 
-look into AGPLv3 liscense
-
 we need a long 1hr repeatable live test:
 - spins up db, multi producer and multi consumers (built images)
 - producers are variadic - zero load, low load, high load, ddos territory

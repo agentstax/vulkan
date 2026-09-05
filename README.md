@@ -13,3 +13,9 @@ go work init . ./cmd/vulkan
 This writes a `go.work` linking the root module and the CLI module, so
 `go build` / `go test` / `go run` resolve the CLI's import of the library to
 your working tree instead of a published version.
+
+## License
+
+Vulkan is licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE). Third-party components remain subject to their respective
+licenses.
