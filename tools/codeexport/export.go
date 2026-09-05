@@ -14,11 +14,11 @@ type Export struct {
 	Codes map[string]CodeRecord `json:"codes"`
 }
 
-// NewExport builds the export from the three registry listers. Passing them
+// NewExport builds the export from the four registry listers. Passing them
 // in rather than reading the registry directly is what lets a test declare
 // its own.
-func NewExport(errors []*diagnostic.DiagnosticError, events []*diagnostic.DiagnosticEvent, metrics []*diagnostic.DiagnosticMetric) (*Export, error) {
-	codes := make(map[string]CodeRecord, len(errors)+len(events)+len(metrics))
+func NewExport(errors []*diagnostic.DiagnosticError, events []*diagnostic.DiagnosticEvent, metrics []*diagnostic.DiagnosticMetric, alerts []*diagnostic.DiagnosticAlert) (*Export, error) {
+	codes := make(map[string]CodeRecord, len(errors)+len(events)+len(metrics)+len(alerts))
 
 	for _, declared := range errors {
 		if err := putRecord(codes, newErrorRecord(declared)); err != nil {
@@ -35,6 +35,11 @@ func NewExport(errors []*diagnostic.DiagnosticError, events []*diagnostic.Diagno
 			return nil, err
 		}
 	}
+	for _, declared := range alerts {
+		if err := putRecord(codes, newAlertRecord(declared)); err != nil {
+			return nil, err
+		}
+	}
 
 	return &Export{Codes: codes}, nil
 }
@@ -43,7 +48,7 @@ func NewExport(errors []*diagnostic.DiagnosticError, events []*diagnostic.Diagno
 // not have drop out, so a reader of the JSON sees only what was declared.
 type CodeRecord struct {
 	Code string `json:"code"`
-	Kind string `json:"kind"` // error | event | metric
+	Kind string `json:"kind"` // error | event | metric | alert
 
 	Problem         string   `json:"problem,omitempty"`          // error
 	Recovery        string   `json:"recovery,omitempty"`         // error
@@ -52,12 +57,13 @@ type CodeRecord struct {
 
 	Message string `json:"message,omitempty"` // event
 
-	Name          string   `json:"name,omitempty"`           // metric
+	Name          string   `json:"name,omitempty"`           // metric, alert
 	MetricKind    string   `json:"metric_kind,omitempty"`    // metric
 	Unit          string   `json:"unit,omitempty"`           // metric
-	Description   string   `json:"description,omitempty"`    // metric
-	Scope         string   `json:"scope,omitempty"`          // metric
+	Description   string   `json:"description,omitempty"`    // metric, alert
+	Scope         string   `json:"scope,omitempty"`          // metric, alert
 	AttributeKeys []string `json:"attribute_keys,omitempty"` // metric
+	Severity      string   `json:"severity,omitempty"`       // alert
 
 	Queries []QueryRecord `json:"queries,omitempty"`
 }
@@ -93,6 +99,17 @@ func newMetricRecord(declared *diagnostic.DiagnosticMetric) CodeRecord {
 		Description:   declared.Description,
 		Scope:         string(declared.Scope),
 		AttributeKeys: slices.Clone(declared.AttributeKeys),
+	}
+}
+
+func newAlertRecord(declared *diagnostic.DiagnosticAlert) CodeRecord {
+	return CodeRecord{
+		Code:        declared.Code,
+		Kind:        string(diagnostic.DiagnosticKindAlert),
+		Name:        declared.Name,
+		Description: declared.Description,
+		Scope:       string(declared.Scope),
+		Severity:    declared.Severity,
 	}
 }
 

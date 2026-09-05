@@ -10,7 +10,7 @@ const docsBaseURL = "https://vulkan-5ss.pages.dev/errors/"
 
 // Declaration is one registered VK-coded declaration. The registry stores
 // any kind through this interface; retrieval by kind stays with each
-// kind's own lister (Errors, Events).
+// kind's own lister (Errors, Events, Metrics, Alerts).
 type Declaration interface {
 	GetCode() string
 	GetKind() DiagnosticKind
@@ -23,6 +23,7 @@ const (
 	DiagnosticKindError  DiagnosticKind = "error"
 	DiagnosticKindEvent  DiagnosticKind = "event"
 	DiagnosticKindMetric DiagnosticKind = "metric"
+	DiagnosticKindAlert  DiagnosticKind = "alert"
 )
 
 // The VK code registry: every declaration kind shares one serial space, so

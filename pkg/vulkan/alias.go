@@ -112,6 +112,7 @@ const (
 	DiagnosticKindError  = diagnostic.DiagnosticKindError
 	DiagnosticKindEvent  = diagnostic.DiagnosticKindEvent
 	DiagnosticKindMetric = diagnostic.DiagnosticKindMetric
+	DiagnosticKindAlert  = diagnostic.DiagnosticKindAlert
 
 	ConcurrencyParallel  = common.ConcurrencyParallel
 	ConcurrencyExclusive = common.ConcurrencyExclusive

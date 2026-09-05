@@ -25,7 +25,7 @@ func newPartitionCountAlert(owner *common.Owner, count int64, ceiling int64, thr
 		"lock_ceiling":    ceiling,
 		"threshold":       threshold,
 	}
-	return alert.NewAlert(AlertPartitionCount, owner, alert.AlertStatusActive, alert.AlertSeverityWarn, message, &alert.AlertOptions{
+	return alert.NewAlert(alert.AlertPartitionCount.Name, owner, alert.AlertStatusActive, alert.AlertSeverity(alert.AlertPartitionCount.Severity), message, &alert.AlertOptions{
 		Detail: detail,
 		Hint:   hint,
 		Data:   data,

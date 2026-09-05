@@ -1199,6 +1199,30 @@
         "topic",
         "group"
       ]
+    },
+    "VK0094": {
+      "code": "VK0094",
+      "kind": "alert",
+      "name": "partition_count",
+      "description": "a topic's message log holds enough partitions that dropping the topic approaches the lock-table ceiling",
+      "scope": "topic",
+      "severity": "warn"
+    },
+    "VK0095": {
+      "code": "VK0095",
+      "kind": "alert",
+      "name": "compaction_read_cost",
+      "description": "a compacted topic holds enough partitions that replaying a never-superseded key is a long scan",
+      "scope": "topic",
+      "severity": "warn"
+    },
+    "VK0096": {
+      "code": "VK0096",
+      "kind": "alert",
+      "name": "worker_liveness",
+      "description": "a topic's worker rows have no live instance, so nothing runs its upkeep",
+      "scope": "topic",
+      "severity": "warn"
     }
   }
 }

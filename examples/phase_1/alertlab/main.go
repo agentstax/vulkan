@@ -30,7 +30,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
-	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
@@ -374,7 +373,7 @@ func executorSection(ctx context.Context) {
 	if got := headStatus(ctx, schedulesKey); got != string(alert.AlertStatusActive) {
 		die(fmt.Sprintf("threshold-1 run: want the schedules topic's head active, got %q", got))
 	}
-	if got := executorCapture.count("warn", partitioncountcontroller.AlertPartitionCount, labTopic.Name); got != 1 {
+	if got := executorCapture.count("warn", alert.AlertPartitionCount.Name, labTopic.Name); got != 1 {
 		die(fmt.Sprintf("threshold-1 run: want 1 WARN edge for the lab topic, got %d", got))
 	}
 	fmt.Println("  ✓ threshold-1 run published active heads with WARN edges")
@@ -395,7 +394,7 @@ func executorSection(ctx context.Context) {
 	if got := alertMessageCount(ctx, labKey); got != published {
 		die(fmt.Sprintf("repeat-interval run: want no republish, got %d messages after %d", got, published))
 	}
-	if got := executorCapture.count("warn", partitioncountcontroller.AlertPartitionCount, labTopic.Name); got != 1 {
+	if got := executorCapture.count("warn", alert.AlertPartitionCount.Name, labTopic.Name); got != 1 {
 		die(fmt.Sprintf("repeat-interval run: want no new WARN, got %d", got))
 	}
 	fmt.Println("  ✓ a second run inside the repeat interval published nothing")
@@ -450,7 +449,7 @@ func isolationSection(ctx context.Context) {
 	if got := headStatus(ctx, schedulesKey); got != string(alert.AlertStatusResolved) {
 		die(fmt.Sprintf("isolation: healthy topics must resolve beside the failure, got %q", got))
 	}
-	if got := executorCapture.count("info", partitioncountcontroller.AlertPartitionCount, schedulesTopic.Name); got != 1 {
+	if got := executorCapture.count("info", alert.AlertPartitionCount.Name, schedulesTopic.Name); got != 1 {
 		die(fmt.Sprintf("isolation: want 1 resolve INFO for the healthy topic, got %d", got))
 	}
 	if got := headId(ctx, labKey); got != corruptedHead {
@@ -473,7 +472,7 @@ func isolationSection(ctx context.Context) {
 	if got := headStatus(ctx, labKey); got != string(alert.AlertStatusResolved) {
 		die(fmt.Sprintf("isolation: want the fixed owner resolved on retry, got %q", got))
 	}
-	if got := executorCapture.count("info", partitioncountcontroller.AlertPartitionCount, labTopic.Name); got != 1 {
+	if got := executorCapture.count("info", alert.AlertPartitionCount.Name, labTopic.Name); got != 1 {
 		die(fmt.Sprintf("isolation: want 1 resolve INFO for the fixed owner, got %d", got))
 	}
 	fmt.Println("  ✓ retry resolved the fixed owner; healthy topics resolved exactly once")
@@ -633,7 +632,7 @@ func (c *captureLogger) count(level string, alertName string, ownerName string) 
 func readCheckSummary(ctx context.Context) map[string]float64 {
 	measurements, err := client.System().Metrics().Latest(ctx)
 	must(err)
-	attributes := map[string]string{"alert": partitioncountcontroller.AlertPartitionCount}
+	attributes := map[string]string{"alert": alert.AlertPartitionCount.Name}
 	byKey := make(map[string]float64, len(measurements))
 	for _, measurement := range measurements {
 		byKey[iMetrics.MeasurementKey(measurement.Name, measurement.Attributes)] = measurement.Value
@@ -655,7 +654,7 @@ func readCheckSummary(ctx context.Context) map[string]float64 {
 }
 
 func partitionCountKey(owner *common.Owner) string {
-	key, err := alert.MessageKey(partitioncountcontroller.AlertPartitionCount, owner)
+	key, err := alert.MessageKey(alert.AlertPartitionCount.Name, owner)
 	must(err)
 	return key
 }

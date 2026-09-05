@@ -13,13 +13,13 @@ import (
 func newExplainCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "explain [code]",
-		Short: "Explain a Vulkan error, log-event, or metric code, offline",
-		Long: "explain renders a declared error condition, log event, or metric --\n" +
-			"problem, recovery, fix, docs link -- from the code on any log line or\n" +
-			"error message, plus the diagnose queries when the declaration has\n" +
-			"them. A metric also resolves by its full name or by its stop-line\n" +
-			"attribute key (ready_count). With no argument it lists every declared\n" +
-			"condition, event, and metric.",
+		Short: "Explain a Vulkan error, log-event, metric, or alert code, offline",
+		Long: "explain renders a declared error condition, log event, metric, or\n" +
+			"alert -- problem, recovery, fix, docs link -- from the code on any log\n" +
+			"line or error message, plus the diagnose queries when the declaration\n" +
+			"has them. A metric also resolves by its full name or by its stop-line\n" +
+			"attribute key (ready_count); an alert by its name. With no argument it\n" +
+			"lists every declared condition, event, metric, and alert.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
@@ -34,6 +34,9 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 					}
 					for _, declared := range diagnostic.Metrics() {
 						documents = append(documents, toMetricExplainDocument(declared))
+					}
+					for _, declared := range diagnostic.Alerts() {
+						documents = append(documents, toAlertExplainDocument(declared))
 					}
 					slices.SortFunc(documents, func(left explainDocument, right explainDocument) int {
 						return strings.Compare(left.Code, right.Code)
@@ -50,6 +53,9 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 					rows = append(rows, [2]string{declared.Code, declared.Message})
 				}
 				for _, declared := range diagnostic.Metrics() {
+					rows = append(rows, [2]string{declared.Code, declared.Name})
+				}
+				for _, declared := range diagnostic.Alerts() {
 					rows = append(rows, [2]string{declared.Code, declared.Name})
 				}
 				slices.SortFunc(rows, func(left [2]string, right [2]string) int {
@@ -98,7 +104,26 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 				renderMetricBlock(w, declared)
 				return nil
 			}
+			for _, declared := range diagnostic.Alerts() {
+				if declared.Code != code {
+					continue
+				}
+				if g.jsonOutput() {
+					writeJSON(w, toAlertExplainDocument(declared))
+					return nil
+				}
+				renderAlertBlock(w, declared)
+				return nil
+			}
 
+			if declared, ok := diagnostic.GetAlert(args[0]); ok {
+				if g.jsonOutput() {
+					writeJSON(w, toAlertExplainDocument(declared))
+					return nil
+				}
+				renderAlertBlock(w, declared)
+				return nil
+			}
 			if declared, ok := metricByNameOrAttributeKey(args[0]); ok {
 				if g.jsonOutput() {
 					writeJSON(w, toMetricExplainDocument(declared))
@@ -107,26 +132,27 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 				renderMetricBlock(w, declared)
 				return nil
 			}
-			return failOp("unrecognized code or metric: %q -- `vulkan explain` lists every code and metric", args[0])
+			return failOp("unrecognized code, metric, or alert: %q -- `vulkan explain` lists every code, metric, and alert", args[0])
 		},
 	}
 }
 
-// explainDocument is one declared error, log event, or metric as json; the
-// parts a kind doesn't have drop out.
+// explainDocument is one declared error, log event, metric, or alert as
+// json; the parts a kind doesn't have drop out.
 type explainDocument struct {
-	Kind          string                 `json:"kind"` // error | event | metric
+	Kind          string                 `json:"kind"` // error | event | metric | alert
 	Code          string                 `json:"code"`
 	Problem       string                 `json:"problem,omitempty"`        // error
 	Recovery      string                 `json:"recovery,omitempty"`       // error
 	Fix           string                 `json:"fix,omitempty"`            // error
 	Message       string                 `json:"message,omitempty"`        // event
-	Name          string                 `json:"name,omitempty"`           // metric
+	Name          string                 `json:"name,omitempty"`           // metric, alert
 	MetricKind    string                 `json:"metric_kind,omitempty"`    // metric
 	Unit          string                 `json:"unit,omitempty"`           // metric
-	Description   string                 `json:"description,omitempty"`    // metric
-	Scope         diagnostic.MetricScope `json:"scope,omitempty"`          // metric
+	Description   string                 `json:"description,omitempty"`    // metric, alert
+	Scope         diagnostic.MetricScope `json:"scope,omitempty"`          // metric, alert
 	AttributeKeys []string               `json:"attribute_keys,omitempty"` // metric
+	Severity      string                 `json:"severity,omitempty"`       // alert
 	Docs          string                 `json:"docs"`
 
 	Queries []explainQuery `json:"queries,omitempty"` // error, event
@@ -178,6 +204,18 @@ func toMetricExplainDocument(declared *diagnostic.DiagnosticMetric) explainDocum
 		Scope:         declared.Scope,
 		AttributeKeys: slices.Clone(declared.AttributeKeys),
 		Docs:          declared.Docs(),
+	}
+}
+
+func toAlertExplainDocument(declared *diagnostic.DiagnosticAlert) explainDocument {
+	return explainDocument{
+		Kind:        "alert",
+		Code:        declared.Code,
+		Name:        declared.Name,
+		Description: declared.Description,
+		Scope:       declared.Scope,
+		Severity:    declared.Severity,
+		Docs:        declared.Docs(),
 	}
 }
 

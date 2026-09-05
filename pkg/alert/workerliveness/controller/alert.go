@@ -34,7 +34,7 @@ func newWorkerLivenessAlert(owner *common.Owner, unclaimed []metrics.WorkerSnaps
 		"unclaimed_count": len(unclaimed),
 		"workers":         rows,
 	}
-	return alert.NewAlert(AlertWorkerLiveness, owner, alert.AlertStatusActive, alert.AlertSeverityWarn, message, &alert.AlertOptions{
+	return alert.NewAlert(alert.AlertWorkerLiveness.Name, owner, alert.AlertStatusActive, alert.AlertSeverity(alert.AlertWorkerLiveness.Severity), message, &alert.AlertOptions{
 		Detail: detail,
 		Hint:   hint,
 		Data:   data,

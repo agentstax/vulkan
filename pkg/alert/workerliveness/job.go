@@ -3,10 +3,9 @@ package workerliveness
 import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
-	"github.com/agentstax/vulkan/pkg/alert/workerliveness/controller"
 )
 
-const JobName = "alert." + controller.AlertWorkerLiveness
+var JobName = "alert." + alert.AlertWorkerLiveness.Name
 
 // NewJob builds the schedule the worker_liveness alert is evaluated on.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left

@@ -8,8 +8,6 @@ import (
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 )
 
-const AlertWorkerLiveness = "worker_liveness"
-
 type WorkerLivenessController struct {
 	Logger logging.Logger
 

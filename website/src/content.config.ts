@@ -17,7 +17,7 @@ export const collections = {
 				.optional()
 				.describe('the meta description; title stands in when absent'),
 			kind: z
-				.enum(['error', 'event', 'metric'])
+				.enum(['error', 'event', 'metric', 'alert'])
 				.optional()
 				.describe('what the VK code names; present on every error-board page, absent elsewhere'),
 			recovery: z

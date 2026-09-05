@@ -9,7 +9,7 @@ import { fillText, logAttributes } from '../helpers/placeholders';
 // every code that substitutes anything, and the names it substitutes
 function declared(): { code: string; placeholders: string[] }[] {
 	return Object.values(codeRecords)
-		.filter((record) => record.kind !== 'metric')
+		.filter((record) => record.kind === 'error' || record.kind === 'event')
 		.map((record) => ({
 			code: record.code,
 			placeholders: [
@@ -59,7 +59,7 @@ describe('declared placeholders against the site that fills them', () => {
 		const unfilled: string[] = [];
 
 		for (const record of Object.values(codeRecords)) {
-			if (record.kind === 'metric') {
+			if (record.kind === 'metric' || record.kind === 'alert') {
 				continue;
 			}
 			for (const query of record.queries ?? []) {

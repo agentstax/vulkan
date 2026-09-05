@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
-	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
@@ -118,7 +117,7 @@ func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, jobPayl
 			continue
 		}
 
-		outcome, err := i.alerts.Record(ctx, controller.AlertCompactionReadCost, owner, found)
+		outcome, err := i.alerts.Record(ctx, alert.AlertCompactionReadCost.Name, owner, found)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)
@@ -138,7 +137,7 @@ func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, jobPayl
 }
 
 func (i *CompactionReadCostInstance) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
-	attributes := map[string]string{"alert": controller.AlertCompactionReadCost}
+	attributes := map[string]string{"alert": alert.AlertCompactionReadCost.Name}
 	at := time.Now()
 
 	counts := []struct {

@@ -193,6 +193,24 @@ func renderLogEventBlock(w io.Writer, event *diagnostic.DiagnosticEvent) {
 // renderMetricBlock is renderErrorBlock's sibling for a declared metric:
 // the header line, then kind, unit, scope, attribute keys, description, and
 // docs -- an empty unit drops its row.
+func renderAlertBlock(w io.Writer, declared *diagnostic.DiagnosticAlert) {
+	fmt.Fprintf(w, "alert[%s]: %s\n", declared.Code, declared.Name)
+
+	rows := [][2]string{
+		{"severity", declared.Severity},
+		{"scope", string(declared.Scope)},
+		{"description", declared.Description},
+		{"docs", declared.Docs()},
+	}
+	width := 0
+	for _, row := range rows {
+		width = max(width, len(row[0]))
+	}
+	for _, row := range rows {
+		fmt.Fprintf(w, "  %-*s %s\n", width+1, row[0]+":", row[1])
+	}
+}
+
 func renderMetricBlock(w io.Writer, metric *diagnostic.DiagnosticMetric) {
 	fmt.Fprintf(w, "metric[%s]: %s\n", metric.Code, metric.Name)
 

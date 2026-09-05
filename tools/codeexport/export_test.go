@@ -14,7 +14,7 @@ import (
 func TestNewExportCoversTheRegistry(t *testing.T) {
 	export := build(t)
 
-	wanted := len(diagnostic.Errors()) + len(diagnostic.Events()) + len(diagnostic.Metrics())
+	wanted := len(diagnostic.Errors()) + len(diagnostic.Events()) + len(diagnostic.Metrics()) + len(diagnostic.Alerts())
 	if len(export.Codes) != wanted {
 		t.Fatalf("export carries %d codes, want %d", len(export.Codes), wanted)
 	}
@@ -37,6 +37,15 @@ func TestNewExportCoversTheRegistry(t *testing.T) {
 		}
 		if record.Name != declared.Name || record.Scope != string(declared.Scope) || !slices.Equal(record.AttributeKeys, declared.AttributeKeys) {
 			t.Errorf("%s exports the wrong metric metadata: %+v", declared.Code, record)
+		}
+	}
+	for _, declared := range diagnostic.Alerts() {
+		record, found := export.Codes[declared.Code]
+		if !found {
+			t.Fatalf("%s is missing from the export", declared.Code)
+		}
+		if record.Kind != "alert" || record.Name != declared.Name || record.Scope != string(declared.Scope) || record.Severity != declared.Severity {
+			t.Errorf("%s exports the wrong alert metadata: %+v", declared.Code, record)
 		}
 	}
 }
@@ -85,7 +94,7 @@ func TestNewExportRefusesACodeTwoKindsClaim(t *testing.T) {
 	declared := diagnostic.Errors()[0]
 	colliding := &diagnostic.DiagnosticEvent{Code: declared.Code, Message: "a message"}
 
-	_, err := NewExport([]*diagnostic.DiagnosticError{declared}, []*diagnostic.DiagnosticEvent{colliding}, nil)
+	_, err := NewExport([]*diagnostic.DiagnosticError{declared}, []*diagnostic.DiagnosticEvent{colliding}, nil, nil)
 	if err == nil {
 		t.Fatal("NewExport accepted a code declared as two kinds")
 	}
@@ -101,7 +110,7 @@ func TestNewExportRefusesACodeTwoKindsClaim(t *testing.T) {
 func build(t *testing.T) *Export {
 	t.Helper()
 
-	export, err := NewExport(diagnostic.Errors(), diagnostic.Events(), diagnostic.Metrics())
+	export, err := NewExport(diagnostic.Errors(), diagnostic.Events(), diagnostic.Metrics(), diagnostic.Alerts())
 	if err != nil {
 		t.Fatal(err)
 	}

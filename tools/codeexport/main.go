@@ -39,7 +39,7 @@ func run() error {
 	out := flag.String("out", "", "file to write the JSON to; empty writes to stdout")
 	flag.Parse()
 
-	export, err := NewExport(diagnostic.Errors(), diagnostic.Events(), diagnostic.Metrics())
+	export, err := NewExport(diagnostic.Errors(), diagnostic.Events(), diagnostic.Metrics(), diagnostic.Alerts())
 	if err != nil {
 		return err
 	}

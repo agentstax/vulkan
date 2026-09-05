@@ -8,8 +8,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
-const AlertPartitionCount = "partition_count"
-
 type PartitionCountController struct {
 	Logger logging.Logger
 

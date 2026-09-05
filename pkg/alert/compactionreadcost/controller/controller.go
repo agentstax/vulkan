@@ -8,8 +8,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
-const AlertCompactionReadCost = "compaction_read_cost"
-
 type CompactionReadCostController struct {
 	Logger logging.Logger
 

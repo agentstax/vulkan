@@ -43,8 +43,19 @@ export type MetricRecord = {
 	attribute_keys?: string[];
 };
 
-export type CodeRecord = ErrorRecord | EventRecord | MetricRecord;
+// An alert declares no diagnose queries either: the alert message on
+// `__system.alerts` carries its own detail and hint.
+export type AlertRecord = {
+	code: string;
+	kind: 'alert';
+	name: string;
+	description: string;
+	scope: 'system' | 'topic' | 'consumer_group';
+	severity: string;
+};
 
-// The JSON's own type says kind is a string. The three kinds are fixed on the
-// Go side, and codes.test.ts walks the export to prove no fourth one arrived.
+export type CodeRecord = ErrorRecord | EventRecord | MetricRecord | AlertRecord;
+
+// The JSON's own type says kind is a string. The four kinds are fixed on the
+// Go side, and codes.test.ts walks the export to prove no fifth one arrived.
 export const codeRecords: Record<string, CodeRecord> = codes.codes as Record<string, CodeRecord>;

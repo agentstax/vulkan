@@ -5,7 +5,7 @@ import { codeRecords } from '../../data/codes';
 // conditions have nothing to look at, and no section renders for them.
 export function diagnoseQueries(code: string): DiagnoseQuery[] | null {
 	const record = codeRecords[code];
-	if (record === undefined || record.kind === 'metric') {
+	if (record === undefined || record.kind === 'metric' || record.kind === 'alert') {
 		return null;
 	}
 	return record.queries ?? null;

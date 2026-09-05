@@ -3,10 +3,9 @@ package partitioncount
 import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
-	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 )
 
-const JobName = "alert." + controller.AlertPartitionCount
+var JobName = "alert." + alert.AlertPartitionCount.Name
 
 // NewJob builds the schedule the partition_count alert is evaluated on.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left

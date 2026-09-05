@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/metrics"
 )
@@ -70,6 +71,27 @@ func TestMetricDescriptionAvoidsBannedWords(t *testing.T) {
 	}
 }
 
+func TestAlertDescriptionAvoidsBannedWords(t *testing.T) {
+	for _, registered := range diagnostic.Alerts() {
+		if match := bannedWords.FindString(registered.Description); match != "" {
+			t.Errorf("%s description contains banned word %q: %q", registered.Code, match, registered.Description)
+		}
+		if strings.Contains(registered.Description, "!") {
+			t.Errorf("%s description contains an exclamation point: %q", registered.Code, registered.Description)
+		}
+	}
+}
+
+// An alert declaration's severity is plain text on the diagnostic side;
+// this walk holds it to the pkg/alert vocabulary.
+func TestAlertDeclarationsCarryAlertVocabulary(t *testing.T) {
+	for _, registered := range diagnostic.Alerts() {
+		if alert.AlertSeverity(registered.Severity) != alert.AlertSeverityWarn {
+			t.Errorf("%s severity %q is not an alert severity", registered.Code, registered.Severity)
+		}
+	}
+}
+
 // A metric declaration's kind and unit are plain text on the diagnostic
 // side; this walk holds them to the pkg/metrics vocabulary. Scope is strongly
 // typed and validated when the declaration is constructed.
@@ -98,9 +120,10 @@ func TestMetricDeclarationsCarryMetricsVocabulary(t *testing.T) {
 }
 
 // Codes live at roots (CONVENTIONS.md ## Package layout): every
-// NewDiagnosticError / NewDiagnosticEvent / NewDiagnosticMetric call in the
-// library initializes an exported var in a root's errors.go, events.go,
-// metrics.go, or a subject-named *_metrics.go, or under pkg/common. The same walk proves the import lists in
+// NewDiagnosticError / NewDiagnosticEvent / NewDiagnosticMetric /
+// NewDiagnosticAlert call in the library initializes an exported var in a
+// root's errors.go, events.go, metrics.go, alerts.go, or a subject-named
+// *_metrics.go, or under pkg/common. The same walk proves the import lists in
 // conventions.go and tools/codeexport/main.go are complete: a code the
 // registry this binary sees does not hold, or a declaring package the
 // exporter does not link, would leave a page with no record behind it.
@@ -113,6 +136,9 @@ func TestCodesDeclaredAtRoots(t *testing.T) {
 		registered[entry.Code] = true
 	}
 	for _, entry := range diagnostic.Metrics() {
+		registered[entry.Code] = true
+	}
+	for _, entry := range diagnostic.Alerts() {
 		registered[entry.Code] = true
 	}
 
@@ -165,7 +191,7 @@ func TestCodesDeclaredAtRoots(t *testing.T) {
 					position := relative + ":" + strconv.Itoa(fileSet.Position(value.Pos()).Line)
 					switch {
 					case !isCodeHome(relative):
-						t.Errorf("%s declares %s outside a root's errors.go, events.go, metrics.go, or *_metrics.go", position, code)
+						t.Errorf("%s declares %s outside a root's errors.go, events.go, metrics.go, alerts.go, or *_metrics.go", position, code)
 					case !ast.IsExported(name.Name):
 						t.Errorf("%s declares %s under unexported name %s", position, code, name.Name)
 					}
@@ -212,7 +238,7 @@ func repoRoot(t *testing.T) string {
 // *** HELPERS ***
 // ***************
 
-// declaresCode reports whether a call is one of the three declaration
+// declaresCode reports whether a call is one of the four declaration
 // constructors.
 func declaresCode(call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
@@ -224,15 +250,15 @@ func declaresCode(call *ast.CallExpr) bool {
 		return false
 	}
 	switch selector.Sel.Name {
-	case "NewDiagnosticError", "NewDiagnosticEvent", "NewDiagnosticMetric":
+	case "NewDiagnosticError", "NewDiagnosticEvent", "NewDiagnosticMetric", "NewDiagnosticAlert":
 		return true
 	}
 	return false
 }
 
 // isCodeHome reports whether a repo-relative path is a place a code may be
-// declared: pkg/<x>/errors.go, events.go, metrics.go, or *_metrics.go, or
-// anything under pkg/common.
+// declared: pkg/<x>/errors.go, events.go, metrics.go, alerts.go, or
+// *_metrics.go, or anything under pkg/common.
 func isCodeHome(relative string) bool {
 	if strings.HasPrefix(relative, "pkg/common/") {
 		return true
@@ -243,7 +269,7 @@ func isCodeHome(relative string) bool {
 	}
 	fileName := segments[2]
 	switch fileName {
-	case "errors.go", "events.go", "metrics.go":
+	case "errors.go", "events.go", "metrics.go", "alerts.go":
 		return true
 	}
 	return strings.HasSuffix(fileName, "_metrics.go")

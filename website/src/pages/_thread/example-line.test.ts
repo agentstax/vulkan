@@ -7,7 +7,7 @@ import { codeOverrides, errorExampleLine, eventExampleLine, exampleValues } from
 // pasted into the paste box, fills every placeholder the thread has.
 describe('composed example lines round-trip through the paste parser', () => {
 	for (const [code, record] of Object.entries(codeRecords)) {
-		if (record.kind === 'metric') {
+		if (record.kind === 'metric' || record.kind === 'alert') {
 			continue;
 		}
 

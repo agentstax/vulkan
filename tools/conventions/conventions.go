@@ -6,8 +6,8 @@ package conventions
 // dependencies never enter the library's graph. Run it via `just verify`.
 //
 // The import block below links every package that declares coded errors,
-// log events, or metrics, so the walks see the complete registry through
-// diagnostic.Errors(), diagnostic.Events(), and diagnostic.Metrics(). A new
+// log events, metrics, or alerts, so the walks see the complete registry
+// through diagnostic.Errors(), Events(), Metrics(), and Alerts(). A new
 // file that declares codes gets its package added here (the completeness
 // test fails until it is).
 

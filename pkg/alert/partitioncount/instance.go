@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
-	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/common/logging"
@@ -118,7 +117,7 @@ func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, jobPayload 
 			continue
 		}
 
-		outcome, err := i.alerts.Record(ctx, controller.AlertPartitionCount, owner, found)
+		outcome, err := i.alerts.Record(ctx, alert.AlertPartitionCount.Name, owner, found)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)
@@ -138,7 +137,7 @@ func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, jobPayload 
 }
 
 func (i *PartitionCountInstance) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
-	attributes := map[string]string{"alert": controller.AlertPartitionCount}
+	attributes := map[string]string{"alert": alert.AlertPartitionCount.Name}
 	at := time.Now()
 
 	counts := []struct {

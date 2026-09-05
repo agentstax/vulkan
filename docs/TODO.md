@@ -22,8 +22,11 @@ Give alerts the shape metrics got in [0647][0648]: one declaration catalog,
 - `Alert(name)` lives on every scope, not only the system handle. Every alert,
   built-in or user-produced, has an owner, so a name on a topic handle has
   exact topic semantics; the tree binds the owner. Typed selectors are sugar
-  over it: `Topic().Alerts().PartitionCount()`,
-  `Group().Alerts().WorkerLiveness()`, `System().Alerts().CompactionReadCost()`.
+  over it. All three built-ins are topic-owned today (every check builds a
+  topic owner), so the selectors are `Topic().Alerts().PartitionCount()`,
+  `.CompactionReadCost()`, `.WorkerLiveness()`; the system and group handles
+  carry `Alert(name)`, an empty `Definitions()`, and no selector until a
+  built-in is owned by one.
 - One `AlertHandle` shape holds the alert name plus the owner's names and no
   row. `Latest(ctx)` returns the current alert, active or resolved, or
   `(nil, nil)` before its first retained message. `History(ctx, limit)`
@@ -56,7 +59,7 @@ Give alerts the shape metrics got in [0647][0648]: one declaration catalog,
   per-owner query: heads are bounded by resources times three built-ins and
   a dedicated read would be a second read path.
 
-### 1. Write and review the public proposal — review pending
+### 1. Write and review the public proposal — done 2026-09-05, [0649] written
 
 - In `website/src/content/docs/guides/client.mdx`: delete the
   `sys.Alert("partition_count:orders")` line from the current-API block (it
@@ -69,7 +72,7 @@ Give alerts the shape metrics got in [0647][0648]: one declaration catalog,
   definitions  := client.System().Alerts().Definitions()                                // []vulkan.AlertDefinition; no I/O
   topic        := client.Topic[Order]("orders")
   current, err := topic.Alerts().PartitionCount().Latest(ctx)                            // *vulkan.Alert or nil
-  history, err := topic.Group("charge-cards").Alerts().WorkerLiveness().History(ctx, 20) // newest first
+  history, err := topic.Alerts().WorkerLiveness().History(ctx, 20)                      // newest first
   custom, err  := topic.Alerts().Alert("disk_pressure").Latest(ctx)                      // user-produced
   ```
 
@@ -84,15 +87,15 @@ Give alerts the shape metrics got in [0647][0648]: one declaration catalog,
   the one registry; id key kept; `At` on the wire; `Alert(name)` on every
   scope; the `MetricScope` -> `Scope` rename).
 
-### 2. Declare the built-in alerts in the registry
+### 2. Declare the built-in alerts in the registry — done 2026-09-05
 
 - Add `diagnostic.DiagnosticAlert` in `pkg/common/diagnostic/alert.go`:
   `NewDiagnosticAlert(code, name, description, scope, severity)` registers
   the code in the shared VK serial space and enforces a unique name;
   `Alerts()` lists by code; `GetAlert(name)` resolves a wire name.
 - Add `pkg/alert/alerts.go` holding the three declarations, VK0094-VK0096
-  (next after VK0093): `AlertPartitionCount` (topic), `AlertCompactionReadCost`
-  (system), `AlertWorkerLiveness` (consumer_group), all severity warn. The
+  (next after VK0093): `AlertPartitionCount`, `AlertCompactionReadCost`,
+  `AlertWorkerLiveness`, all scope topic and severity warn. The
   name consts leave the three check controllers (`AlertPartitionCount` in
   `partitioncount/controller` etc.); the check packages and their `JobName`
   consts read the declaration's Name instead. Machinery declares nothing a

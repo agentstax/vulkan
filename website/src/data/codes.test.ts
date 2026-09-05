@@ -12,9 +12,9 @@ const pagesDirectory = join(import.meta.dirname, '../content/docs/errors');
 describe('error pages against the declarations', () => {
 	// codes.ts reads the export as a union on kind. A kind the union does not
 	// name would be typed as something it is not, so the walk proves it first.
-	it('declares every code as one of the three kinds', () => {
+	it('declares every code as one of the four kinds', () => {
 		const unknown = Object.values(codeRecords)
-			.filter((record) => !['error', 'event', 'metric'].includes(record.kind))
+			.filter((record) => !['error', 'event', 'metric', 'alert'].includes(record.kind))
 			.map((record) => `${record.code} is kind ${record.kind}`);
 		expect(unknown).toEqual([]);
 	});
@@ -64,7 +64,8 @@ describe('error pages against the declarations', () => {
 
 // An event's declared message is the static clause plus its consequence
 // ("message dead-lettered -- unrecoverable, will not be retried"); the page
-// is titled with the clause alone. A metric's title is its name.
+// is titled with the clause alone. A metric's or an alert's title is its
+// name.
 function expectedTitle(record: CodeRecord): string | undefined {
 	switch (record.kind) {
 		case 'error':
@@ -72,6 +73,7 @@ function expectedTitle(record: CodeRecord): string | undefined {
 		case 'event':
 			return record.message.split(' -- ')[0];
 		case 'metric':
+		case 'alert':
 			return record.name;
 	}
 }

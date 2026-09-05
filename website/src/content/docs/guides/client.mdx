@@ -574,11 +574,11 @@ definitions := systemAlerts.Definitions() // []vulkan.AlertDefinition; no I/O
 alerts, err := systemAlerts.Latest(ctx)   // []*vulkan.Alert; every current alert
 
 topic := client.Topic[PaymentRequestedV1]("payments.requested")
-current, err := topic.Alerts().PartitionCount().Latest(ctx) // *vulkan.Alert; nil before the first
-history, err := topic.Group("charge-cards").Alerts().
-	WorkerLiveness().History(ctx, 20) // []*vulkan.Alert; newest first
+current, err := topic.Alerts().PartitionCount().Latest(ctx)      // *vulkan.Alert; nil before the first
+history, err := topic.Alerts().WorkerLiveness().History(ctx, 20) // []*vulkan.Alert; newest first
 
 custom, err := topic.Alerts().Alert("disk_pressure").Latest(ctx) // a user-produced alert on the topic
+groupAlerts, err := topic.Group("charge-cards").Alerts().Latest(ctx) // []*vulkan.Alert; owner is the group
 ```
 
 `Latest` on a scope lists the newest retained alert per (name, owner) in
@@ -598,10 +598,12 @@ type AlertDefinition struct {
 }
 ```
 
-Three built-ins today, one per scope: `compaction_read_cost` on the system,
-`partition_count` on a topic, `worker_liveness` on a consumer group. Each
-has a VK code, so `vulkan explain VK0094` and its errors page say what a
-fired one means, and a selector on its scope's handle. Severity sits on the
+Three built-ins today, every one owned by a topic: `partition_count`,
+`compaction_read_cost`, `worker_liveness`. Each has a VK code, so
+`vulkan explain VK0094` and its errors page say what a fired one means, and
+a selector on the topic handle. The system and group handles carry no
+selector yet: their `Definitions()` is empty and `Alert(name)` is their
+whole read, until a built-in is owned by one. Severity sits on the
 definition because it is fixed per built-in; message, detail, hint, and
 data change per finding and stay on the value. `Definitions()` is an
 in-memory read over the same registry as errors, events, and metrics, and

@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
-	"github.com/agentstax/vulkan/pkg/alert/workerliveness/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/common/logging"
@@ -117,7 +116,7 @@ func (i *WorkerLivenessInstance) evaluateTopics(ctx context.Context, jobPayload 
 			continue
 		}
 
-		outcome, err := i.alerts.Record(ctx, controller.AlertWorkerLiveness, owner, found)
+		outcome, err := i.alerts.Record(ctx, alert.AlertWorkerLiveness.Name, owner, found)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)
@@ -137,7 +136,7 @@ func (i *WorkerLivenessInstance) evaluateTopics(ctx context.Context, jobPayload 
 }
 
 func (i *WorkerLivenessInstance) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
-	attributes := map[string]string{"alert": controller.AlertWorkerLiveness}
+	attributes := map[string]string{"alert": alert.AlertWorkerLiveness.Name}
 	at := time.Now()
 
 	counts := []struct {

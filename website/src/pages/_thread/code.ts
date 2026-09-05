@@ -70,5 +70,18 @@ export function codeThreadData(entry: DocsEntry): CodeThreadData {
 				fix: null,
 			};
 		}
+		case 'alert': {
+			return {
+				code,
+				kind,
+				solved: false,
+				classification: 'alert',
+				rank: 'Alert',
+				introduction: 'As it appears on __system.alerts:',
+				logLine: title,
+				consequence,
+				fix: null,
+			};
+		}
 	}
 }

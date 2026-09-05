@@ -1,7 +1,7 @@
 <script lang="ts">
 	type Props = {
 		text: string;
-		kind: 'error' | 'event' | 'metric';
+		kind: 'error' | 'event' | 'metric' | 'alert';
 	};
 
 	let { text, kind }: Props = $props();

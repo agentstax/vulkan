@@ -23,7 +23,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/alert/workerliveness"
-	workerlivenesscontroller "github.com/agentstax/vulkan/pkg/alert/workerliveness/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/schedule"
@@ -145,7 +144,7 @@ func registerSection(ctx context.Context) {
 	// a fresh topic's only worker row is its janitor, and nothing has claimed it
 	_, err := registerClient.Topic[labMessage](labTopic.Name).Producer().Register(ctx, nil)
 	must(err)
-	lines := capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name)
+	lines := capture.find(eventCode, alert.AlertWorkerLiveness.Name, labTopic.Name)
 	if len(lines) != 1 {
 		die(fmt.Sprintf("produce-only Register: want 1 %s line, got %d", eventCode, len(lines)))
 	}
@@ -158,10 +157,10 @@ func registerSection(ctx context.Context) {
 	stopConsumer := startConsumer(ctx)
 	waitUnclaimed(ctx, 0)
 
-	before := len(capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name))
+	before := len(capture.find(eventCode, alert.AlertWorkerLiveness.Name, labTopic.Name))
 	_, err = registerClient.Topic[labMessage](labTopic.Name).Producer().Register(ctx, nil)
 	must(err)
-	if got := len(capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name)); got != before {
+	if got := len(capture.find(eventCode, alert.AlertWorkerLiveness.Name, labTopic.Name)); got != before {
 		die(fmt.Sprintf("Register under a live consumer must be silent, got %d lines after %d", got, before))
 	}
 	fmt.Println("  ✓ with every row claimed, the next Register said nothing")
@@ -275,7 +274,7 @@ func cleanup() {
 
 	// the check evaluates every topic, so a run leaves a head on each one --
 	// all of them are this lab's, and nothing is left running to resolve them
-	pattern := workerlivenesscontroller.AlertWorkerLiveness + "/%"
+	pattern := alert.AlertWorkerLiveness.Name + "/%"
 	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE compaction_key LIKE $1;`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id)), pattern)
 	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE message_key LIKE $1;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), pattern)
 
@@ -313,7 +312,7 @@ func listedAlert(ctx context.Context) *alert.Alert {
 	must(err)
 	for _, head := range heads {
 		found := head.Message
-		if found.Name == workerlivenesscontroller.AlertWorkerLiveness && found.Owner.Name == labTopic.Name {
+		if found.Name == alert.AlertWorkerLiveness.Name && found.Owner.Name == labTopic.Name {
 			return found
 		}
 	}
@@ -337,7 +336,7 @@ func namesWorker(found *alert.Alert, workerName string, ownerName string) bool {
 }
 
 func alertKey(owner *common.Owner) string {
-	key, err := alert.MessageKey(workerlivenesscontroller.AlertWorkerLiveness, owner)
+	key, err := alert.MessageKey(alert.AlertWorkerLiveness.Name, owner)
 	must(err)
 	return key
 }

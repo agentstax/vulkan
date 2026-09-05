@@ -13,7 +13,7 @@ export type ThreadData = {
 
 export type CodeThreadData = {
 	code: string;
-	kind: 'error' | 'event' | 'metric';
+	kind: 'error' | 'event' | 'metric' | 'alert';
 	solved: boolean;
 	classification: string;
 	rank: string;

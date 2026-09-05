@@ -235,9 +235,9 @@ The domain layers:
   returns them. An enum type travels with its const block.
 - Import arrows point strictly downward.
 - Every code -- `diagnostic.NewDiagnosticError`, `NewDiagnosticEvent`,
-  `NewDiagnosticMetric` -- initializes an exported var in the owning
-  root's `errors.go`, `events.go`, `metrics.go`, or a subject-named
-  `*_metrics.go`; a condition raised
+  `NewDiagnosticMetric`, `NewDiagnosticAlert` -- initializes an exported
+  var in the owning root's `errors.go`, `events.go`, `metrics.go`,
+  `alerts.go`, or a subject-named `*_metrics.go`; a condition raised
   across different stacks lives in `pkg/common`. Machinery and
   assemblers declare none, and tools/conventions plus tools/codeexport
   link every declaring root. Whichever layer detects the condition

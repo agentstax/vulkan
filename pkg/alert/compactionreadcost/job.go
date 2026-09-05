@@ -2,11 +2,10 @@ package compactionreadcost
 
 import (
 	"github.com/agentstax/vulkan/pkg/alert"
-	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 )
 
-const JobName = "alert." + controller.AlertCompactionReadCost
+var JobName = "alert." + alert.AlertCompactionReadCost.Name
 
 // NewJob builds the schedule the compaction_read_cost alert is evaluated on.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
