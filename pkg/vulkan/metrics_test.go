@@ -103,3 +103,21 @@ func TestMetricHandleConstructorsPerformNoIO(t *testing.T) {
 		t.Fatal("user metric unexpectedly bound a Vulkan definition")
 	}
 }
+
+func TestUnwrapMeasurementsRemovesStorageEnvelopes(t *testing.T) {
+	first := &Measurement{Name: "first"}
+	second := &Measurement{Name: "second"}
+	stored := []*StoredMessage[Measurement]{
+		{Id: 41, Message: first, MessageKey: "first"},
+		{Id: 73, Message: second, MessageKey: "second"},
+	}
+
+	measurements := unwrapMeasurements(stored)
+	if len(measurements) != 2 || measurements[0] != first || measurements[1] != second {
+		t.Fatalf("measurements = %+v", measurements)
+	}
+	empty := unwrapMeasurements(nil)
+	if empty == nil || len(empty) != 0 {
+		t.Fatalf("empty measurements = %#v", empty)
+	}
+}

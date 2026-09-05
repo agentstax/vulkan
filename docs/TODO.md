@@ -108,7 +108,7 @@ definitions remain parked.
 - Keep ordering explicit: definitions by VK code, system latest measurements by
   measurement key, and history newest first.
 
-### 5. Build the Vulkan handle tree — review pending
+### 5. Build the Vulkan handle tree — approved
 
 - Replace `SystemHandle.Measurements` / `Measurement` and
   `TopicHandle.Metrics(ctx)` with no-I/O `Metrics()` handle constructors.
@@ -126,7 +126,7 @@ definitions remain parked.
   `pkg/vulkan` according to [0643]. Keep admin methods as internal adaptation;
   the documented client tree is the only public path.
 
-### 6. Verify behavior and compatibility
+### 6. Verify behavior and compatibility — review pending
 
 - Unit-test declaration validation, deterministic/scoped definitions, defensive
   attribute slices, selector coverage, measurement-key binding, absence

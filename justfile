@@ -151,8 +151,8 @@ metrics-lab:
 
 # metrics collector lab: a full-size collection pass under -race (topic
 # fan-out under TopicConcurrency, each group's measurements produced
-# concurrently on one ProducerInstance), heads/history read through the
-# admin verbs the CLI renders, and a real `vulkan manager run
+# concurrently on one ProducerInstance), latest/history read through the
+# public handles the CLI uses, and a real `vulkan manager run
 # --metrics-address` process scraped over HTTP.
 metrics-collector-lab:
   go build -o bin/vulkan ./cmd/vulkan

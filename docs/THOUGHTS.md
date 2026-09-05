@@ -1,20 +1,7 @@
 # Public API
 
-eventually get rid of admin after client looks and feels good
+consider getting rid of admin after client looks and feels good
 - would need to make client init lots of other things (which is fine)
-
-Rename alert messageKey -> name. Would need to be propogated through all of alert code
-func (s *SystemHandle) Alert(messageKey string) *AlertHandle {
-	return &AlertHandle{messageKey: messageKey, client: s.client}
-}
-func (a *AlertHandle) MessageKey() string {
-	return a.messageKey
-}
-
-Might make Compaction its own handle
-func (t *TopicHandle) CompactionHead[Payload Versioned](ctx context.Context, messageKey string) (*Message[Payload], error) {
-	return t.client.admin.GetCompactionHead[Payload](ctx, t.name, messageKey)
-}
 
 Consider Making Metrics Handles per other Handles that need it OR just add unique metric verbs to existing handles with consistent naming
 
@@ -28,11 +15,17 @@ doc decision indexing
 - is our decision index doing anything? grep and python search is quite powerful
 - can we make our index more like a search engine ie a list of keywords or tags -> loaded in to context on startup
 
-# Other
+# Review
+
+Probably should have one more table name and column review (this will be hard to change later)
 
 should probably look to see if we could speed up claim query its gotten unruly with ctes and conditionals
 
 need to make sure we do some manual testing for cli, metrics and alerts
+
+need another review to make sure we are not logging any sensitive information like payload
+
+# Other
 
 cleanup justfile
 
@@ -48,7 +41,7 @@ we need a long 1hr repeatable live test:
   do all messages get processed into delivery_log with deliveryLogMode: all on. I'm sort of
   concerned with some edge cases we could miss a message or two
 
-need another review to make sure we are not logging any sensitive information like payload
+
 
 At end we should put up roadmap as github issues to get liked etc
 

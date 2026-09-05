@@ -4,8 +4,8 @@ package main
 // collectTopics errgroup fans out topic snapshots under TopicConcurrency,
 // every fanned-out topic driving singles and per-group ProduceBatch calls
 // against ONE ProducerInstance concurrently. Then the
-// pipeline's read half: heads and history through the same admin verbs
-// `vulkan metrics list` / `vulkan metrics get` render, and a real
+// pipeline's read half: latest values and history through the public handles
+// `vulkan metrics list` / `vulkan metrics get` use, and a real
 // `vulkan manager run --metrics-address` process scraped over HTTP.
 // Self-seeding (6 topics x 2 groups x 5 messages), self-cleaning; expects
 // bin/vulkan built by the justfile recipe.
@@ -130,6 +130,27 @@ func run() (err error) {
 		}
 	}
 
+	step("an unpublished series has no latest value or history")
+	missingSeries := client.System().Metrics().Metric(
+		"metricscollectorlab.unpublished",
+		map[string]string{"run": fmt.Sprint(run)},
+	)
+	latest, err := missingSeries.Latest(ctx)
+	must(err)
+	if latest != nil {
+		die("unpublished series returned a latest measurement")
+	}
+	history, err := missingSeries.History(ctx, 10)
+	must(err)
+	if history == nil || len(history) != 0 {
+		die("unpublished series did not return an empty history")
+	}
+	_, err = missingSeries.History(ctx, 0)
+	if err == nil {
+		die("history accepted a non-positive limit")
+	}
+	fmt.Println("  ✓ Latest is nil, History is empty, and limit must be positive")
+
 	step("claim the real metrics_collector worker at a fast poll rate")
 	system, err := client.System().Get(ctx)
 	must(err)
@@ -237,10 +258,7 @@ func run() (err error) {
 		messagesPerTopic, messagesPerTopic, topicCount*groupsPerTopic)
 
 	step("history accumulates under the head -- one row per collection pass")
-	historyAttributes := map[string]string{
-		"group": groupNames[0], "topic": topicNames[0],
-	}
-	historySeries := client.System().Metrics().Metric(metrics.MetricCursorBacklog.Name, historyAttributes)
+	historySeries := client.Topic[common.Work](topicNames[0]).Group(groupNames[0]).Metrics().CursorBacklog()
 	must(waitFor(10*time.Second, func() (bool, error) {
 		history, err := historySeries.History(ctx, 10)
 		if err != nil {
@@ -248,7 +266,12 @@ func run() (err error) {
 		}
 		return len(history) >= 2, nil
 	}))
-	fmt.Println("  ✓ >= 2 retained rows for one series key")
+	latest, err = historySeries.Latest(ctx)
+	must(err)
+	if latest == nil || latest.At.IsZero() || latest.Name != metrics.MetricCursorBacklog.Name {
+		die("typed backlog series did not return its collected measurement")
+	}
+	fmt.Println("  ✓ typed backlog selector returns Latest and >= 2 retained History values")
 
 	cancel()
 	must(<-collectorDone)

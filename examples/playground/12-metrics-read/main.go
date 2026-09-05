@@ -4,23 +4,20 @@
 // measures the fleet, plus a loop printing the group's own gauges from
 // the __system.metrics topic -- the pull side an ops dashboard would use.
 //
-// Concepts held before domain code (11): the 7 from scenario 03, plus
-// ListMeasurements / ListMeasurementMessages, the Message envelope,
-// and pkg/metrics for the metric names. The collector runs because Consume
-// runs the manager -- errgroup is here for the print loop, not for it.
+// Concepts held before domain code (11): the 7 from scenario 03, plus a
+// GroupMetricsHandle, its typed CursorBacklog selector, and retained Latest /
+// History measurements. The collector runs because Consume runs the manager --
+// errgroup is here for the print loop, not for it.
 //
 // Traps hit:
-//   - Measurements exist only after the manager's metrics collector ticks
-//     (30s default poll): the first prints are empty lists, and nothing on
+//   - A retained measurement exists only after the manager's metrics collector
+//     ticks (30s default poll): Latest initially returns nil, and nothing on
 //     ClientConfig or RegisterSystemConfig sets the collector's rate -- it
 //     is worker metadata the client surface never reaches.
-//   - ListMeasurements is every head fleet-wide; narrowing to one group is
-//     a caller-side loop over each measurement's Attributes.
-//   - Metric names live in pkg/metrics -- the vulkan package aliases none
-//     of them, so the read side needs a second import.
-//   - The series key for ListMeasurementMessages is
-//     metrics.MeasurementKey(name, attributes); reusing a head's own
-//     MessageKey is the only way to avoid guessing the attribute set.
+//   - Latest is the newest collected value, not live state. Measurement.At is
+//     the observation time; Snapshot asks the source tables what is true now.
+//   - The Group metrics handle supplies topic and group attributes. A typed
+//     selector avoids copying the metric's wire name or assembling its key.
 package main
 
 import (
@@ -29,7 +26,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/metrics"
 	vulkan "github.com/agentstax/vulkan/pkg/vulkan"
 	"golang.org/x/sync/errgroup"
 )
@@ -89,15 +85,17 @@ func run() error {
 			return nil
 		}, nil)
 	})
-	group.Go(func() error { return printLedgerMeasurements(groupCtx, client) })
+	groupMetrics := client.Topic[OrderPlaced](registered.Name).Group("ledger").Metrics()
+	group.Go(func() error { return printLedgerMeasurements(groupCtx, groupMetrics) })
 	return group.Wait()
 }
 
-// printLedgerMeasurements prints the ledger group's gauges each tick, and
-// one series' retained history once its head exists.
-func printLedgerMeasurements(ctx context.Context, client *vulkan.Client) error {
+// printLedgerMeasurements prints the ledger group's collected backlog and
+// retained history each tick once its first measurement exists.
+func printLedgerMeasurements(ctx context.Context, groupMetrics *vulkan.GroupMetricsHandle) error {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
+	backlogMetric := groupMetrics.CursorBacklog()
 
 	for {
 		select {
@@ -106,24 +104,20 @@ func printLedgerMeasurements(ctx context.Context, client *vulkan.Client) error {
 		case <-ticker.C:
 		}
 
-		measurements, err := client.System().Metrics().Latest(ctx)
+		backlog, err := backlogMetric.Latest(ctx)
 		if err != nil {
 			return err
 		}
-		for _, measurement := range measurements {
-			if measurement.Attributes["group"] != "ledger" {
-				continue
-			}
-			fmt.Printf("%s = %g\n", measurement.Name, measurement.Value)
-
-			if measurement.Name == metrics.MetricCursorBacklog.Name {
-				series := client.System().Metrics().Metric(measurement.Name, measurement.Attributes)
-				history, err := series.History(ctx, 5)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("  backlog history: %d retained measurements\n", len(history))
-			}
+		if backlog == nil {
+			fmt.Println("backlog has not been collected yet")
+			continue
 		}
+
+		history, err := backlogMetric.History(ctx, 5)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("backlog = %g (collected %s, %d retained measurements)\n",
+			backlog.Value, backlog.At.Local().Format(time.RFC3339), len(history))
 	}
 }

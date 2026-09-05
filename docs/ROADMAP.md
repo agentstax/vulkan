@@ -244,6 +244,12 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
 
+- **Proposal pages for public discussion** — give substantial ideas a specific
+  page that states the proposal and links a discussion where readers can leave
+  thoughts, rather than making an issue or a finished documentation page carry
+  both roles. Pickup must settle the home for the discussion, identity and
+  moderation, and how a proposal progresses into shipped documentation.
+
 - **BindingHandle verbs beyond Get** — the handle shipped [0645]; these
   are bare nouns like every handle verb: `Waiting(ctx)` the
   group's still-blocked declarers (same datastore read, the

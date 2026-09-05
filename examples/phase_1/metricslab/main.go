@@ -177,7 +177,7 @@ func run() (err error) {
 	}
 	fmt.Printf("  ✓ SelfClearLatencyAvg (%v)\n", snap.Groups[0].AbandonedRoutines.SelfClearLatencyAvg)
 
-	step("client.Topic[vulkan.RawPayload](...).Metrics is the same read `vulkan topic get` renders -- cursor/exception state came back too")
+	step("client.Topic[vulkan.RawPayload](...).Metrics().Snapshot is the live read `vulkan topic get` renders -- cursor/exception state came back too")
 	fmt.Printf("  ✓ cursor backlog=%d, ready exceptions=%d\n",
 		snap.Groups[0].Cursor.Backlog, snap.Groups[0].Exceptions.Ready)
 
