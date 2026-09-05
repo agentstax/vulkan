@@ -63,7 +63,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.Topic[vulkan.RawPayload]("devices.config").Register(ctx, nil)
+	registered, err := client.Topic[DeviceConfig]("devices.config").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

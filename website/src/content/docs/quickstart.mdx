@@ -92,12 +92,12 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    		return err
    	}
 
-	registered, err := client.Topic("signup.welcome-email").Register(ctx, nil)
+	registered, err := client.Topic[WelcomeEmail]("signup.welcome-email").Register(ctx, nil)
    	if err != nil {
    		return err
    	}
 
-	instance, err := client.Producer(registered.Name).Register[WelcomeEmail](ctx, nil)
+	instance, err := client.Topic[WelcomeEmail](registered.Name).Producer().Register(ctx, nil)
    	if err != nil {
    		return err
    	}
@@ -166,7 +166,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    		return err
    	}
 
-   	registered, err := client.Topic("signup.welcome-email").Get(ctx)
+   	registered, err := client.Topic[WelcomeEmail]("signup.welcome-email").Get(ctx)
    	if err != nil {
    		return err
    	}
@@ -174,7 +174,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    		return errors.New("topic not registered -- run the producer first")
    	}
 
-	instance, err := client.Consumer("email-sender", registered.Name).Register[WelcomeEmail](ctx,
+	instance, err := client.Topic[WelcomeEmail](registered.Name).Group("email-sender").Register(ctx,
    		&vulkan.ConsumerConfig{
    			Message: &vulkan.MessageOptions{
    				Timeout: 5 * time.Second,

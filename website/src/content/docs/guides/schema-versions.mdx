@@ -18,7 +18,7 @@ type OrderPlacedV2 struct {
 
 func (OrderPlacedV2) SchemaVersion() int { return 2 }
 
-instance, err := client.Producer("orders.placed").Register[OrderPlacedV2](ctx, nil)
+instance, err := client.Topic[OrderPlacedV2]("orders.placed").Producer().Register(ctx, nil)
 must(err)
 ```
 
@@ -48,7 +48,7 @@ One topic, one log, one id space, rows of any version interleaved.
 ## A group reads its own version and steps over the rest
 
 ```go
-instance, err := client.Consumer("fraud-scoring", "orders.placed").Register[OrderPlacedV2](ctx, nil)
+instance, err := client.Topic[OrderPlacedV2]("orders.placed").Group("fraud-scoring").Register(ctx, nil)
 must(err)
 ```
 
@@ -85,7 +85,7 @@ live rank-0 v2 write for the same key, in either arrival order.
 `examples/phase_1/schemaevolutionlab` runs that end to end, including
 a crash mid-drain.
 
-Retirement is a query, not a guess. `client.Topic("orders.placed").Health` lists
+Retirement is a query, not a guess. `client.Topic[vulkan.RawPayload]("orders.placed").Health` lists
 every version present in the log with the compaction heads still at it
 and each group's unread rows at it; zero of both is the verdict. A
 version with heads at it reads "compaction heads remain" no matter how

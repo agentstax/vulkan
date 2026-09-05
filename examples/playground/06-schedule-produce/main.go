@@ -56,7 +56,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	invoices, err := client.Topic[vulkan.RawPayload]("invoices").Register(ctx, nil)
+	invoices, err := client.Topic[InvoiceRun]("invoices").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

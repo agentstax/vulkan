@@ -86,7 +86,7 @@ One group's effective set is a read on its handle. nil means the group
 never declared a set and receives the whole topic:
 
 ```go
-binding, err := client.Topic("orders").Group("email-receipts").Binding().Get(ctx)
+binding, err := client.Topic[OrderPlaced]("orders").Group("email-receipts").Binding().Get(ctx)
 if err != nil {
 	return err
 }

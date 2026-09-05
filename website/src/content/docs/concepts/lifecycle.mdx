@@ -56,7 +56,7 @@ consumer group, or requested per message at produce time (messages *request*,
 consumers *clamp*):
 
 ```go
-fraud, err := client.Consumer("fraud-scoring", "orders.placed").Register[OrderPlaced](ctx,
+fraud, err := client.Topic[OrderPlaced]("orders.placed").Group("fraud-scoring").Register(ctx,
 	&vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{
 			Timeout: 30 * time.Second,

@@ -99,15 +99,11 @@ Steps, in order:
    messages --limit` (cmd/vulkan/internal/cli/topic_key*.go), text and
    `--output json`, a VK0066 CLI fix naming the messages command;
    README samples are the verbatim output of a devices.config run.
-7. **Docs pass.** Every page spelling `client.Consumer(` or
-   `client.Producer(` moves to the tree: quickstart, replay,
-   schema-versions, consumer-group-config, and the client guide's
-   Proposed labels come off. VOICE.md revision checklist as its own
-   pass. The playground scenarios are user-facing samples too: the
-   rewrite script typed a bare string-literal `Topic("x").Register`
-   as `RawPayload` where later calls use `registered.Name` with the
-   real type (05-compacted-kv line 66 is one) -- read each scenario and
-   spell the real type. The CLI README's "created from your code"
-   line still says `client.Topic(name).Register`.
+7. **Docs pass.** DONE 2026-09-04: quickstart, replay, schema-versions,
+   new-group-start, schedules, consumer-group-config, lifecycle,
+   fan-out, routing, and the client guide (Proposed aside removed) spell
+   the tree; schedule samples drop their inferred type argument; the six
+   playground scenarios register with their real type; the CLI README
+   line fixed. VOICE checklist run over the new client-page prose.
 8. **Close-out.** Full fresh-DB lab suite, HISTORY.md entry, remove
    this section and the ROADMAP Now item it absorbed.

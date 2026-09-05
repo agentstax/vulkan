@@ -17,7 +17,7 @@ type InvoiceRun struct {
 
 func (InvoiceRun) SchemaVersion() int { return 1 }
 
-nightly, err := client.Scheduler("invoices.nightly").Register[InvoiceRun](ctx,
+nightly, err := client.Scheduler("invoices.nightly").Register(ctx,
 	"invoices", "0 2 * * *",
 	&InvoiceRun{Region: "eu"}, nil)
 if err != nil {
@@ -30,7 +30,7 @@ return nightly.Schedule(ctx)
 And in whichever service does the invoicing, nothing about cron:
 
 ```go
-invoices, err := client.Consumer("invoice-runner", "invoices").Register[InvoiceRun](ctx, nil)
+invoices, err := client.Topic[InvoiceRun]("invoices").Group("invoice-runner").Register(ctx, nil)
 if err != nil {
 	return err
 }

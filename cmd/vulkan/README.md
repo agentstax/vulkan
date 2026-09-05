@@ -26,7 +26,7 @@ in on purpose. The database must already have the Vulkan schema applied.
 
 ### Creating topics
 
-Topics are created from your code, by `client.Topic(name).Register`. There is no
+Topics are created from your code, by `client.Topic[T](name).Register`. There is no
 `vulkan topic register`: the CLI reads config and never writes it, so a
 topic created from a shell would just be overwritten by the next call your
 code makes. `vulkan system` and `vulkan schedule` work the same way — schedules

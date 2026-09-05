@@ -54,7 +54,7 @@ func run() error {
 		return err
 	}
 
-	registered, err := client.Topic[vulkan.RawPayload]("orders.placed").Register(ctx, nil)
+	registered, err := client.Topic[OrderPlacedV1]("orders.placed").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

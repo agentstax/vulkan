@@ -62,7 +62,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.Topic[vulkan.RawPayload]("orders.placed").Register(ctx, nil)
+	registered, err := client.Topic[OrderPlaced]("orders.placed").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

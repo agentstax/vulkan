@@ -51,7 +51,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.Topic[vulkan.RawPayload]("webhooks.received").Register(ctx, nil)
+	registered, err := client.Topic[WebhookEvent]("webhooks.received").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

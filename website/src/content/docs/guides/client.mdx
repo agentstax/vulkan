@@ -15,16 +15,6 @@ carrying its own `Logger` and `Retry`. The group-config half of this,
 what is stored and how instances read it back, has its own page:
 [consumer group config](/guides/consumer-group-config/).
 
-<ThreadAside label="PROPOSED" title="The typed topic handle">
-The samples on this page show the topic handle carrying the message
-type, `client.Topic[OrderPlaced]("orders")`, with the group, producer,
-and key handles under it. The shipped library still spells the type on
-each verb: `client.Consumer(group, topic).Register[T]`,
-`client.Producer(topic).Register[T]`, `orders.CompactionHead[T]`.
-This page is the spec for the move; the samples compile once it lands.
-
-</ThreadAside>
-
 ## Two grammars
 
 The client selects the noun: `Topic[T](name)`, `Scheduler(name)`, and a
@@ -52,9 +42,9 @@ V2, and either one destroys the topic.
 
 A caller that does not know the type, the CLI and any admin-only
 script, uses `vulkan.RawPayload`: the stored JSON bytes as they are,
-declaring version `0`. It works on every admin and key read and is
-refused by the three `Register` verbs that write or filter by version,
-since nothing should produce or consume at version 0.
+declaring version `0`. It works on every admin and key read. A consumer
+cannot register with it and a produce with it is refused, so no row is
+ever stored or read at version 0.
 
 ```go
 // an operator script -- no message type in scope
@@ -404,12 +394,11 @@ when the group never declared one.
 
 A message key is a handle under its topic. `orders.Key("device-7")`
 names it, `CompactionHead` reads the key's winning message and returns
-[VK0066](/errors/VK0066/) when nothing has been produced under it, and
-`Messages` reads the retained history newest first. The key is a
-message property with two readers, compaction and the concurrency
-policy, which is why the handle is named for the key and not for
-compaction: the lease facts belong on the same handle when they get a
-read. The head used to be read inside a transaction on the producer
+[VK0066](/errors/VK0066/) when no compacted message was produced under
+it, and `Messages` reads the retained history newest first. The key is
+a message property with two readers, compaction and the concurrency
+policy, which is why the handle is named for the key: the lease facts
+belong on the same handle when they get a read. The head used to be read inside a transaction on the producer
 instance and outside one on a separate `CompactionController` keyed by
 topic id, two objects for one fact. `orders.CompactionHeads` lists
 every key's head on the topic, all of them: a topic can hold a million
@@ -421,7 +410,7 @@ installation, so there is only ever one row to name. The day that
 changes the API grows by one parameter: `client.System(name).Register(ctx,
 cfg)`, topics nesting under it as
 `client.System(name).Topic(name)` the way groups nest under topics, and
-`client.Topic(name)` staying as the default system's shortcut. The
+`client.Topic[T](name)` staying as the default system's shortcut. The
 verbs that own system state already sit there: `Register`, `MigrateTopics`,
 `Bindings`, `Alerts`, and `Measurements`. The manager is its
 own `client.Manager()` handle because it is a running subsystem.
@@ -430,8 +419,8 @@ own `client.Manager()` handle because it is a running subsystem.
 
 | before (`MessageAdmin`) | now |
 | --- | --- |
-| `RegisterTopic` | `client.Topic(name).Register(ctx, cfg)`, returns `*vulkan.Topic` |
-| `GetTopic` | `client.Topic(name).Get(ctx)` |
+| `RegisterTopic` | `client.Topic[T](name).Register(ctx, cfg)`, returns `*vulkan.Topic` |
+| `GetTopic` | `client.Topic[T](name).Get(ctx)` |
 | `ListTopics` | `client.Topics` |
 | `MigrateTopic` | `Topic.Migrate` |
 | `MigrateTopics` | `client.System().MigrateTopics` |

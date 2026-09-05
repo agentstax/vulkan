@@ -57,7 +57,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.Topic[vulkan.RawPayload]("accounts.balance").Register(ctx, nil)
+	registered, err := client.Topic[BalanceChanged]("accounts.balance").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
