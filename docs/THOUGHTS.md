@@ -3,13 +3,9 @@
 consider getting rid of admin after client looks and feels good
 - would need to make client init lots of other things (which is fine)
 
-Consider Making Metrics Handles per other Handles that need it OR just add unique metric verbs to existing handles with consistent naming
-
 # Doc
 
 SEO for markdown - tags
-
-Have specific 'proposal' pages. Like the idea of having an issue and doc proposal page where people can comment and give thoughts etc
 
 doc decision indexing
 - is our decision index doing anything? grep and python search is quite powerful
@@ -40,8 +36,3 @@ we need a long 1hr repeatable live test:
 - one of the things I want to make sure we do well here is message processing tracking ie
   do all messages get processed into delivery_log with deliveryLogMode: all on. I'm sort of
   concerned with some edge cases we could miss a message or two
-
-
-
-At end we should put up roadmap as github issues to get liked etc
-

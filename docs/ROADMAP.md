@@ -28,36 +28,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   (consume.GroupConfig, producer.ProducerInstanceConfig), restoring
   [0625]'s ambient-held-once clause. The Register verbs themselves
   moved onto the typed topic tree 2026-09-04 (HISTORY).
-- **Metrics as first-class handles** — the next public-API design/build.
-  The client-guide page is the proposal and stays labeled Proposed until the
-  surface is reviewed; implementation follows it rather than leading it.
-  - Scope the first pass to `System().Metrics()`, `Topic(...).Metrics()`, and
-    `Topic(...).Group(...).Metrics()`. Consumer, producer, and possibly
-    scheduler instance metrics remain a separate Later item: those must expose
-    process/session facts, never duplicate these resource reads.
-  - Preserve the two data planes in the names. `Snapshot(ctx)` computes a
-    typed resource picture from its source tables now. A typed metric selector
-    such as `group.Metrics().CursorBacklog()` returns a metric handle whose
-    `Latest(ctx)` reads its newest collected point and whose
-    `History(ctx, limit)` reads retained points newest first. `Measurement.At`
-    is the observation time and is always returned; `Latest` promises newest
-    retained, not fresh.
-  - Make built-ins discoverable without string names: resource metrics handles
-    expose typed selectors and `Definitions()` lists what Vulkan supports with
-    no I/O. `System().Metrics().Latest(ctx)` lists the newest actually published
-    measurements, and `System().Metrics().Metric(name, attributes)` is the one
-    arbitrary escape hatch for user metrics. Resource handles do not pretend
-    an arbitrary name has topic/group semantics.
-  - Return bare `Measurement` values, not their `StoredMessage[Measurement]` storage
-    envelopes. A metric handle's `Latest` returns `(nil, nil)` before its first
-    retained point; `History` returns an empty slice and requires a positive
-    limit.
-  - One declaration catalog drives typed selectors, `Definitions()`, collector
-    output, Prometheus help, and `vulkan explain`; it includes each built-in's
-    resource scope and attribute keys. Absorb the [0567] gauge-declaration
-    follow-on here: declare the remaining collector gauges and build their
-    measurements from those declarations so name, kind, unit, description,
-    scope, and attributes cannot drift.
 - **Step 3 -- the public-API review**, resumed where the playground
   gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
   HISTORY). The catalog (`examples/playground/`) is the measuring
@@ -249,6 +219,13 @@ documentation; the latter want a surface that has stopped moving.
   thoughts, rather than making an issue or a finished documentation page carry
   both roles. Pickup must settle the home for the discussion, identity and
   moderation, and how a proposal progresses into shipped documentation.
+
+- **Publish selected roadmap items as GitHub issues** — near public launch,
+  use an agent to turn externally useful Later items into reviewed GitHub
+  issues, inviting reactions and discussion. `docs/ROADMAP.md` remains the
+  ordered source of truth; issues are public discussion and interest signals,
+  not commitments. Settle selection criteria, labels, issue status when work
+  ships or is dropped, and how issue discussion feeds back into the roadmap.
 
 - **BindingHandle verbs beyond Get** — the handle shipped [0645]; these
   are bare nouns like every handle verb: `Waiting(ctx)` the

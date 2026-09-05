@@ -5,6 +5,33 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-05 — Metrics are first-class resources on the client [0647][0648]
+
+`System().Metrics()`, `Topic(...).Metrics()`, and
+`Topic(...).Group(...).Metrics()` are no-I/O resource handles. System lists
+every built-in definition and every newest retained series; Topic and Group
+compute live `Snapshot` values and expose typed built-in selectors. Each
+selector returns one `MetricHandle`: `Latest` reads its newest retained
+`Measurement`, `History` reads retained measurements newest first, and both
+drop the storage envelope. `Measurement.At` keeps collected state visibly
+different from live state. The System handle's `Metric(name, attributes)` is
+the one arbitrary escape for user-produced and dynamically selected series.
+
+The existing diagnostic registry is the catalog. `DiagnosticMetric` now owns
+strongly typed scope and ordered attribute keys, `MetricDefinition` is its
+defensive public view, and every built-in producer constructs measurements
+from its declaration. The collector gauges are declared beside worker,
+schedule, alert, topic, consumer-group, and consumer-session metrics under
+VK0067-VK0093; those declarations also drive selectors, `vulkan explain`, the
+code pages, and Prometheus help. Retained reads reuse compaction heads and
+message history; live reads reuse the metrics snapshots, with no metric SQL
+added. The CLI and metrics examples use the same public handle tree.
+
+Verified with `just verify`, the metrics and alert labs, and the full fresh-DB
+suite (49/49). `just compat-lab` passed its documented working-tree round-trip
+dry run; there is no prior release tag to pin yet. This work adds no migration,
+so the pre-1.0 compatibility-table row is unchanged.
+
 ## 2026-09-04 — The topic handle carries the message type, a message key is a handle under it [0646]
 
 `client.Topic[Message](name)` roots the typed tree: the group's

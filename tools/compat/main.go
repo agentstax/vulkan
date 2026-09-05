@@ -121,11 +121,11 @@ func run() error {
 // lifecycle against the newer database.
 func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, name string) error {
 	section("pinned producer registers and produces")
-	p, err := producer.NewProducer(ds, nil)
+	p, err := producer.NewProducer(ds)
 	if err != nil {
 		return err
 	}
-	pInstance, err := p.Register[event](ctx, name)
+	pInstance, err := p.Register[event](ctx, name, nil)
 	if problem := check(err == nil, "producer Register accepted", err); problem != nil {
 		return problem
 	}
@@ -137,7 +137,7 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 	fmt.Printf("  ✓ produced %d messages\n", messageCount)
 
 	section("pinned consumer registers and consumes them back")
-	c, err := consumer.NewConsumer(ds, nil)
+	c, err := consumer.NewConsumer(ds)
 	if err != nil {
 		return err
 	}
@@ -178,11 +178,11 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 // No cleanup -- a checkpoint runs against a throwaway database.
 func refused(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) error {
 	section("pinned producer Register must be refused")
-	p, err := producer.NewProducer(ds, nil)
+	p, err := producer.NewProducer(ds)
 	if err != nil {
 		return err
 	}
-	_, err = p.Register[event](ctx, name)
+	_, err = p.Register[event](ctx, name, nil)
 	fmt.Printf("  error: %v\n", err)
 	if problem := check(errors.Is(err, migrate.ErrSchemaNewerThanBuild), "refused with ErrSchemaNewerThanBuild", err); problem != nil {
 		return problem

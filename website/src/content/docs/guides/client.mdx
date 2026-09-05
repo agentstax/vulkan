@@ -413,13 +413,11 @@ own `client.Manager()` handle because it is a running subsystem.
 
 ## Metrics
 
-<ThreadAside label="PROPOSED" title="Metrics as resources">
 Metrics split live state from collected history. `Snapshot(ctx)` asks the
 source tables what is true now. `Latest(ctx)` and `History(ctx, limit)` read
 observations already written to `__system.metrics`.
 
-The first pass puts metrics handles on the system, a topic, and a consumer
-group:
+Metrics handles sit on the system, a topic, and a consumer group:
 
 ```go
 systemMetrics := client.System().Metrics()
@@ -563,8 +561,6 @@ collected, err := groupMetrics.CursorBacklog().Latest(ctx)
 compares `Measurement.At` to its own threshold; the library does not silently
 turn an old collected value into live state.
 
-</ThreadAside>
-
 ## Where the old verbs went
 
 | before (`MessageAdmin`) | now |
@@ -576,7 +572,7 @@ turn an old collected value into live state.
 | `MigrateTopics` | `client.System().MigrateTopics` |
 | `RenameTopic` | `Topic.Rename` |
 | `DestroyTopic` | `Topic.Destroy` |
-| `TopicHealth` / `TopicMetrics` | `Topic.Health`; metrics replacement proposed above |
+| `TopicHealth` / `TopicMetrics` | `Topic.Health`; `Topic.Metrics().Snapshot(ctx)` |
 | `GetGroup` | `Topic.Group(name).Get(ctx)`; its worker rows become `Group.Workers` |
 | (none) | `TopicHandle.Groups` |
 | `DestroyGroup` | `Group.Destroy` |
@@ -590,7 +586,7 @@ turn an old collected value into live state.
 | `RegisterSystem` | `client.System().Register` |
 | `GetSystem` / `MigrateSystem` / `DestroySystem` | `client.System().Get` / `.Migrate` / `.Destroy` |
 | `ListAlerts` | `client.System().Alerts` |
-| `ListMeasurements` / `ListMeasurementMessages` | metrics replacement proposed above |
+| `ListMeasurements` / `ListMeasurementMessages` | `client.System().Metrics().Latest(ctx)`; a typed metric selector's `History(ctx, limit)` |
 | `CompactionController.GetHead` / `ListKeyMessages` | `Topic.Key(k).CompactionHead` / `Topic.Key(k).Messages` |
 | `CompactionController.ListHeads` | `Topic.CompactionHeads` |
 | `Consumer.Register[T]` / `Producer.Register[T]` | `Topic[T].Group(name).Register` / `Topic[T].Producer().Register` |
