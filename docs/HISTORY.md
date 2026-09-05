@@ -5,6 +5,38 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-09-04 — The topic handle carries the message type, a message key is a handle under it [0646]
+
+`client.Topic[Message](name)` roots the typed tree: the group's
+`Register` (was `client.Consumer`; `ConsumerHandle` deleted), the
+producer's `Register` (was `client.Producer`), the new
+`Key(k).CompactionHead` / `Key(k).Messages` reads, and
+`CompactionHeads` all inherit the type and take none of their own; the
+admin verbs ignore it. `CompactionHead` raises VK0066 (new
+`pkg/compaction/errors.go`, docs page, CLI fix); `AlertHandle.Get` and
+`MeasurementHandle.Get` are one-liners over the key handle. Callers
+with no message type in scope, the CLI and admin-only scripts, pass
+`common.RawPayload`, the stored JSON bytes at version 0: a consumer
+cannot register with it and a produce with it is refused at the value
+(the datastore's `checkSchemaVersion` after `produceFunc`, the batch
+preamble), since `ScheduleStoredMessage` carries its version by value
+and a type-level producer guard broke the schedule producer. Naming:
+every type parameter is `Message`, so the stored-row read-model
+`common.Message` became `StoredMessage[Message]` (JSON unchanged) and
+the schedule root took its prefix (`ScheduleStoredMessage`,
+`ScheduleMessageOutcome` and consts); schedules stay system-rooted on
+`client.Scheduler(name)`, their `Register` type inferred from the
+payload. CLI: `vulkan topic key get <topic> <key>` and `vulkan topic
+key messages <topic> <key> --limit`, payload printed as stored JSON.
+Docs: the client guide, quickstart, replay, schema-versions,
+new-group-start, schedules, consumer-group-config, lifecycle, fan-out,
+routing, and the playground scenarios spell the tree; `message_key`
+joined the attribute registry. Verified: `just verify`, ten
+directly-affected labs during the build, and the fresh-DB suite
+ran 49/49 at close-out. Absorbed the ROADMAP item "Register returns what
+you run, the client holds the assemblers". Deferred: a head read at a
+mismatched schema version (ROADMAP Later, beside the upcaster).
+
 ## 2026-09-03 — Binding handle under the group, client lists are bare plurals [0645]
 
 `client.Topic(t).Group(g).Binding().Get(ctx)` reads one group's effective

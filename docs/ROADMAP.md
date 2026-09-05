@@ -51,16 +51,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     follow-on here: declare the remaining collector gauges and build their
     measurements from those declarations so name, kind, unit, description,
     scope, and attributes cannot drift.
-- **The typed topic handle** -- in flight in TODO.md (settled
-  2026-09-04): `client.Topic[Message](name)` roots the typed tree, a
-  message key is a handle under it, the CLI reads through
-  `RawPayload`. Absorbs the earlier item here, "Register returns what
-  you run, the client holds the assemblers": the consumer and producer
-  Register verbs move onto the tree in the same change, and
-  ConsumerConfig / ProducerConfig split into the assembler's
-  `{Logger, Retry}` plus the declaration the Register verb takes
-  (consume.GroupConfig, producer.ProducerInstanceConfig), restoring
-  [0625]'s ambient-held-once clause.
 - **Step 3 -- the public-API review**, resumed where the playground
   gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
   HISTORY). The catalog (`examples/playground/`) is the measuring
@@ -433,6 +423,17 @@ dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
 
+- **Custom user metric definitions** — let applications declare the name,
+  kind, unit, description, and attribute keys of their own metrics so
+  `System().Metrics().Definitions()` can discover them before the first
+  measurement. The first-class metrics work deliberately lists Vulkan
+  built-ins only; user measurements remain self-describing and discoverable
+  through `Latest(ctx)` in the meantime. Do not infer a definition from an
+  observed measurement: pickup must settle durable registration, ownership,
+  reserved-name enforcement, and what happens when a redeclaration changes
+  kind, unit, or attribute keys. Promote only when a user metric needs
+  pre-measurement discovery or shared help text rather than merely history and
+  export.
 - **Strict declaration forms: `RequireMatch` and the stale-build gate**
   (parked 2026-08-31, cut from the [0625] chunks 12 and 13). Both are a
   lock with no key. `RequireMatch` (chunk 12, built and reverted in
