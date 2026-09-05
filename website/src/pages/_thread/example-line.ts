@@ -13,6 +13,7 @@ export const exampleValues: Record<string, string> = {
 	group: 'charge-cards',
 	group_id: '7',
 	message_id: '214',
+	message_key: 'order-214',
 	low: '4100',
 	high: '4200',
 	version: '2',

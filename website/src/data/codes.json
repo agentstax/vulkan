@@ -591,7 +591,14 @@
       "name": "vulkan.consumer.session.claimed",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "messages this instance claimed -- cursor ranges and exception retries together"
+      "description": "messages this instance claimed -- cursor ranges and exception retries together",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0043": {
       "code": "VK0043",
@@ -599,7 +606,14 @@
       "name": "vulkan.consumer.session.success",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "consumerFunc runs that completed cleanly, counted at resolution"
+      "description": "consumerFunc runs that completed cleanly, counted at resolution",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0044": {
       "code": "VK0044",
@@ -607,7 +621,14 @@
       "name": "vulkan.consumer.session.superseded",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "messages resolved without running -- a newer version of their compacted message key had already arrived"
+      "description": "messages resolved without running -- a newer version of their compacted message key had already arrived",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0045": {
       "code": "VK0045",
@@ -615,7 +636,14 @@
       "name": "vulkan.consumer.session.ready",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "delivery rows written 'ready' -- each will be retried once its backoff passes"
+      "description": "delivery rows written 'ready' -- each will be retried once its backoff passes",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0046": {
       "code": "VK0046",
@@ -623,7 +651,14 @@
       "name": "vulkan.consumer.session.deferred",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "delivery rows written 'deferred' -- another delivery held their message key"
+      "description": "delivery rows written 'deferred' -- another delivery held their message key",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0047": {
       "code": "VK0047",
@@ -631,7 +666,14 @@
       "name": "vulkan.consumer.session.dead",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "delivery rows written 'dead' -- exhausted retries, unrecoverable payloads, and the kill backstop"
+      "description": "delivery rows written 'dead' -- exhausted retries, unrecoverable payloads, and the kill backstop",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0048": {
       "code": "VK0048",
@@ -639,7 +681,14 @@
       "name": "vulkan.consumer.session.reclaimed",
       "metric_kind": "counter",
       "unit": "{lease}",
-      "description": "leases taken over from expired workers -- another instance died or stalled mid-range"
+      "description": "leases taken over from expired workers -- another instance died or stalled mid-range",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0049": {
       "code": "VK0049",
@@ -647,7 +696,14 @@
       "name": "vulkan.consumer.session.quarantined",
       "metric_kind": "counter",
       "unit": "{range}",
-      "description": "ranges past the reclaim cap, written out as independent 'ready' exceptions"
+      "description": "ranges past the reclaim cap, written out as independent 'ready' exceptions",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0050": {
       "code": "VK0050",
@@ -655,7 +711,14 @@
       "name": "vulkan.consumer.session.abandoned",
       "metric_kind": "counter",
       "unit": "{routine}",
-      "description": "consumerFunc goroutines written off past the hard timeout"
+      "description": "consumerFunc goroutines written off past the hard timeout",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0051": {
       "code": "VK0051",
@@ -663,7 +726,14 @@
       "name": "vulkan.consumer.session.lease_lost",
       "metric_kind": "counter",
       "unit": "{commit}",
-      "description": "commits rejected because another worker reclaimed the lease first -- that work was redone elsewhere"
+      "description": "commits rejected because another worker reclaimed the lease first -- that work was redone elsewhere",
+      "scope": "consumer_session",
+      "attribute_keys": [
+        "topic",
+        "group",
+        "version",
+        "session"
+      ]
     },
     "VK0052": {
       "code": "VK0052",
@@ -815,6 +885,319 @@
             "message_key"
           ]
         }
+      ]
+    },
+    "VK0067": {
+      "code": "VK0067",
+      "kind": "metric",
+      "name": "vulkan.worker.state.unclaimed_workers",
+      "metric_kind": "gauge",
+      "unit": "{worker}",
+      "description": "workers with no live instance and a nonzero target",
+      "scope": "system"
+    },
+    "VK0068": {
+      "code": "VK0068",
+      "kind": "metric",
+      "name": "vulkan.worker.state.oldest_unclaimed_age",
+      "metric_kind": "gauge",
+      "unit": "ms",
+      "description": "largest time since expiry among workers with no live instance and a nonzero target",
+      "scope": "system"
+    },
+    "VK0069": {
+      "code": "VK0069",
+      "kind": "metric",
+      "name": "vulkan.worker.state.failing_workers",
+      "metric_kind": "gauge",
+      "unit": "{worker}",
+      "description": "workers with a live instance on a nonzero consecutive failure streak",
+      "scope": "system"
+    },
+    "VK0070": {
+      "code": "VK0070",
+      "kind": "metric",
+      "name": "vulkan.schedule.state.overdue",
+      "metric_kind": "gauge",
+      "unit": "{found}",
+      "description": "unsuspended schedules due past the overdue threshold",
+      "scope": "system"
+    },
+    "VK0071": {
+      "code": "VK0071",
+      "kind": "metric",
+      "name": "vulkan.schedule.state.oldest_due_age",
+      "metric_kind": "gauge",
+      "unit": "ms",
+      "description": "largest time past next scheduled production among unsuspended schedules",
+      "scope": "system"
+    },
+    "VK0072": {
+      "code": "VK0072",
+      "kind": "metric",
+      "name": "vulkan.schedule.state.suspended",
+      "metric_kind": "gauge",
+      "unit": "{found}",
+      "description": "schedules excluded from overdue counts because they are suspended",
+      "scope": "system"
+    },
+    "VK0073": {
+      "code": "VK0073",
+      "kind": "metric",
+      "name": "vulkan.alert.state.active_alerts",
+      "metric_kind": "gauge",
+      "unit": "{alert}",
+      "description": "retained alert heads whose status is active",
+      "scope": "system"
+    },
+    "VK0074": {
+      "code": "VK0074",
+      "kind": "metric",
+      "name": "vulkan.alert.state.resolved_alerts",
+      "metric_kind": "gauge",
+      "unit": "{alert}",
+      "description": "retained alert heads whose status is resolved",
+      "scope": "system"
+    },
+    "VK0075": {
+      "code": "VK0075",
+      "kind": "metric",
+      "name": "vulkan.alert.check.topics_evaluated",
+      "metric_kind": "gauge",
+      "unit": "{topic}",
+      "description": "topics the alert check evaluated",
+      "scope": "system",
+      "attribute_keys": [
+        "alert"
+      ]
+    },
+    "VK0076": {
+      "code": "VK0076",
+      "kind": "metric",
+      "name": "vulkan.alert.check.topics_failed",
+      "metric_kind": "gauge",
+      "unit": "{topic}",
+      "description": "topics whose alert evaluation or result production did not complete",
+      "scope": "system",
+      "attribute_keys": [
+        "alert"
+      ]
+    },
+    "VK0077": {
+      "code": "VK0077",
+      "kind": "metric",
+      "name": "vulkan.alert.check.published_alerts",
+      "metric_kind": "gauge",
+      "unit": "{alert}",
+      "description": "alerts the check changed to active",
+      "scope": "system",
+      "attribute_keys": [
+        "alert"
+      ]
+    },
+    "VK0078": {
+      "code": "VK0078",
+      "kind": "metric",
+      "name": "vulkan.alert.check.resolved_alerts",
+      "metric_kind": "gauge",
+      "unit": "{alert}",
+      "description": "alerts the check changed to resolved",
+      "scope": "system",
+      "attribute_keys": [
+        "alert"
+      ]
+    },
+    "VK0079": {
+      "code": "VK0079",
+      "kind": "metric",
+      "name": "vulkan.topic.state.compacted",
+      "metric_kind": "gauge",
+      "description": "1 once the topic has received a keyed message, otherwise 0",
+      "scope": "topic",
+      "attribute_keys": [
+        "topic"
+      ]
+    },
+    "VK0080": {
+      "code": "VK0080",
+      "kind": "metric",
+      "name": "vulkan.consumer.cursor.head",
+      "metric_kind": "gauge",
+      "unit": "{message}",
+      "description": "highest message id ever appended to the topic",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0081": {
+      "code": "VK0081",
+      "kind": "metric",
+      "name": "vulkan.consumer.cursor.claimed",
+      "metric_kind": "gauge",
+      "unit": "{message}",
+      "description": "the consumer group's read frontier",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0082": {
+      "code": "VK0082",
+      "kind": "metric",
+      "name": "vulkan.consumer.cursor.committed",
+      "metric_kind": "gauge",
+      "unit": "{message}",
+      "description": "the frontier at or below which every message is complete or dead",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0083": {
+      "code": "VK0083",
+      "kind": "metric",
+      "name": "vulkan.consumer.cursor.backlog",
+      "metric_kind": "gauge",
+      "unit": "{message}",
+      "description": "messages beyond the consumer group's committed frontier",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0084": {
+      "code": "VK0084",
+      "kind": "metric",
+      "name": "vulkan.consumer.cursor.inflight",
+      "metric_kind": "gauge",
+      "unit": "{message}",
+      "description": "claimed messages beyond the consumer group's committed frontier",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0085": {
+      "code": "VK0085",
+      "kind": "metric",
+      "name": "vulkan.consumer.exceptions.ready",
+      "metric_kind": "gauge",
+      "unit": "{exception}",
+      "description": "delivery rows waiting for their retry delay",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0086": {
+      "code": "VK0086",
+      "kind": "metric",
+      "name": "vulkan.consumer.exceptions.inflight",
+      "metric_kind": "gauge",
+      "unit": "{exception}",
+      "description": "delivery rows held by a retry attempt",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0087": {
+      "code": "VK0087",
+      "kind": "metric",
+      "name": "vulkan.consumer.exceptions.deferred",
+      "metric_kind": "gauge",
+      "unit": "{exception}",
+      "description": "delivery rows waiting for their message key's lease to become free",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0088": {
+      "code": "VK0088",
+      "kind": "metric",
+      "name": "vulkan.consumer.exceptions.dead",
+      "metric_kind": "gauge",
+      "unit": "{exception}",
+      "description": "dead-lettered delivery rows",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0089": {
+      "code": "VK0089",
+      "kind": "metric",
+      "name": "vulkan.consumer.exceptions.oldest_unresolved_age",
+      "metric_kind": "gauge",
+      "unit": "ms",
+      "description": "age of the oldest ready, inflight, or deferred delivery row",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0090": {
+      "code": "VK0090",
+      "kind": "metric",
+      "name": "vulkan.consumer.open_leases",
+      "metric_kind": "gauge",
+      "unit": "{lease}",
+      "description": "open leases held by the consumer group",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0091": {
+      "code": "VK0091",
+      "kind": "metric",
+      "name": "vulkan.consumer.abandoned_routines.outstanding",
+      "metric_kind": "gauge",
+      "unit": "{routine}",
+      "description": "abandoned routines with no matching cleared record",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0092": {
+      "code": "VK0092",
+      "kind": "metric",
+      "name": "vulkan.consumer.abandoned_routines.total",
+      "metric_kind": "gauge",
+      "unit": "{routine}",
+      "description": "distinct abandoned routines retained on the metrics topic",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
+      ]
+    },
+    "VK0093": {
+      "code": "VK0093",
+      "kind": "metric",
+      "name": "vulkan.consumer.abandoned_routines.self_clear_latency_avg",
+      "metric_kind": "gauge",
+      "unit": "ms",
+      "description": "mean time between an abandoned routine and its matching cleared record",
+      "scope": "consumer_group",
+      "attribute_keys": [
+        "topic",
+        "group"
       ]
     }
   }

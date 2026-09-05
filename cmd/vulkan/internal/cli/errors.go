@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -190,16 +191,22 @@ func renderLogEventBlock(w io.Writer, event *diagnostic.DiagnosticEvent) {
 }
 
 // renderMetricBlock is renderErrorBlock's sibling for a declared metric:
-// the header line, then kind, unit, description, docs -- an empty unit
-// drops its row.
+// the header line, then kind, unit, scope, attribute keys, description, and
+// docs -- an empty unit drops its row.
 func renderMetricBlock(w io.Writer, metric *diagnostic.DiagnosticMetric) {
 	fmt.Fprintf(w, "metric[%s]: %s\n", metric.Code, metric.Name)
 
-	rows := make([][2]string, 0, 4)
+	rows := make([][2]string, 0, 6)
 	rows = append(rows, [2]string{"kind", metric.Kind})
 	if metric.Unit != "" {
 		rows = append(rows, [2]string{"unit", metric.Unit})
 	}
+	rows = append(rows, [2]string{"scope", string(metric.Scope)})
+	attributeKeys := "none"
+	if len(metric.AttributeKeys) > 0 {
+		attributeKeys = strings.Join(metric.AttributeKeys, ", ")
+	}
+	rows = append(rows, [2]string{"attribute keys", attributeKeys})
 	rows = append(rows, [2]string{"description", metric.Description})
 	rows = append(rows, [2]string{"docs", metric.Docs()})
 

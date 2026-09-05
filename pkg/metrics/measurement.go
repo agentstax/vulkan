@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 )
 
 // MetricNameReservedPrefix marks Vulkan's own metrics -- user producers
@@ -107,6 +109,31 @@ func NewMeasurement(name string, kind MetricKind, value float64, unit MetricUnit
 		Attributes: attributes,
 		At:         at,
 	}, nil
+}
+
+// NewBuiltInMeasurement constructs a measurement from its Vulkan declaration.
+// The observed value, attributes, and time are the only facts a producer
+// supplies; identity and metadata stay owned by the declaration.
+func NewBuiltInMeasurement(declared *diagnostic.DiagnosticMetric, value float64, attributes map[string]string, at time.Time) (*Measurement, error) {
+	if declared == nil {
+		return nil, errors.New("declared metric must not be nil")
+	}
+	attributeKeysMatch := len(attributes) == len(declared.AttributeKeys)
+	for _, attributeKey := range declared.AttributeKeys {
+		if _, exists := attributes[attributeKey]; !exists {
+			attributeKeysMatch = false
+		}
+	}
+	if !attributeKeysMatch {
+		actualAttributeKeys := make([]string, 0, len(attributes))
+		for attributeKey := range attributes {
+			actualAttributeKeys = append(actualAttributeKeys, attributeKey)
+		}
+		sort.Strings(actualAttributeKeys)
+		return nil, fmt.Errorf("attributes must contain exactly %v for metric %q, got %v", declared.AttributeKeys, declared.Name, actualAttributeKeys)
+	}
+
+	return NewMeasurement(declared.Name, MetricKind(declared.Kind), value, MetricUnit(declared.Unit), attributes, at)
 }
 
 // MeasurementKey is the message key a Measurement is produced under. Attribute keys

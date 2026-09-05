@@ -61,7 +61,7 @@ definitions remain parked.
   surface settles, record the decision in the next numbered decision record;
   supersede only the clauses of [0569] that the richer declaration changes.
 
-### 2. Make the existing registry the complete built-in catalog — review pending
+### 2. Make the existing registry the complete built-in catalog — approved
 
 - Extend `diagnostic.DiagnosticMetric` with scope and ordered attribute-key
   metadata. Its constructor validates non-empty/known metadata, duplicate
@@ -79,7 +79,7 @@ definitions remain parked.
 - Implement deterministic all-definition and scope-filtered reads over
   `diagnostic.Metrics()`. They perform no I/O and expose Vulkan built-ins only.
 
-### 3. Drive every built-in producer from its declaration
+### 3. Drive every built-in producer from its declaration — review pending
 
 - Change the metrics collector, consumer session producer, and built-in alert
   checks to construct `Measurement` values from their declaration's name,
@@ -93,9 +93,6 @@ definitions remain parked.
   rendered/exported metadata rather than creating parallel lookup tables.
 - Add the hand-written metric pages for VK0067-VK0093 and regenerate the site
   code export after it carries scope and attribute keys.
-- Add a catalog coverage test: every resource-scoped definition appears through
-  exactly one typed selector, and every selector resolves the registered
-  declaration it claims.
 
 ### 4. Reuse and regularize the read paths
 
@@ -122,6 +119,9 @@ definitions remain parked.
 - Add typed selectors for all System-, Topic-, and ConsumerGroup-scoped built-in
   definitions. Selectors bind required resource attributes centrally and never
   accept an arbitrary name.
+- Add a catalog coverage test: every resource-scoped definition appears through
+  exactly one typed selector, and every selector resolves the registered
+  declaration it claims.
 - Alias the new user-facing definition/scope types and constants through
   `pkg/vulkan` according to [0643]. Keep admin methods as internal adaptation;
   the documented client tree is the only public path.

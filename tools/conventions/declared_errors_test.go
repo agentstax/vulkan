@@ -74,6 +74,8 @@ func TestMetricDescriptionAvoidsBannedWords(t *testing.T) {
 // side; this walk holds them to the pkg/metrics vocabulary. Scope is strongly
 // typed and validated when the declaration is constructed.
 func TestMetricDeclarationsCarryMetricsVocabulary(t *testing.T) {
+	isRegisteredAttribute := registeredAttributes(t)
+
 	for _, registered := range diagnostic.Metrics() {
 		if !strings.HasPrefix(registered.Name, metrics.MetricNameReservedPrefix) {
 			t.Errorf("%s name %q must start with %q", registered.Code, registered.Name, metrics.MetricNameReservedPrefix)
@@ -86,6 +88,11 @@ func TestMetricDeclarationsCarryMetricsVocabulary(t *testing.T) {
 		}
 		if err := registered.Scope.Validate(); err != nil {
 			t.Errorf("%s: %v", registered.Code, err)
+		}
+		for _, attributeKey := range registered.AttributeKeys {
+			if !isRegisteredAttribute(attributeKey) {
+				t.Errorf("%s requires attribute %q, which the ### Attributes table does not list", registered.Code, attributeKey)
+			}
 		}
 	}
 }

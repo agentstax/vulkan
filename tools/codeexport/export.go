@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 )
@@ -51,10 +52,12 @@ type CodeRecord struct {
 
 	Message string `json:"message,omitempty"` // event
 
-	Name        string `json:"name,omitempty"`        // metric
-	MetricKind  string `json:"metric_kind,omitempty"` // metric
-	Unit        string `json:"unit,omitempty"`        // metric
-	Description string `json:"description,omitempty"` // metric
+	Name          string   `json:"name,omitempty"`           // metric
+	MetricKind    string   `json:"metric_kind,omitempty"`    // metric
+	Unit          string   `json:"unit,omitempty"`           // metric
+	Description   string   `json:"description,omitempty"`    // metric
+	Scope         string   `json:"scope,omitempty"`          // metric
+	AttributeKeys []string `json:"attribute_keys,omitempty"` // metric
 
 	Queries []QueryRecord `json:"queries,omitempty"`
 }
@@ -82,12 +85,14 @@ func newEventRecord(declared *diagnostic.DiagnosticEvent) CodeRecord {
 
 func newMetricRecord(declared *diagnostic.DiagnosticMetric) CodeRecord {
 	return CodeRecord{
-		Code:        declared.Code,
-		Kind:        string(diagnostic.DiagnosticKindMetric),
-		Name:        declared.Name,
-		MetricKind:  declared.Kind,
-		Unit:        declared.Unit,
-		Description: declared.Description,
+		Code:          declared.Code,
+		Kind:          string(diagnostic.DiagnosticKindMetric),
+		Name:          declared.Name,
+		MetricKind:    declared.Kind,
+		Unit:          declared.Unit,
+		Description:   declared.Description,
+		Scope:         string(declared.Scope),
+		AttributeKeys: slices.Clone(declared.AttributeKeys),
 	}
 }
 

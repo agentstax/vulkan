@@ -115,17 +115,19 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 // explainDocument is one declared error, log event, or metric as json; the
 // parts a kind doesn't have drop out.
 type explainDocument struct {
-	Kind        string `json:"kind"` // error | event | metric
-	Code        string `json:"code"`
-	Problem     string `json:"problem,omitempty"`     // error
-	Recovery    string `json:"recovery,omitempty"`    // error
-	Fix         string `json:"fix,omitempty"`         // error
-	Message     string `json:"message,omitempty"`     // event
-	Name        string `json:"name,omitempty"`        // metric
-	MetricKind  string `json:"metric_kind,omitempty"` // metric
-	Unit        string `json:"unit,omitempty"`        // metric
-	Description string `json:"description,omitempty"` // metric
-	Docs        string `json:"docs"`
+	Kind          string                 `json:"kind"` // error | event | metric
+	Code          string                 `json:"code"`
+	Problem       string                 `json:"problem,omitempty"`        // error
+	Recovery      string                 `json:"recovery,omitempty"`       // error
+	Fix           string                 `json:"fix,omitempty"`            // error
+	Message       string                 `json:"message,omitempty"`        // event
+	Name          string                 `json:"name,omitempty"`           // metric
+	MetricKind    string                 `json:"metric_kind,omitempty"`    // metric
+	Unit          string                 `json:"unit,omitempty"`           // metric
+	Description   string                 `json:"description,omitempty"`    // metric
+	Scope         diagnostic.MetricScope `json:"scope,omitempty"`          // metric
+	AttributeKeys []string               `json:"attribute_keys,omitempty"` // metric
+	Docs          string                 `json:"docs"`
 
 	Queries []explainQuery `json:"queries,omitempty"` // error, event
 }
@@ -167,13 +169,15 @@ func toEventExplainDocument(declared *diagnostic.DiagnosticEvent) explainDocumen
 
 func toMetricExplainDocument(declared *diagnostic.DiagnosticMetric) explainDocument {
 	return explainDocument{
-		Kind:        "metric",
-		Code:        declared.Code,
-		Name:        declared.Name,
-		MetricKind:  declared.Kind,
-		Unit:        declared.Unit,
-		Description: declared.Description,
-		Docs:        declared.Docs(),
+		Kind:          "metric",
+		Code:          declared.Code,
+		Name:          declared.Name,
+		MetricKind:    declared.Kind,
+		Unit:          declared.Unit,
+		Description:   declared.Description,
+		Scope:         declared.Scope,
+		AttributeKeys: slices.Clone(declared.AttributeKeys),
+		Docs:          declared.Docs(),
 	}
 }
 

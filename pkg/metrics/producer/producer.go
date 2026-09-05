@@ -198,7 +198,7 @@ func (p *MetricsProducer) flushSessionCounters(ctx context.Context, instance *iP
 
 	items := make([]*iProducer.ProduceItem[metrics.Measurement], 0, len(points))
 	for _, point := range points {
-		measurement, err := metrics.NewMeasurement(point.metric.Name, metrics.MetricKind(point.metric.Kind), float64(point.value), metrics.MetricUnit(point.metric.Unit), attributes, at)
+		measurement, err := metrics.NewBuiltInMeasurement(point.metric, float64(point.value), attributes, at)
 		if err != nil {
 			p.Logger.WarnContext(ctx, "could not produce session counters", "group", attributes["group"], "topic", attributes["topic"], "session", attributes["session"], "error", err)
 			return

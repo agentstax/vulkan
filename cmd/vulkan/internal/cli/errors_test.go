@@ -15,17 +15,19 @@ var errTestBroker = diagnostic.NewDiagnosticError("VK9801", diagnostic.RecoveryT
 	"could not reach the test broker", "retry the produce call")
 
 var metricTestDepth = diagnostic.NewDiagnosticMetric("VK9802",
-	"vulkan.test.queue_depth", "gauge", "{message}", "test queue depth", diagnostic.MetricScopeSystem)
+	"vulkan.test.queue_depth", "gauge", "{message}", "test queue depth", diagnostic.MetricScopeConsumerGroup, "topic", "group")
 
 func TestRenderMetricBlockAlignsAllParts(t *testing.T) {
 	var builder strings.Builder
 	renderMetricBlock(&builder, metricTestDepth)
 
 	want := "metric[VK9802]: vulkan.test.queue_depth\n" +
-		"  kind:        gauge\n" +
-		"  unit:        {message}\n" +
-		"  description: test queue depth\n" +
-		"  docs:        https://vulkan-5ss.pages.dev/errors/VK9802\n"
+		"  kind:           gauge\n" +
+		"  unit:           {message}\n" +
+		"  scope:          consumer_group\n" +
+		"  attribute keys: topic, group\n" +
+		"  description:    test queue depth\n" +
+		"  docs:           https://vulkan-5ss.pages.dev/errors/VK9802\n"
 	if builder.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", builder.String(), want)
 	}

@@ -30,6 +30,15 @@ func TestNewExportCoversTheRegistry(t *testing.T) {
 			t.Errorf("%s exports kind %q, want \"error\"", declared.Code, record.Kind)
 		}
 	}
+	for _, declared := range diagnostic.Metrics() {
+		record, found := export.Codes[declared.Code]
+		if !found {
+			t.Fatalf("%s is missing from the export", declared.Code)
+		}
+		if record.Name != declared.Name || record.Scope != string(declared.Scope) || !slices.Equal(record.AttributeKeys, declared.AttributeKeys) {
+			t.Errorf("%s exports the wrong metric metadata: %+v", declared.Code, record)
+		}
+	}
 }
 
 // The queries are the part no page can restate by hand, and their

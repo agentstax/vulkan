@@ -3,6 +3,8 @@ package metrics
 import (
 	"testing"
 	"time"
+
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 )
 
 func TestMeasurementKeyDeterministic(t *testing.T) {
@@ -84,6 +86,67 @@ func TestUnitValidate(t *testing.T) {
 func TestNewMeasurementRejectsMalformedUnit(t *testing.T) {
 	if _, err := NewMeasurement("lag", MetricKindGauge, 1, "{", nil, time.Now()); err == nil {
 		t.Fatal("malformed unit accepted")
+	}
+}
+
+func TestNewBuiltInMeasurementUsesDeclaration(t *testing.T) {
+	at := time.Now()
+	attributes := map[string]string{"group": "billing", "topic": "orders"}
+
+	measurement, err := NewBuiltInMeasurement(MetricCursorBacklog, 42, attributes, at)
+	if err != nil {
+		t.Fatalf("valid built-in measurement rejected: %v", err)
+	}
+	if measurement.Name != MetricCursorBacklog.Name || measurement.Kind != MetricKind(MetricCursorBacklog.Kind) || measurement.Unit != MetricUnit(MetricCursorBacklog.Unit) {
+		t.Fatalf("declaration metadata not carried: %+v", measurement)
+	}
+	if measurement.Value != 42 || measurement.At != at {
+		t.Fatalf("observed facts not carried: %+v", measurement)
+	}
+}
+
+func TestNewBuiltInMeasurementRejectsWrongAttributeKeys(t *testing.T) {
+	at := time.Now()
+	tests := []struct {
+		name       string
+		attributes map[string]string
+	}{
+		{name: "missing", attributes: map[string]string{"topic": "orders"}},
+		{name: "extra", attributes: map[string]string{"topic": "orders", "group": "billing", "session": "one"}},
+		{name: "replacement", attributes: map[string]string{"topic": "orders", "session": "one"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := NewBuiltInMeasurement(MetricCursorBacklog, 42, test.attributes, at); err == nil {
+				t.Fatal("wrong attribute keys accepted")
+			}
+		})
+	}
+}
+
+func TestNewBuiltInMeasurementRejectsNilDeclaration(t *testing.T) {
+	if _, err := NewBuiltInMeasurement(nil, 42, nil, time.Now()); err == nil {
+		t.Fatal("nil declaration accepted")
+	}
+}
+
+func TestNewMeasurementKeepsUserAttributesOpenEnded(t *testing.T) {
+	attributes := map[string]string{"tenant": "north", "region": "east"}
+	if _, err := NewMeasurement("application.request.count", MetricKindCounter, 42, MetricUnitCount("request"), attributes, time.Now()); err != nil {
+		t.Fatalf("user measurement attributes rejected: %v", err)
+	}
+}
+
+func TestNewBuiltInMeasurementRejectsDeclarationWithInvalidKind(t *testing.T) {
+	declared := &diagnostic.DiagnosticMetric{
+		Name:        "vulkan.test.invalid_kind",
+		Kind:        "histogram",
+		Description: "test invalid kind",
+		Scope:       diagnostic.MetricScopeSystem,
+	}
+	if _, err := NewBuiltInMeasurement(declared, 42, nil, time.Now()); err == nil {
+		t.Fatal("invalid declaration kind accepted")
 	}
 }
 

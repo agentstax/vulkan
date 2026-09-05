@@ -97,3 +97,18 @@ func TestExplainDocumentOmitsQueriesWhenNoneAreDeclared(t *testing.T) {
 		t.Fatalf("queries key present: %s", encoded)
 	}
 }
+
+func TestMetricExplainDocumentCarriesCatalogMetadata(t *testing.T) {
+	document := toMetricExplainDocument(metricTestDepth)
+
+	if document.Scope != diagnostic.MetricScopeConsumerGroup {
+		t.Fatalf("scope = %q", document.Scope)
+	}
+	if len(document.AttributeKeys) != 2 || document.AttributeKeys[0] != "topic" || document.AttributeKeys[1] != "group" {
+		t.Fatalf("attribute keys = %v", document.AttributeKeys)
+	}
+	document.AttributeKeys[0] = "changed"
+	if metricTestDepth.AttributeKeys[0] != "topic" {
+		t.Fatalf("explain document mutated the declaration: %v", metricTestDepth.AttributeKeys)
+	}
+}

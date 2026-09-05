@@ -9,6 +9,7 @@ import (
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/metrics"
@@ -141,19 +142,18 @@ func (i *PartitionCountInstance) produceCheckSummary(ctx context.Context, evalua
 	at := time.Now()
 
 	counts := []struct {
-		name  string
-		value int64
-		unit  metrics.MetricUnit
+		metric *diagnostic.DiagnosticMetric
+		value  int64
 	}{
-		{metrics.MetricCheckTopicsEvaluated.Name, evaluated, metrics.MetricUnitCount("topic")},
-		{metrics.MetricCheckTopicsFailed.Name, failed, metrics.MetricUnitCount("topic")},
-		{metrics.MetricCheckPublishedAlerts.Name, published, metrics.MetricUnitCount("alert")},
-		{metrics.MetricCheckResolvedAlerts.Name, resolved, metrics.MetricUnitCount("alert")},
+		{metrics.MetricCheckTopicsEvaluated, evaluated},
+		{metrics.MetricCheckTopicsFailed, failed},
+		{metrics.MetricCheckPublishedAlerts, published},
+		{metrics.MetricCheckResolvedAlerts, resolved},
 	}
 
 	items := make([]*producer.ProduceItem[metrics.Measurement], 0, len(counts))
 	for _, count := range counts {
-		measurement, err := metrics.NewMeasurement(count.name, metrics.MetricKindGauge, float64(count.value), count.unit, attributes, at)
+		measurement, err := metrics.NewBuiltInMeasurement(count.metric, float64(count.value), attributes, at)
 		if err != nil {
 			return err
 		}

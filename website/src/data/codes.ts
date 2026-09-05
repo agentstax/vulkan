@@ -39,6 +39,8 @@ export type MetricRecord = {
 	metric_kind: string;
 	unit?: string;
 	description: string;
+	scope: 'system' | 'topic' | 'consumer_group' | 'consumer_session';
+	attribute_keys?: string[];
 };
 
 export type CodeRecord = ErrorRecord | EventRecord | MetricRecord;
