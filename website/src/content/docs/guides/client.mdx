@@ -339,7 +339,6 @@ if topic == nil {
 }
 err = orders.Migrate(ctx, 3)
 health, err := orders.Health(ctx)
-snapshot, err := orders.Metrics(ctx)
 renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // refused unless ClientConfig.AllowDestroy
 heads, err := orders.CompactionHeads(ctx)
@@ -379,16 +378,13 @@ err = sys.Destroy(ctx, nil)
 // system-owned collections and their singular handles
 alerts, err := sys.Alerts(ctx)
 currentAlert, err := sys.Alert("partition_count:orders").Get(ctx)
-measurements, err := sys.Measurements(ctx)
-series := sys.Measurement("vulkan.cursor.backlog", map[string]string{"group": "charge-cards"})
-history, err := series.Messages(ctx, 20)
 ```
 
 A plural noun lists materialized resources: `client.Topics`,
-`orders.Groups`, `client.Schedulers`, `sys.Alerts`, `sys.Measurements`.
+`orders.Groups`, `client.Schedulers`, `sys.Alerts`.
 Its singular noun returns a no-I/O handle. Terminal reports and retained
-history keep the verb that says what they return: `Health`, `Metrics`,
-`Status`, `Workers`, and `Messages`. A group's binding set is a handle
+history keep the verb that says what they return: `Health`, `Status`,
+`Workers`, and `Messages`. A group's binding set is a handle
 under the group, `orders.Group("charge-cards").Binding().Get(ctx)`, nil
 when the group never declared one.
 
@@ -412,8 +408,162 @@ cfg)`, topics nesting under it as
 `client.System(name).Topic(name)` the way groups nest under topics, and
 `client.Topic[T](name)` staying as the default system's shortcut. The
 verbs that own system state already sit there: `Register`, `MigrateTopics`,
-`Bindings`, `Alerts`, and `Measurements`. The manager is its
+`Bindings`, and `Alerts`. The manager is its
 own `client.Manager()` handle because it is a running subsystem.
+
+## Metrics
+
+<ThreadAside label="PROPOSED" title="Metrics as resources">
+Metrics split live state from collected history. `Snapshot(ctx)` asks the
+source tables what is true now. `Latest(ctx)` and `History(ctx, limit)` read
+observations already written to `__system.metrics`.
+
+The first pass puts metrics handles on the system, a topic, and a consumer
+group:
+
+```go
+systemMetrics := client.System().Metrics()
+definitions := systemMetrics.Definitions() // []vulkan.MetricDefinition; no I/O
+latest, err := systemMetrics.Latest(ctx)    // []*vulkan.Measurement
+
+topicMetrics := client.Topic[PaymentRequestedV1]("payments.requested").Metrics()
+topicSnapshot, err := topicMetrics.Snapshot(ctx) // *vulkan.TopicSnapshot; live
+
+groupMetrics := client.Topic[PaymentRequestedV1]("payments.requested").
+	Group("charge-cards").Metrics()
+groupSnapshot, err := groupMetrics.Snapshot(ctx) // *vulkan.ConsumerGroupSnapshot; live
+
+backlog := groupMetrics.CursorBacklog()  // *vulkan.MetricHandle; no I/O
+point, err := backlog.Latest(ctx)        // *vulkan.Measurement
+history, err := backlog.History(ctx, 20) // []*vulkan.Measurement; newest first
+```
+
+`System().Metrics().Latest(ctx)` returns the newest retained point for every
+series actually published, ordered by name and then its sorted attributes. That
+includes Vulkan built-ins and user-produced metrics. It says what exists in
+storage, where `Definitions()` says what Vulkan knows how to produce before
+anything has been collected.
+
+A definition is metadata, never a value:
+
+```go
+type MetricDefinition struct {
+	Code          string
+	Name          string
+	Kind          MetricKind
+	Unit          MetricUnit
+	Description   string
+	Scope         MetricScope
+	AttributeKeys []string
+}
+```
+
+`System().Metrics().Definitions()` returns every Vulkan built-in definition,
+ordered by VK code, including consumer-session definitions whose instance
+handle is later work. `Topic().Metrics().Definitions()` returns topic-scoped
+definitions. `Group().Metrics().Definitions()` returns consumer-group-scoped
+definitions. All three are in-memory reads over the same catalog used by the
+collector, `vulkan explain`, and Prometheus `HELP`; they never touch Postgres.
+Custom user definitions are later work, so an observed user metric appears in
+`Latest` but not `Definitions`.
+
+The scopes and their required attributes are fixed:
+
+| scope | required attributes |
+| --- | --- |
+| `MetricScopeSystem` | none, except alert-check series require `alert` |
+| `MetricScopeTopic` | `topic` |
+| `MetricScopeConsumerGroup` | `topic`, `group` |
+| `MetricScopeConsumerSession` | `topic`, `group`, `version`, `session` |
+
+Built-ins are selected as methods, so a caller can find them from the handle
+without copying a wire name:
+
+```go
+// system levels
+systemMetrics.UnclaimedWorkers()
+systemMetrics.OldestUnclaimedAge()
+systemMetrics.FailingWorkers()
+systemMetrics.OverdueSchedules()
+systemMetrics.OldestDueAge()
+systemMetrics.SuspendedSchedules()
+systemMetrics.ActiveAlerts()
+systemMetrics.ResolvedAlerts()
+
+// one built-in alert check; alert becomes the series' `alert` attribute
+systemMetrics.CheckTopicsEvaluated("partition_count")
+systemMetrics.CheckTopicsFailed("partition_count")
+systemMetrics.CheckPublishedAlerts("partition_count")
+systemMetrics.CheckResolvedAlerts("partition_count")
+
+// topic level
+topicMetrics.Compacted()
+
+// consumer-group levels
+groupMetrics.CursorHead()
+groupMetrics.CursorClaimed()
+groupMetrics.CursorCommitted()
+groupMetrics.CursorBacklog()
+groupMetrics.CursorInflight()
+groupMetrics.ReadyExceptions()
+groupMetrics.InflightExceptions()
+groupMetrics.DeferredExceptions()
+groupMetrics.DeadExceptions()
+groupMetrics.OldestUnresolvedAge()
+groupMetrics.OpenLeases()
+groupMetrics.AbandonedRoutinesOutstanding()
+groupMetrics.AbandonedRoutinesTotal()
+groupMetrics.AbandonedRoutinesSelfClearLatencyAverage()
+```
+
+Every selector returns the same `MetricHandle` shape. The topic and group names
+on the resource handles supply their attributes. A selector does not query the
+resource and does not hold its row.
+
+The system handle carries the one string escape hatch. It is how a caller reads
+a user-produced series, a Vulkan series selected dynamically from a definition,
+or a consumer-session series before instance metrics handles exist:
+
+```go
+metric := systemMetrics.Metric(
+	"checkout.request.duration",
+	map[string]string{"region": "us-east-1", "result": "approved"},
+)
+point, err := metric.Latest(ctx)
+history, err := metric.History(ctx, 20)
+```
+
+It accepts a name and the exact attribute set because arbitrary names have no
+Topic or Group semantics. `Topic().Metrics()` and `Group().Metrics()` expose
+only their typed built-ins.
+
+`Latest` returns `(nil, nil)` when the exact series has no retained point.
+`History` requires a positive limit and returns an empty slice for the same
+absence. Those reads do not prove that the named topic or group exists: a
+collected series can outlive its resource, and a new resource may exist before
+the collector reaches it. `Snapshot` is the live existence check and returns
+`ErrTopicNotFound` or `ErrGroupNotFound`.
+
+The observation time stays on every returned value. For example,
+`payments.requested` is topic id `41`, `charge-cards` is group id `73`, and
+`__system.metrics` is topic id `9`. The collector writes backlog `27` at
+10:03. Work finishes before the next collection, so at 10:07 the two reads can
+honestly disagree:
+
+```go
+live, err := groupMetrics.Snapshot(ctx)
+// live.Cursor.Backlog == 19                 -- source tables at 10:07
+
+collected, err := groupMetrics.CursorBacklog().Latest(ctx)
+// collected.Value == 27
+// collected.At    == 2026-09-05T10:03:00Z  -- newest retained observation
+```
+
+`Latest` means newest retained, not fresh. A caller with a freshness requirement
+compares `Measurement.At` to its own threshold; the library does not silently
+turn an old collected value into live state.
+
+</ThreadAside>
 
 ## Where the old verbs went
 
@@ -426,7 +576,7 @@ own `client.Manager()` handle because it is a running subsystem.
 | `MigrateTopics` | `client.System().MigrateTopics` |
 | `RenameTopic` | `Topic.Rename` |
 | `DestroyTopic` | `Topic.Destroy` |
-| `TopicHealth` / `TopicMetrics` | `Topic.Health` / `Topic.Metrics` |
+| `TopicHealth` / `TopicMetrics` | `Topic.Health`; metrics replacement proposed above |
 | `GetGroup` | `Topic.Group(name).Get(ctx)`; its worker rows become `Group.Workers` |
 | (none) | `TopicHandle.Groups` |
 | `DestroyGroup` | `Group.Destroy` |
@@ -440,7 +590,7 @@ own `client.Manager()` handle because it is a running subsystem.
 | `RegisterSystem` | `client.System().Register` |
 | `GetSystem` / `MigrateSystem` / `DestroySystem` | `client.System().Get` / `.Migrate` / `.Destroy` |
 | `ListAlerts` | `client.System().Alerts` |
-| `ListMeasurements` / `ListMeasurementMessages` | `client.System().Measurements` / `.Measurement(...).Messages` |
+| `ListMeasurements` / `ListMeasurementMessages` | metrics replacement proposed above |
 | `CompactionController.GetHead` / `ListKeyMessages` | `Topic.Key(k).CompactionHead` / `Topic.Key(k).Messages` |
 | `CompactionController.ListHeads` | `Topic.CompactionHeads` |
 | `Consumer.Register[T]` / `Producer.Register[T]` | `Topic[T].Group(name).Register` / `Topic[T].Producer().Register` |
