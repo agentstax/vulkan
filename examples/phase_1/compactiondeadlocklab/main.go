@@ -95,14 +95,14 @@ func run() (err error) {
 	ds = client.Datastore()
 
 	topicName = fmt.Sprintf("compactiondeadlocklab.%d", time.Now().UnixNano())
-	registered, err := client.Topic(topicName).Register(ctx, nil)
+	registered, err := client.Topic[labMessage](topicName).Register(ctx, nil)
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[labMessage](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err = client.Producer(topicName).Register[labMessage](ctx, nil)
+	wpInstance, err = client.Topic[labMessage](topicName).Producer().Register(ctx, nil)
 	must(err)
 
 	batcherAbsenceScenario(ctx)
@@ -126,7 +126,7 @@ func batcherAbsenceScenario(ctx context.Context) {
 
 	instances := make([]*vulkan.ProducerInstance[labMessage], producerCount)
 	for i := range instances {
-		instance, err := client.Producer(topicName).Register[labMessage](ctx, nil)
+		instance, err := client.Topic[labMessage](topicName).Producer().Register(ctx, nil)
 		must(err)
 		instances[i] = instance
 	}

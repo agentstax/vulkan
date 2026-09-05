@@ -62,12 +62,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.Topic("orders.placed").Register(ctx, nil)
+	registered, err := client.Topic[vulkan.RawPayload]("orders.placed").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	orders, err := client.Producer(registered.Name).Register[OrderPlaced](ctx, nil)
+	orders, err := client.Topic[OrderPlaced](registered.Name).Producer().Register(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func run() error {
 		}
 	}
 
-	ledger, err := client.Consumer("ledger", registered.Name).Register[OrderPlaced](ctx, nil)
+	ledger, err := client.Topic[OrderPlaced](registered.Name).Group("ledger").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

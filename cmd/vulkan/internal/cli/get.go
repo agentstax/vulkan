@@ -33,7 +33,7 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			found, err := client.Topic(name).Get(ctx)
+			found, err := client.Topic[vulkan.RawPayload](name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -57,7 +57,7 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 				return failPrinted()
 			}
 
-			health, err := client.Topic(name).Health(ctx)
+			health, err := client.Topic[vulkan.RawPayload](name).Health(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

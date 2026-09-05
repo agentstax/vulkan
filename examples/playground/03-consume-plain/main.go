@@ -54,7 +54,7 @@ func run() error {
 		return err
 	}
 
-	receipts, err := client.Consumer("email-receipts", "orders.placed").Register[OrderPlacedV1](ctx, nil)
+	receipts, err := client.Topic[OrderPlacedV1]("orders.placed").Group("email-receipts").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

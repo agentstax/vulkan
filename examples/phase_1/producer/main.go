@@ -49,12 +49,12 @@ func run() error {
 		return err
 	}
 
-	t, err := client.Topic(*topicPtr).Register(ctx, &vulkan.TopicConfig{})
+	t, err := client.Topic[vulkan.RawPayload](*topicPtr).Register(ctx, &vulkan.TopicConfig{})
 	if err != nil {
 		return err
 	}
 
-	wpInstance, err := client.Producer(t.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](t.Name).Producer().Register(ctx, nil)
 	if err != nil {
 		return err
 	}

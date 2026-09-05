@@ -5,7 +5,7 @@ package main
 // whatever it claims, proving the abandoned/cleared event stream aggregates
 // correctly ACROSS processes -- neither instance's in-memory state is ever
 // consulted, everything the assertions below read comes back out of the
-// shared __system.metrics topic via client.Topic(...).Metrics, the same read path
+// shared __system.metrics topic via client.Topic[vulkan.RawPayload](...).Metrics, the same read path
 // `vulkan topic get` renders.
 //
 // Retention-drop-out (events aging out of the window) is NOT exercised here:
@@ -77,13 +77,13 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("metricslab.%d", run)
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	for range 4 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
@@ -177,7 +177,7 @@ func run() (err error) {
 	}
 	fmt.Printf("  ✓ SelfClearLatencyAvg (%v)\n", snap.Groups[0].AbandonedRoutines.SelfClearLatencyAvg)
 
-	step("client.Topic(...).Metrics is the same read `vulkan topic get` renders -- cursor/exception state came back too")
+	step("client.Topic[vulkan.RawPayload](...).Metrics is the same read `vulkan topic get` renders -- cursor/exception state came back too")
 	fmt.Printf("  ✓ cursor backlog=%d, ready exceptions=%d\n",
 		snap.Groups[0].Cursor.Backlog, snap.Groups[0].Exceptions.Ready)
 
@@ -216,7 +216,7 @@ func (g *releaseGates) release(id int64)              { close(g.gate(id)) }
 // ---- helpers ----
 
 func topicMetrics(ctx context.Context, client *vulkan.Client, name string) (*iMetrics.TopicSnapshot, error) {
-	return client.Topic(name).Metrics(ctx)
+	return client.Topic[vulkan.RawPayload](name).Metrics(ctx)
 }
 
 func mustTopicMetrics(ctx context.Context, client *vulkan.Client, name string) *iMetrics.TopicSnapshot {

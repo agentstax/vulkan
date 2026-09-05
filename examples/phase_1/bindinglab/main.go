@@ -84,11 +84,11 @@ func run() (err error) {
 	ds = client.Datastore()
 
 	topicName = fmt.Sprintf("bindinglab.%d", time.Now().UnixNano())
-	registered, err := client.Topic(topicName).Register(ctx, nil)
+	registered, err := client.Topic[labMessage](topicName).Register(ctx, nil)
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[labMessage](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// ===== install + join =====
@@ -104,7 +104,7 @@ func run() (err error) {
 	must(err)
 	assertInt("still one installed row after the same set re-registers", installedRows(ctx), 1)
 	assertString("Binding().Get reads the installed set", patterns(labBinding(ctx)), "orders.*")
-	absent, err := client.Topic(topicName).Group("bindinglab.never-declared").Binding().Get(ctx)
+	absent, err := client.Topic[labMessage](topicName).Group("bindinglab.never-declared").Binding().Get(ctx)
 	must(err)
 	if absent != nil {
 		die("Binding().Get on an unregistered group must return nil")
@@ -180,7 +180,7 @@ func run() (err error) {
 	assertString("Binding().Get reads the swapped set", patterns(labBinding(ctx)), "payments.*")
 	fmt.Println("  ✓ swapped once the incumbent's heartbeats lapsed; wait left the listing")
 
-	wpInstance, err := client.Producer(topicName).Register[labMessage](ctx, nil)
+	wpInstance, err := client.Topic[labMessage](topicName).Producer().Register(ctx, nil)
 	must(err)
 	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, &vulkan.ProduceOptions{RoutingKey: "payments.charge"})
 	must(err)
@@ -230,7 +230,7 @@ func run() (err error) {
 
 // registerConsumer declares the lab group's set.
 func registerConsumer(ctx context.Context, bindings []string) (*vulkan.ConsumerInstance[labMessage], error) {
-	return client.Consumer(groupName, topicName).Register[labMessage](ctx, &vulkan.ConsumerConfig{
+	return client.Topic[labMessage](topicName).Group(groupName).Register(ctx, &vulkan.ConsumerConfig{
 		Bindings: bindings,
 	})
 
@@ -328,7 +328,7 @@ func labDeclarations(ctx context.Context) (*consume.Binding, *consume.Binding) {
 
 // labBinding reads the lab group's effective set through the group handle.
 func labBinding(ctx context.Context) *consume.Binding {
-	binding, err := client.Topic(topicName).Group(groupName).Binding().Get(ctx)
+	binding, err := client.Topic[labMessage](topicName).Group(groupName).Binding().Get(ctx)
 	must(err)
 	if binding == nil {
 		die("Binding().Get must find the lab group's installed set")

@@ -68,10 +68,10 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("managerautorunlab.%d", time.Now().UnixNano())
-	_, err = client.Topic(topicName).Register(ctx, nil)
+	_, err = client.Topic[common.Work](topicName).Register(ctx, nil)
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// the row is the lab's whole subject -- a stale installation still
@@ -172,7 +172,7 @@ func (s *runningSession) stop() {
 
 func start(ctx context.Context, client *vulkan.Client, topicName string, group string) *runningSession {
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := client.Consumer(group, topicName).Register[common.Work](lifecycleCtx, nil)
+	instance, err := client.Topic[common.Work](topicName).Group(group).Register(lifecycleCtx, nil)
 	must(err)
 
 	done := make(chan error, 1)

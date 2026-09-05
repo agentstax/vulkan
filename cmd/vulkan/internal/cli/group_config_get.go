@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/vulkan"
 	"io"
 	"log/slog"
 	"slices"
@@ -41,7 +42,7 @@ field.`,
 			}
 			defer closeClient()
 
-			workers, err := client.Topic(topicName).Group(groupName).Workers(ctx)
+			workers, err := client.Topic[vulkan.RawPayload](topicName).Group(groupName).Workers(ctx)
 			if err != nil {
 				return groupError(topicName, groupName, err)
 			}

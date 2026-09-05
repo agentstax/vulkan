@@ -78,10 +78,10 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase65c.exceptionlab.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumecontroller.NewConsumeController(ds, nil)
@@ -92,7 +92,7 @@ func run() (err error) {
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))

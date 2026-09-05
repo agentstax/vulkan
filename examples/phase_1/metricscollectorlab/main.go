@@ -108,11 +108,11 @@ func run() (err error) {
 	}
 	for t := range topicCount {
 		name := fmt.Sprintf("metricscollectorlab.%d.%d", run, t)
-		registered, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{})
+		registered, err := client.Topic[common.Work](name).Register(ctx, &vulkan.TopicConfig{})
 		must(err)
 		topicNames = append(topicNames, name)
 		defer func() {
-			must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+			must(client.Topic[common.Work](name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 		}()
 
 		for _, group := range groupNames {
@@ -120,7 +120,7 @@ func run() (err error) {
 			must(err)
 		}
 
-		instance, err := client.Producer(name).Register[common.Work](ctx, nil)
+		instance, err := client.Topic[common.Work](name).Producer().Register(ctx, nil)
 		must(err)
 		for range messagesPerTopic {
 			work, err := common.NewWork(30, "admin@example.com")

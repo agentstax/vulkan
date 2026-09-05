@@ -75,7 +75,7 @@ func run() error {
 	}
 	fmt.Printf("%d alert heads at startup\n", len(heads))
 
-	pager, err := client.Consumer("alert-pager", alert.TopicName).Register[alert.Alert](ctx, nil)
+	pager, err := client.Topic[alert.Alert](alert.TopicName).Group("alert-pager").Register(ctx, nil)
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/vulkan"
 	"log/slog"
 
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -36,7 +37,7 @@ func newTopicRenameCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			renamed, err := client.Topic(oldName).Rename(ctx, newName)
+			renamed, err := client.Topic[vulkan.RawPayload](oldName).Rename(ctx, newName)
 			if err != nil {
 				switch {
 				case errors.Is(err, topic.ErrTopicNotFound):

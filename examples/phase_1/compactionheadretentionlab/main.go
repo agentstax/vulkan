@@ -91,13 +91,13 @@ func dropPartitionScenario(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadretentionlab.drop.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
@@ -134,13 +134,13 @@ func sweepBatchScenario(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase8c.compactionheadretentionlab.sweep.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)

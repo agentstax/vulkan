@@ -110,13 +110,13 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	name := fmt.Sprintf("phase14a.schemaevolutionlab.%d", time.Now().UnixNano())
-	registered, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{})
+	registered, err := client.Topic[V1Order](name).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[V1Order](name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wp1Instance, err := client.Producer(name).Register[V1Order](ctx, nil)
+	wp1Instance, err := client.Topic[V1Order](name).Producer().Register(ctx, nil)
 	must(err)
 
 	step("the topic holds live keyed V1Order traffic for 5 users")
@@ -130,7 +130,7 @@ func run() (err error) {
 	}
 
 	step("a V2Order producer registers on the same topic -- its rows carry schema_version 2")
-	wp2Instance, err := client.Producer(name).Register[V2Order](ctx, nil)
+	wp2Instance, err := client.Topic[V2Order](name).Producer().Register(ctx, nil)
 	must(err)
 
 	step("user:1 cuts over to v2 BEFORE the bridge ever sees it (live-then-backfill)")
@@ -207,7 +207,7 @@ func run() (err error) {
 	assertInt("every v1 row still physically present -- superseded, never rewritten", rowCountAtVersion(ctx, ds, registered.Id, 1), 5)
 
 	step("the retire verdict is a query: v1 safe, v2 not")
-	health, err := client.Topic(name).Health(ctx)
+	health, err := client.Topic[V1Order](name).Health(ctx)
 	must(err)
 	v1Health := versionHealth(health, 1)
 	assertInt("no compaction head still points at a v1 row", v1Health.CompactionHeads, 0)
@@ -248,7 +248,7 @@ func bridgeIdempotencyKey(sourceID int64) string {
 // out the library's production-sized defaults; the session knobs are
 // bridgeConsumeOptions.
 func newBridgeConsumer(ctx context.Context, client *vulkan.Client, name string) *vulkan.ConsumerInstance[V1Order] {
-	cInstance, err := client.Consumer(group, name).Register[V1Order](ctx, &vulkan.ConsumerConfig{
+	cInstance, err := client.Topic[V1Order](name).Group(group).Register(ctx, &vulkan.ConsumerConfig{
 		Message:                 &vulkan.MessageOptions{Timeout: 2 * time.Second},
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 	})

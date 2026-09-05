@@ -64,23 +64,23 @@ func run() (err error) {
 	ds := client.Datastore()
 	must(client.System().Register(ctx, nil))
 
-	metricsTopic, err := client.Topic(iMetrics.TopicName).Get(ctx)
+	metricsTopic, err := client.Topic[vulkan.RawPayload](iMetrics.TopicName).Get(ctx)
 	must(err)
 	if metricsTopic == nil {
 		die("expected __system.metrics to exist after RegisterSystem")
 	}
 
 	topicName := fmt.Sprintf("%s.%d", group, run)
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	before := metricsRowCount(ctx, ds, metricsTopic.Id)
 
 	step("driving a hard timeout so one message gets abandoned then self-clears")
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	seed(ctx, wpInstance, 3)
 

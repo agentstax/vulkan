@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/vulkan"
 	"log/slog"
 
 	"github.com/agentstax/vulkan/pkg/consume"
@@ -30,14 +31,14 @@ on its topic.`,
 
 			// Binding().Get collapses an absent group into nil; the command
 			// reports absence as not-found like group config get does
-			found, err := client.Topic(topicName).Get(ctx)
+			found, err := client.Topic[vulkan.RawPayload](topicName).Get(ctx)
 			if err != nil {
 				return groupError(topicName, groupName, err)
 			}
 			if found == nil {
 				return errTopicNotFound(topicName)
 			}
-			group, err := client.Topic(topicName).Group(groupName).Get(ctx)
+			group, err := client.Topic[vulkan.RawPayload](topicName).Group(groupName).Get(ctx)
 			if err != nil {
 				return groupError(topicName, groupName, err)
 			}
@@ -45,7 +46,7 @@ on its topic.`,
 				return failOp("consumer group %q not found on topic %q", groupName, topicName)
 			}
 
-			binding, err := client.Topic(topicName).Group(groupName).Binding().Get(ctx)
+			binding, err := client.Topic[vulkan.RawPayload](topicName).Group(groupName).Binding().Get(ctx)
 			if err != nil {
 				return groupError(topicName, groupName, err)
 			}

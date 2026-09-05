@@ -107,7 +107,7 @@ func run() (err error) {
 
 	prefix = fmt.Sprintf("schedulelab.%d", time.Now().UnixNano())
 	// status reads count 'success' rows, so the target keeps every outcome
-	target, err = client.Topic(prefix+".target").Register(ctx, &vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
+	target, err = client.Topic[vulkan.RawPayload](prefix+".target").Register(ctx, &vulkan.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
 	must(err)
 	defer cleanupTarget()
 
@@ -199,7 +199,7 @@ func targetSection(ctx context.Context) {
 	step("target: a schedule dies with its target topic, one on another topic survives")
 
 	topicName := prefix + ".ownedtopic"
-	_, err := client.Topic(topicName).Register(ctx, nil)
+	_, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, nil)
 	must(err)
 
 	_, err = registerSchedule(ctx, prefix+".cascade", "@hourly", topicName, payload, nil)
@@ -207,7 +207,7 @@ func targetSection(ctx context.Context) {
 	_, err = registerSchedule(ctx, prefix+".standalone", "@hourly", target.Name, payload, nil)
 	must(err)
 
-	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	cascaded, err := client.Scheduler(prefix + ".cascade").Get(ctx)
 	must(err)
@@ -716,7 +716,7 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 // stop is called.
 func startConsumer(ctx context.Context, group string, bindings []string, concurrency int, handler func(context.Context, *labMessage) error) func() {
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := client.Consumer(group, target.Name).Register[labMessage](lifecycleCtx, &vulkan.ConsumerConfig{
+	instance, err := client.Topic[labMessage](target.Name).Group(group).Register(lifecycleCtx, &vulkan.ConsumerConfig{
 		Bindings:                bindings,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 	})
@@ -746,7 +746,7 @@ func statusFor(statuses []*schedule.ScheduleGroupSummary, group string) *schedul
 }
 
 func cleanupTarget() {
-	must(client.Topic(target.Name).Destroy(context.Background(), &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[labMessage](target.Name).Destroy(context.Background(), &vulkan.DestroyOptions{Force: true}))
 }
 
 // --- assertion helpers ---

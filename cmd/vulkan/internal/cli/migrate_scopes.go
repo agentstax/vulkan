@@ -171,7 +171,7 @@ func runScopeMigrate(ctx context.Context, client *vulkan.Client, s scope, name s
 	case scopeSystem:
 		return client.System().Migrate(ctx, to)
 	case scopeTopic:
-		return client.Topic(name).Migrate(ctx, to)
+		return client.Topic[vulkan.RawPayload](name).Migrate(ctx, to)
 	default:
 		return client.System().MigrateTopics(ctx, to)
 	}

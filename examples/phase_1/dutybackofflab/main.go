@@ -69,10 +69,10 @@ func run() (err error) {
 	topicName := fmt.Sprintf("dutybackofflab.%d", time.Now().UnixNano())
 	// retention on: the sweep's drop pass reads message_log's head every tick,
 	// which is the read the rename below breaks
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{RetentionTTL: time.Hour})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{RetentionTTL: time.Hour})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	janitorProvisioner, err := janitor.NewJanitorProvisioner(ds, &janitor.JanitorConfig{

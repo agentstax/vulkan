@@ -72,7 +72,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("phase9.deletetopiclab.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: 1000})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{PartitionSize: 1000})
 	must(err)
 
 	cd, err := consumecontroller.NewConsumeController(ds, nil)
@@ -81,7 +81,7 @@ func run() (err error) {
 	must(err)
 	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerGroupController(ds, nil)
 	must(err)
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	step("seed a row in every topic-scoped table")
@@ -131,7 +131,7 @@ func run() (err error) {
 	assertIdempotencyKeyRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
-	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	assertGroupGone(ctx, ds, groupId)
 	for _, table := range []string{

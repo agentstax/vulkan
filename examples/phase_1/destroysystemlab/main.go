@@ -83,9 +83,9 @@ func run() (err error) {
 
 	step("seed a user topic with messages")
 	topicName := fmt.Sprintf("destroysystemlab.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, nil)
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, nil)
 	must(err)
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	for range 3 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
@@ -99,7 +99,7 @@ func run() (err error) {
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("a running consumer refuses it first -- the worker guard outranks the topic guard")
-	wcInstance, err := client.Consumer("destroysystemlab-group", tp.Name).Register[common.Work](ctx, nil)
+	wcInstance, err := client.Topic[common.Work](tp.Name).Group("destroysystemlab-group").Register(ctx, nil)
 	must(err)
 	consumeCtx, stopConsumer := context.WithCancel(ctx)
 	consumeDone := make(chan error, 1)
@@ -130,7 +130,7 @@ func run() (err error) {
 	var alertsTopicId int64
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT id FROM %s.topic_config WHERE name = '__system.alerts';`, ds.Schema)).Scan(&alertsTopicId))
 
-	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	must(client.System().Destroy(ctx, nil))
 
 	for _, table := range controlPlaneTables {

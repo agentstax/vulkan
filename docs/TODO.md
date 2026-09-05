@@ -89,9 +89,12 @@ Steps, in order:
    `CompactionHeads(ctx)` through admin. The version-below-1
    guard on the three Register verbs. The alias closure test in
    tools/conventions decides what else moves.
-5. **Call sites.** cmd/vulkan (`Topic[vulkan.RawPayload]`), labs,
-   examples/playground, otelvulkan, tools/compat. `go build ./...`,
-   `go test -race` on touched packages, directly affected labs.
+5. **Call sites.** DONE 2026-09-04: cmd/vulkan (`Topic[vulkan.RawPayload]`),
+   labs, examples/playground, bench rewritten by script (80 files);
+   otelvulkan untouched, tools/compat pins the prior tag. All modules
+   build and vet; ten directly-affected labs pass (compaction,
+   compaction-rank, schedule, alert, metrics, group-config,
+   producer-batch, multi-target, schema-evolution, topic).
 6. **CLI commands** `topic key get` and `topic key messages`, text and
    `--output json` renderers, README examples verified against real
    output.

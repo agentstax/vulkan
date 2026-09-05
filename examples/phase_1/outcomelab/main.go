@@ -84,13 +84,13 @@ func run() (err error) {
 	must(err)
 	ds := client.Datastore()
 
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[Payment](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	payments, err := client.Producer(tp.Name).Register[Payment](ctx, nil)
+	payments, err := client.Topic[Payment](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	ids := map[string]int64{}
@@ -100,7 +100,7 @@ func run() (err error) {
 		ids[branch] = produced.Id
 	}
 
-	instance, err := client.Consumer(group, tp.Name).Register[Payment](ctx, &vulkan.ConsumerConfig{
+	instance, err := client.Topic[Payment](tp.Name).Group(group).Register(ctx, &vulkan.ConsumerConfig{
 		ExceptionInitialBackoff: 500 * time.Millisecond,
 		Message: &vulkan.MessageOptions{
 			Timeout: 5 * time.Second,

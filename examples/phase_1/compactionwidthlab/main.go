@@ -83,23 +83,23 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
-	narrow, err := client.Topic(narrowName).Register(ctx, &vulkan.TopicConfig{PartitionSize: narrowPartitionSize})
+	narrow, err := client.Topic[vulkan.RawPayload](narrowName).Register(ctx, &vulkan.TopicConfig{PartitionSize: narrowPartitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(narrowName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](narrowName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
-	wide, err := client.Topic(wideName).Register(ctx, &vulkan.TopicConfig{PartitionSize: widePartitionSize})
+	wide, err := client.Topic[vulkan.RawPayload](wideName).Register(ctx, &vulkan.TopicConfig{PartitionSize: widePartitionSize})
 	must(err)
 	defer func() {
-		must(client.Topic(wideName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](wideName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	step("seed both topics with the identical 40-message workload")
-	narrowProducerInstance, err := client.Producer(narrow.Name).Register[Record](ctx, nil)
+	narrowProducerInstance, err := client.Topic[Record](narrow.Name).Producer().Register(ctx, nil)
 	must(err)
-	wideProducerInstance, err := client.Producer(wide.Name).Register[Record](ctx, nil)
+	wideProducerInstance, err := client.Topic[Record](wide.Name).Producer().Register(ctx, nil)
 	must(err)
 	seed(ctx, narrowProducerInstance)
 	seed(ctx, wideProducerInstance)

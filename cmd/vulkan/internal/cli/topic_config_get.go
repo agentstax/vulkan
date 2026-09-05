@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/vulkan"
 	"log/slog"
 
 	"github.com/spf13/cobra"
@@ -38,7 +39,7 @@ func newTopicConfigGetCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeClient()
 
-			found, err := client.Topic(name).Get(ctx)
+			found, err := client.Topic[vulkan.RawPayload](name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

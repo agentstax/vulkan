@@ -114,7 +114,7 @@ func run() (err error) {
 	ds = client.Datastore()
 
 	topicName := fmt.Sprintf("exclusivelab.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	topicId = tp.Id
 
@@ -122,7 +122,7 @@ func run() (err error) {
 	must(err)
 	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	wpInstance, err := client.Producer(tp.Name).Register[Rec](ctx, nil)
+	wpInstance, err := client.Topic[Rec](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	step("exclusive on a free key: runs holding the key lease, releases on success")
@@ -626,7 +626,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ v4 ran once, v1-v3 audited out superseded (v1=%d v2=%d v3=%d v4=%d)\n", tv1, tv2, tv3, tv4)
 
 	step("destroying the topic drops the exception queue")
-	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	fmt.Println("  ✓ destroyed")
 
 	fmt.Println("\n✅ EXCLUSIVE LAB PASSED")

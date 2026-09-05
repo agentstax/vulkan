@@ -112,9 +112,9 @@ func run() (err error) {
 	ds = client.Datastore()
 	must(client.System().Register(ctx, nil))
 
-	schedulesTopic, err = client.Topic(schedule.TopicName).Get(ctx)
+	schedulesTopic, err = client.Topic[vulkan.RawPayload](schedule.TopicName).Get(ctx)
 	must(err)
-	alertsTopic, err = client.Topic(alert.TopicName).Get(ctx)
+	alertsTopic, err = client.Topic[vulkan.RawPayload](alert.TopicName).Get(ctx)
 	must(err)
 	if schedulesTopic == nil || alertsTopic == nil {
 		die("RegisterSystem must create the schedules and alerts topics")
@@ -230,7 +230,7 @@ func classifySection(ctx context.Context) {
 	step("classify: edge WARN, quiet hold, repeat republish, silent severity change, resolve INFO")
 
 	var err error
-	labTopic, err = client.Topic(prefix+".topic").Register(ctx, nil)
+	labTopic, err = client.Topic[vulkan.RawPayload](prefix+".topic").Register(ctx, nil)
 	must(err)
 	labTopicOwner, err = common.NewTopicOwner(labTopic.SystemId, labTopic.Id, labTopic.Name)
 	must(err)
@@ -334,7 +334,7 @@ func executorSection(ctx context.Context) {
 	step("executor: threshold-1 run alerts, repeat-interval run is quiet, foreign groups untouched")
 
 	// one write gives the lab topic its first partition
-	labInstance, err := client.Producer(labTopic.Name).Register[labMessage](ctx, nil)
+	labInstance, err := client.Topic[labMessage](labTopic.Name).Producer().Register(ctx, nil)
 	must(err)
 	_, err = labInstance.Produce(ctx, &labMessage{Value: "seed"}, nil)
 	must(err)
@@ -553,7 +553,7 @@ func cleanup() {
 	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE compaction_key = ANY($1);`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id)), keys)
 	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE message_key = ANY($1);`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), keys)
 
-	must(client.Topic(labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[labMessage](labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
 		fmt.Sprintf(`DELETE FROM %s.%s WHERE consumer_group_id IN (SELECT id FROM %s.consumer_group_config WHERE name LIKE '%s.%%');`, ds.Schema, topic.ExceptionQueueTable(schedulesTopic.Id), ds.Schema, prefix),

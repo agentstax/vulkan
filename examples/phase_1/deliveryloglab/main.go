@@ -114,7 +114,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
@@ -146,7 +146,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, pool *pgxpool.Pool) {
 	must(err)
 
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 1)
@@ -189,7 +189,7 @@ func scenarioDeliveryLogOff(ctx context.Context, pool *pgxpool.Pool) {
 	ds := client.Datastore()
 
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// registration creates delivery_log_<id> regardless of the flag -- the
@@ -224,7 +224,7 @@ func scenarioDeliveryLogAll(ctx context.Context, pool *pgxpool.Pool) {
 	must(err)
 
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
@@ -276,7 +276,7 @@ func scenarioRetentionDropPartition(ctx context.Context, pool *pgxpool.Pool) {
 	must(err)
 
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 4) // fills partition 0 (ids 1-4), fails id 1
@@ -305,7 +305,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, pool *pgxpool.Pool) {
 	must(err)
 
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 1)
@@ -335,7 +335,7 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, pool *pgxpool.Pool) {
 	must(err)
 
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// a keyed message with its first-delivery 'deferred' row, as the cursor path writes it
@@ -373,7 +373,7 @@ func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan
 	must(err)
 
 	ds := client.Datastore()
-	tp, err := client.Topic(name).Register(ctx, &cfg)
+	tp, err := client.Topic[vulkan.RawPayload](name).Register(ctx, &cfg)
 	must(err)
 
 	cd, err := consumecontroller.NewConsumeController(ds, nil)
@@ -381,7 +381,7 @@ func newTopic(ctx context.Context, pool *pgxpool.Pool, suffix string, cfg vulkan
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning()))
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	return tp, messageConsumers, wpInstance, groupId
 }

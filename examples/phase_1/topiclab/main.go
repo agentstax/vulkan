@@ -88,7 +88,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	register := func(name string) *topic.Topic {
-		t, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
+		t, err := client.Topic[vulkan.RawPayload](name).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 		must(err)
 		return t
 	}
@@ -98,7 +98,7 @@ func run() (err error) {
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
 		for _, t := range []*topic.Topic{topicA, topicB, topicC, topicD} {
-			must(client.Topic(t.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+			must(client.Topic[vulkan.RawPayload](t.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 		}
 	}()
 
@@ -113,9 +113,9 @@ func run() (err error) {
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
-	wpAInstance, err := client.Producer(topicA.Name).Register[common.Work](ctx, nil)
+	wpAInstance, err := client.Topic[common.Work](topicA.Name).Producer().Register(ctx, nil)
 	must(err)
-	wpBInstance, err := client.Producer(topicB.Name).Register[common.Work](ctx, nil)
+	wpBInstance, err := client.Topic[common.Work](topicB.Name).Producer().Register(ctx, nil)
 	must(err)
 	for range 3 {
 		publish(ctx, wpAInstance, "")
@@ -148,7 +148,7 @@ func run() (err error) {
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
-	wpCInstance, err := client.Producer(topicC.Name).Register[common.Work](ctx, nil)
+	wpCInstance, err := client.Topic[common.Work](topicC.Name).Producer().Register(ctx, nil)
 	must(err)
 	groupRoute := "topiclab.route"
 	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute, consume.Beginning()))
@@ -175,7 +175,7 @@ func run() (err error) {
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
-	wpDInstance, err := client.Producer(topicD.Name).Register[common.Work](ctx, nil)
+	wpDInstance, err := client.Topic[common.Work](topicD.Name).Producer().Register(ctx, nil)
 	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging

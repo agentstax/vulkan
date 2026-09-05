@@ -105,9 +105,9 @@ func run() (err error) {
 	registerClient, err = vulkan.NewClient(ctx, pool, &vulkan.ClientConfig{Logger: capture})
 	must(err)
 
-	schedulesTopic, err = client.Topic(schedule.TopicName).Get(ctx)
+	schedulesTopic, err = client.Topic[vulkan.RawPayload](schedule.TopicName).Get(ctx)
 	must(err)
-	alertsTopic, err = client.Topic(alert.TopicName).Get(ctx)
+	alertsTopic, err = client.Topic[vulkan.RawPayload](alert.TopicName).Get(ctx)
 	must(err)
 
 	jobGroup = scalarInt64(ctx,
@@ -118,7 +118,7 @@ func run() (err error) {
 
 	prefix = fmt.Sprintf("workerlivenesslab.%d", time.Now().UnixNano())
 	labGroupName = prefix + ".group"
-	labTopic, err = client.Topic(prefix+".topic").Register(ctx, nil)
+	labTopic, err = client.Topic[vulkan.RawPayload](prefix+".topic").Register(ctx, nil)
 	must(err)
 	labTopicOwner, err = common.NewTopicOwner(labTopic.SystemId, labTopic.Id, labTopic.Name)
 	must(err)
@@ -143,7 +143,7 @@ func registerSection(ctx context.Context) {
 	step("register-time: produce-only warns VK0063, a running consumer silences it")
 
 	// a fresh topic's only worker row is its janitor, and nothing has claimed it
-	_, err := registerClient.Producer(labTopic.Name).Register[labMessage](ctx, nil)
+	_, err := registerClient.Topic[labMessage](labTopic.Name).Producer().Register(ctx, nil)
 	must(err)
 	lines := capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name)
 	if len(lines) != 1 {
@@ -159,7 +159,7 @@ func registerSection(ctx context.Context) {
 	waitUnclaimed(ctx, 0)
 
 	before := len(capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name))
-	_, err = registerClient.Producer(labTopic.Name).Register[labMessage](ctx, nil)
+	_, err = registerClient.Topic[labMessage](labTopic.Name).Producer().Register(ctx, nil)
 	must(err)
 	if got := len(capture.find(eventCode, workerlivenesscontroller.AlertWorkerLiveness, labTopic.Name)); got != before {
 		die(fmt.Sprintf("Register under a live consumer must be silent, got %d lines after %d", got, before))
@@ -214,7 +214,7 @@ func scheduledSection(ctx context.Context) {
 // startConsumer runs a consumer on the lab topic until the returned stop is
 // called; its manager claims every worker row the topic owns.
 func startConsumer(ctx context.Context) func() {
-	instance, err := client.Consumer(labGroupName, labTopic.Name).Register[labMessage](ctx, nil)
+	instance, err := client.Topic[labMessage](labTopic.Name).Group(labGroupName).Register(ctx, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -279,7 +279,7 @@ func cleanup() {
 	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE compaction_key LIKE $1;`, ds.Schema, topic.CompactionHeadTable(alertsTopic.Id)), pattern)
 	exec(ctx, fmt.Sprintf(`DELETE FROM %s.%s WHERE message_key LIKE $1;`, ds.Schema, topic.MessageLogTable(alertsTopic.Id)), pattern)
 
-	must(client.Topic(labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[labMessage](labTopic.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 }
 
 // --- assertion helpers ---

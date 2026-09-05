@@ -94,7 +94,7 @@ func run() (err error) {
 	ds = client.Datastore()
 
 	topicName := fmt.Sprintf("keyleaselab.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	topicId = tp.Id
 
@@ -104,7 +104,7 @@ func run() (err error) {
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	wpInstance, err := client.Producer(tp.Name).Register[Rec](ctx, nil)
+	wpInstance, err := client.Topic[Rec](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	g, err := cd.RegisterGroup(ctx, tp.Id, group, consume.Beginning())
 	must(err)
@@ -297,7 +297,7 @@ func run() (err error) {
 	fmt.Println("  ✓ expired swept, live kept")
 
 	step("destroying the topic drops its message_key_lease table")
-	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	var keyLeaseTable *string
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("%s.%s", ds.Schema, topic.MessageKeyLeaseTable(topicId))).Scan(&keyLeaseTable))
 	if keyLeaseTable != nil {

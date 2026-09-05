@@ -109,7 +109,7 @@ func batchedExactlyOnceScenario(ctx context.Context, client *vulkan.Client) {
 	tp, client, cleanup := registerTopic(ctx, client, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -160,7 +160,7 @@ func produceBatchScenario(ctx context.Context, client *vulkan.Client) {
 	tp, client, cleanup := registerTopic(ctx, client, "producebatch", largePartitionSize)
 	defer cleanup()
 
-	wpInstance, err := client.Producer(tp.Name).Register[rawPayload](ctx, nil)
+	wpInstance, err := client.Topic[rawPayload](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	items := make([]*vulkan.ProduceItem[rawPayload], 0, total)
@@ -236,7 +236,7 @@ func faultIsolationScenario(ctx context.Context, client *vulkan.Client) {
 	tp, client, cleanup := registerTopic(ctx, client, "faults", largePartitionSize)
 	defer cleanup()
 
-	wpInstance, err := client.Producer(tp.Name).Register[rawPayload](ctx, nil)
+	wpInstance, err := client.Topic[rawPayload](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	errs := make([]error, total)
@@ -286,7 +286,7 @@ func hotCompactedKeysScenario(ctx context.Context, client *vulkan.Client) {
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, &vulkan.ProducerConfig{Batch: vulkan.BatcherConfig{MaxSize: 5}})
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, &vulkan.ProducerConfig{Batch: vulkan.BatcherConfig{MaxSize: 5}})
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -331,7 +331,7 @@ func partitionHealScenario(ctx context.Context, client *vulkan.Client) {
 	defer cleanup()
 
 	// a batch of 5 can straddle a 10-row boundary: the rerun heals a second time
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, &vulkan.ProducerConfig{Batch: vulkan.BatcherConfig{MaxSize: 5}})
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, &vulkan.ProducerConfig{Batch: vulkan.BatcherConfig{MaxSize: 5}})
 	must(err)
 
 	for range 15 {
@@ -399,7 +399,7 @@ func timeArm(ctx context.Context, client *vulkan.Client, label string, producers
 	tp, client, cleanup := registerTopic(ctx, client, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	// warm pool connections so the first arm doesn't pay the dial cost
@@ -431,10 +431,10 @@ func timeArm(ctx context.Context, client *vulkan.Client, label string, producers
 // registerTopic registers a lab-unique topic and returns it with its cleanup.
 func registerTopic(ctx context.Context, client *vulkan.Client, label string, partitionSize int64) (*vulkan.Topic, *vulkan.Client, func()) {
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.Topic[vulkan.RawPayload](name).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	return tp, client, func() {
-		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}
 }
 

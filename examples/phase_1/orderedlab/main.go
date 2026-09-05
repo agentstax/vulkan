@@ -80,13 +80,13 @@ func run() (err error) {
 	must(err)
 	ds := client.Datastore()
 
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[vulkan.RawPayload](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[Adjustment](tp.Name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	adjustments, err := client.Producer(tp.Name).Register[Adjustment](ctx, nil)
+	adjustments, err := client.Topic[Adjustment](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 
 	step("produce-time guards")
@@ -115,7 +115,7 @@ func run() (err error) {
 		produce("acct-4", seq)
 	}
 
-	instance, err := client.Consumer(group, tp.Name).Register[Adjustment](ctx, &vulkan.ConsumerConfig{
+	instance, err := client.Topic[Adjustment](tp.Name).Group(group).Register(ctx, &vulkan.ConsumerConfig{
 		ExceptionInitialBackoff: 500 * time.Millisecond,
 		Message: &vulkan.MessageOptions{
 			Timeout: 5 * time.Second,

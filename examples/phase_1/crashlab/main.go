@@ -74,7 +74,7 @@ func run() error {
 		return err
 	}
 
-	t, err := client.Topic(*topicPtr).Get(ctx)
+	t, err := client.Topic[vulkan.RawPayload](*topicPtr).Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func run() error {
 	// Short lease (= Timeout+QueueMargin+RecordMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxRetries so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
-	wcInstance, err := client.Consumer(*groupPtr, t.Name).Register[common.Work](ctx, &vulkan.ConsumerConfig{
+	wcInstance, err := client.Topic[common.Work](t.Name).Group(*groupPtr).Register(ctx, &vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 2 * time.Second, Retry: &vulkan.RetryPolicy{MaxRetries: 100}},
 	})
 

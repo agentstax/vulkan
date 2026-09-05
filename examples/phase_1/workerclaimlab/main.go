@@ -78,13 +78,13 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	topicName := fmt.Sprintf("workerclaimlab.%d", time.Now().UnixNano())
-	tp, err := client.Topic(topicName).Register(ctx, &vulkan.TopicConfig{})
+	tp, err := client.Topic[common.Work](topicName).Register(ctx, &vulkan.TopicConfig{})
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[common.Work](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	for range seedRows {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx vulkan.Tx) (*common.Work, error) {
@@ -159,7 +159,7 @@ func (rc *runningConsumer) stop() {
 
 func start(ctx context.Context, client *vulkan.Client, topicName string, i int) *runningConsumer {
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	cInstance, err := client.Consumer(group, topicName).Register[common.Work](lifecycleCtx, nil)
+	cInstance, err := client.Topic[common.Work](topicName).Group(group).Register(lifecycleCtx, nil)
 	must(err)
 
 	options := &vulkan.ConsumeOptions{

@@ -44,7 +44,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 
 			// Check order matters: a doomed call must never waste a prompt.
 			// 1. exists?
-			found, err := client.Topic(name).Get(ctx)
+			found, err := client.Topic[vulkan.RawPayload](name).Get(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -93,7 +93,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying %q... ", name)
 			}
-			if err := client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: force}); err != nil {
+			if err := client.Topic[vulkan.RawPayload](name).Destroy(ctx, &vulkan.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}

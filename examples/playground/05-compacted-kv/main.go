@@ -63,12 +63,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.Topic("devices.config").Register(ctx, nil)
+	registered, err := client.Topic[vulkan.RawPayload]("devices.config").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	configs, err := client.Producer(registered.Name).Register[DeviceConfig](ctx, nil)
+	configs, err := client.Topic[DeviceConfig](registered.Name).Producer().Register(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func run() error {
 	}
 
 	// Get (outside a transaction) -- the topic handle's read
-	current, err := client.Topic(registered.Name).CompactionHead[DeviceConfig](ctx, "dev-7")
+	current, err := client.Topic[DeviceConfig](registered.Name).Key("dev-7").CompactionHead(ctx)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func run() error {
 	}
 
 	// History
-	versions, err := client.Topic(registered.Name).ListKeyMessages[DeviceConfig](ctx, "dev-7", 10)
+	versions, err := client.Topic[DeviceConfig](registered.Name).Key("dev-7").Messages(ctx, 10)
 	if err != nil {
 		return err
 	}

@@ -51,12 +51,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registered, err := client.Topic("webhooks.received").Register(ctx, nil)
+	registered, err := client.Topic[vulkan.RawPayload]("webhooks.received").Register(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	webhooks, err := client.Producer(registered.Name).Register[WebhookEvent](ctx, nil)
+	webhooks, err := client.Topic[WebhookEvent](registered.Name).Producer().Register(ctx, nil)
 	if err != nil {
 		return err
 	}

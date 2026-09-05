@@ -59,7 +59,7 @@ func run() (err error) {
 	must(err)
 
 	topicName := fmt.Sprintf("scheduleconcurrencylab.reports.%d", run)
-	_, err = client.Topic(topicName).Register(ctx, nil)
+	_, err = client.Topic[vulkan.RawPayload](topicName).Register(ctx, nil)
 	must(err)
 
 	step("RegisterSchedule returns an instance; Scheduler.Get reads the row")
@@ -121,7 +121,7 @@ func run() (err error) {
 
 	step("cleanup")
 	must(client.Scheduler(scheduleName).Destroy(ctx))
-	must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	must(client.Topic[vulkan.RawPayload](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 
 	fmt.Println("\n✅ SCHEDULE CONCURRENCY LAB PASSED")
 	return nil

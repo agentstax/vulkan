@@ -91,10 +91,10 @@ func main() {
 
 	// fresh topic per cell -- clean tables, no cross-cell contamination
 	topicName := fmt.Sprintf("compactionbench.%d", time.Now().UnixNano())
-	registered, err := client.Topic(topicName).Register(ctx, nil)
+	registered, err := client.Topic[benchMessage](topicName).Register(ctx, nil)
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[benchMessage](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// the table is empty here, so ALTER alone is enough -- every page it ever
@@ -107,7 +107,7 @@ func main() {
 
 	instances := make([]*vulkan.ProducerInstance[benchMessage], *producers)
 	for i := range instances {
-		instance, err := client.Producer(topicName).Register[benchMessage](ctx, nil)
+		instance, err := client.Topic[benchMessage](topicName).Producer().Register(ctx, nil)
 		must(err)
 		instances[i] = instance
 	}

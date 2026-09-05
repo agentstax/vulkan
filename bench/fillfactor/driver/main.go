@@ -122,10 +122,10 @@ func main() {
 
 	// fresh topic per cell -- clean tables, no cross-cell contamination
 	topicName := fmt.Sprintf("fillfactorbench.%d", time.Now().UnixNano())
-	registered, err := client.Topic(topicName).Register(ctx, nil)
+	registered, err := client.Topic[benchMessage](topicName).Register(ctx, nil)
 	must(err)
 	defer func() {
-		must(client.Topic(topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[benchMessage](topicName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}()
 
 	// the tables are empty here, so ALTER alone is enough -- every page they
@@ -202,7 +202,7 @@ func main() {
 
 	var consumeWg sync.WaitGroup
 	for group := range *groups {
-		instance, err := client.Consumer(fmt.Sprintf("bench-group-%02d", group), topicName).Register[benchMessage](ctx, consumerConfig)
+		instance, err := client.Topic[benchMessage](topicName).Group(fmt.Sprintf("bench-group-%02d", group)).Register(ctx, consumerConfig)
 		must(err)
 
 		consumeWg.Add(1)
@@ -274,7 +274,7 @@ func main() {
 func prefillTopic(ctx context.Context, client *vulkan.Client, topicName string, prefill int, failureRate float64, record func(error)) {
 	instances := make([]*vulkan.ProducerInstance[benchMessage], prefillProducers)
 	for i := range instances {
-		instance, err := client.Producer(topicName).Register[benchMessage](ctx, nil)
+		instance, err := client.Topic[benchMessage](topicName).Producer().Register(ctx, nil)
 		must(err)
 		instances[i] = instance
 	}

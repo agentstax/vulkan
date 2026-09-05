@@ -101,9 +101,9 @@ func run() (err error) {
 
 	// the same name in both -- a name is unique per installation, not per database
 	const sharedName = "schemalab.orders"
-	leftTopic, err := left.Topic(sharedName).Register(ctx, nil)
+	leftTopic, err := left.Topic[labMessage](sharedName).Register(ctx, nil)
 	must(err)
-	rightTopic, err := right.Topic(sharedName).Register(ctx, nil)
+	rightTopic, err := right.Topic[labMessage](sharedName).Register(ctx, nil)
 	must(err)
 	fmt.Printf("   ✅ %q registered in both, each numbered by its own schema's sequence: left id %d, right id %d\n", sharedName, leftTopic.Id, rightTopic.Id)
 
@@ -127,7 +127,7 @@ func run() (err error) {
 
 	fmt.Println("\n=== 2. independence ===")
 
-	leftProducer, err := left.Producer(sharedName).Register[labMessage](ctx, nil)
+	leftProducer, err := left.Topic[labMessage](sharedName).Producer().Register(ctx, nil)
 	must(err)
 	_, err = leftProducer.Produce(ctx, &labMessage{Value: "left only"}, nil)
 	must(err)
@@ -159,8 +159,8 @@ func run() (err error) {
 	}
 	fmt.Printf("   ✅ a caller's CREATE inside InTransaction lands in %q, not vulkan's %q\n", landedIn, leftSchema)
 
-	must(left.Topic(sharedName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
-	if _, err := right.Topic(sharedName).Get(ctx); err != nil {
+	must(left.Topic[labMessage](sharedName).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+	if _, err := right.Topic[labMessage](sharedName).Get(ctx); err != nil {
 		die("destroying the left topic must leave the right one readable: " + err.Error())
 	}
 	fmt.Println("   ✅ destroying left's topic leaves right's standing")
@@ -174,14 +174,14 @@ func run() (err error) {
 	// the schema does not exist, and every vulkan statement names it [0631],
 	// so the catalog read raises undefined_table -- which the catalog reads
 	// map to absence, never to another installation's rows
-	found, err := empty.Topic(sharedName).Get(ctx)
+	found, err := empty.Topic[labMessage](sharedName).Get(ctx)
 	must(err)
 	if found != nil {
 		die("an unregistered schema must read no topic, got " + found.Name)
 	}
 	fmt.Println("   ✅ Get on an unregistered schema is the (nil, nil) absence")
 
-	if _, err := empty.Topic(sharedName).Health(ctx); !errors.Is(err, topic.ErrTopicNotFound) {
+	if _, err := empty.Topic[labMessage](sharedName).Health(ctx); !errors.Is(err, topic.ErrTopicNotFound) {
 		die(fmt.Sprintf("every verb but Get should raise absence, got %v", err))
 	}
 	fmt.Println("   ✅ every other verb raises ErrTopicNotFound rather than reading a neighbour")
@@ -194,17 +194,17 @@ func run() (err error) {
 	defer publicDs.Pool.Close()
 	must(publicClient.System().Register(ctx, nil))
 	defer func() { must(publicClient.System().Destroy(ctx, &vulkan.DestroyOptions{Force: true})) }()
-	_, err = publicClient.Topic(sharedName).Register(ctx, nil)
+	_, err = publicClient.Topic[labMessage](sharedName).Register(ctx, nil)
 	must(err)
 
-	found, err = empty.Topic(sharedName).Get(ctx)
+	found, err = empty.Topic[labMessage](sharedName).Get(ctx)
 	must(err)
 	if found != nil {
 		die("a full installation in public must not become the empty schema's answer, got " + found.Name)
 	}
 	fmt.Println("   ✅ with a whole installation standing in public, Get is still the absence")
 
-	if _, err := empty.Topic(sharedName).Health(ctx); !errors.Is(err, topic.ErrTopicNotFound) {
+	if _, err := empty.Topic[labMessage](sharedName).Health(ctx); !errors.Is(err, topic.ErrTopicNotFound) {
 		die(fmt.Sprintf("every verb but Get should still raise absence, got %v", err))
 	}
 	fmt.Println("   ✅ ...and every other verb still raises ErrTopicNotFound")
@@ -245,14 +245,14 @@ func run() (err error) {
 
 	blocked, cancelBlocked := context.WithTimeout(ctx, 2*time.Second)
 	defer cancelBlocked()
-	if _, err := left.Topic(lockedName).Register(blocked, nil); err == nil {
+	if _, err := left.Topic[vulkan.RawPayload](lockedName).Register(blocked, nil); err == nil {
 		die("registering under the held key should have waited, it returned")
 	}
 	fmt.Println("   ✅ the same schema's register waits on the held key")
 
 	free, cancelFree := context.WithTimeout(ctx, 2*time.Second)
 	defer cancelFree()
-	if _, err := right.Topic(lockedName).Register(free, nil); err != nil {
+	if _, err := right.Topic[vulkan.RawPayload](lockedName).Register(free, nil); err != nil {
 		die("the other schema's register must not wait on it: " + err.Error())
 	}
 	fmt.Println("   ✅ the other schema's register takes a different key and completes")

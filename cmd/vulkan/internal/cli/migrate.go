@@ -100,7 +100,7 @@ func gatherTargets(ctx context.Context, client *vulkan.Client, controller *migra
 		return []migrateTarget{{owner: owner, current: current}}, nil
 
 	case scopeTopic:
-		found, err := client.Topic(name).Get(ctx)
+		found, err := client.Topic[vulkan.RawPayload](name).Get(ctx)
 		if err != nil {
 			return nil, translateAdminError(err)
 		}

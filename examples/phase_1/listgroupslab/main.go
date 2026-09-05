@@ -57,7 +57,7 @@ func run() (err error) {
 	ds := client.Datastore()
 
 	name := fmt.Sprintf("listgroupslab.orders.%d", run)
-	registered, err := client.Topic(name).Register(ctx, nil)
+	registered, err := client.Topic[vulkan.RawPayload](name).Register(ctx, nil)
 	must(err)
 
 	groupController, err := consumecontroller.NewConsumeController(ds, nil)
@@ -70,7 +70,7 @@ func run() (err error) {
 	}
 
 	step("TopicHandle.Groups returns both, ordered by name")
-	orders := client.Topic(name)
+	orders := client.Topic[vulkan.RawPayload](name)
 	groups, err := orders.Groups(ctx)
 	must(err)
 	if len(groups) != 2 {
@@ -94,7 +94,7 @@ func run() (err error) {
 	if ghost != nil {
 		die(fmt.Sprintf("expected (nil, nil) for an unregistered group, got %+v", ghost))
 	}
-	ghostTopic := client.Topic(fmt.Sprintf("listgroupslab.ghost.%d", run))
+	ghostTopic := client.Topic[vulkan.RawPayload](fmt.Sprintf("listgroupslab.ghost.%d", run))
 	row, err := ghostTopic.Get(ctx)
 	must(err)
 	if row != nil {

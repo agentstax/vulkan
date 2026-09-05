@@ -266,13 +266,13 @@ func callerKeyRetryScenario(ctx context.Context, client *vulkan.Client) {
 
 func newTarget(ctx context.Context, client *vulkan.Client, label string, partitionSize int64) (*vulkan.Topic, *vulkan.ProducerInstance[common.Work], func()) {
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := client.Topic(name).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
+	tp, err := client.Topic[vulkan.RawPayload](name).Register(ctx, &vulkan.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
-	wpInstance, err := client.Producer(tp.Name).Register[common.Work](ctx, nil)
+	wpInstance, err := client.Topic[common.Work](tp.Name).Producer().Register(ctx, nil)
 	must(err)
 	return tp, wpInstance, func() {
-		must(client.Topic(name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
+		must(client.Topic[vulkan.RawPayload](name).Destroy(ctx, &vulkan.DestroyOptions{Force: true}))
 	}
 }
 

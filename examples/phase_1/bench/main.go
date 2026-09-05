@@ -57,7 +57,7 @@ func run() error {
 		return err
 	}
 
-	t, err := client.Topic(*topicPtr).Get(ctx)
+	t, err := client.Topic[vulkan.RawPayload](*topicPtr).Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func run() error {
 		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
-	wcInstance, err := client.Consumer(*groupPtr, t.Name).Register[common.Work](ctx, &vulkan.ConsumerConfig{
+	wcInstance, err := client.Topic[common.Work](t.Name).Group(*groupPtr).Register(ctx, &vulkan.ConsumerConfig{
 		Message: &vulkan.MessageOptions{Timeout: 30 * time.Second, Retry: &vulkan.RetryPolicy{MaxRetries: 3}},
 	})
 
