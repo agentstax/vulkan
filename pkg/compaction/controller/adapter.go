@@ -7,12 +7,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/compaction/controller/datastore"
 )
 
-func toMessage[Message common.Versioned](data *datastore.MessageLogRow) (*common.Message[Message], error) {
+func toStoredMessage[Message common.Versioned](data *datastore.MessageLogRow) (*common.StoredMessage[Message], error) {
 	var message Message
 	if err := json.Unmarshal(data.Payload, &message); err != nil {
 		return nil, err
 	}
-	return &common.Message[Message]{
+	return &common.StoredMessage[Message]{
 		Id:             data.Id,
 		Message:        &message,
 		CreatedAt:      data.CreatedAt,

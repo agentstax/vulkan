@@ -41,7 +41,7 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     measurements, and `System().Metrics().Metric(name, attributes)` is the one
     arbitrary escape hatch for user metrics. Resource handles do not pretend
     an arbitrary name has topic/group semantics.
-  - Return bare `Measurement` values, not their `Message[Measurement]` storage
+  - Return bare `Measurement` values, not their `StoredMessage[Measurement]` storage
     envelopes. A metric handle's `Latest` returns `(nil, nil)` before its first
     retained point; `History` returns an empty slice and requires a positive
     limit.

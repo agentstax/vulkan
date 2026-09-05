@@ -48,30 +48,30 @@ func toScheduleMessageStatus(data *datastore.ScheduleMessageStatusRow) *schedule
 		MessageId:     data.MessageId,
 		ScheduledAt:   data.ScheduledAt,
 		ProducedAt:    data.ProducedAt,
-		Outcome:       toMessageOutcome(data),
+		Outcome:       toScheduleMessageOutcome(data),
 	}
-	if status.Outcome == schedule.MessageSuperseded {
+	if status.Outcome == schedule.ScheduleMessageSuperseded {
 		status.SupersededBy = data.SupersededBy
 		status.SupersededAt = data.SupersededAt
 	}
 	return status
 }
 
-func toMessageOutcome(data *datastore.ScheduleMessageStatusRow) schedule.MessageOutcome {
+func toScheduleMessageOutcome(data *datastore.ScheduleMessageStatusRow) schedule.ScheduleMessageOutcome {
 	switch {
 	case data.Succeeded:
-		return schedule.MessageSucceeded
+		return schedule.ScheduleMessageSucceeded
 	case data.Raised:
-		return schedule.MessageFailed
+		return schedule.ScheduleMessageFailed
 	// order specific - must be after Succeeded and Raised.
 	// if it gets here the request never ran and a non-head
 	// message can never run ie it was Superseded.
 	case !data.Head:
-		return schedule.MessageSuperseded
+		return schedule.ScheduleMessageSuperseded
 	case data.Deferred:
-		return schedule.MessageDeferred
+		return schedule.ScheduleMessageDeferred
 	default:
-		return schedule.MessagePending
+		return schedule.ScheduleMessagePending
 	}
 }
 

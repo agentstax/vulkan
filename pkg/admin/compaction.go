@@ -12,7 +12,7 @@ import (
 // Returns ErrTopicNotFound when the topic isn't registered and
 // ErrCompactionHeadNotFound when no compacted message was produced under
 // the key.
-func (a *MessageAdmin) GetCompactionHead[Message common.Versioned](ctx context.Context, topicName string, messageKey string) (*common.Message[Message], error) {
+func (a *MessageAdmin) GetCompactionHead[Message common.Versioned](ctx context.Context, topicName string, messageKey string) (*common.StoredMessage[Message], error) {
 	found, err := a.GetTopic(ctx, topicName)
 	if err != nil {
 		return nil, err
@@ -30,9 +30,23 @@ func (a *MessageAdmin) GetCompactionHead[Message common.Versioned](ctx context.C
 	return head, nil
 }
 
+// ListCompactionHeads returns every key's current compaction head on the
+// topic, ordered by message key.
+// Returns ErrTopicNotFound when the topic isn't registered.
+func (a *MessageAdmin) ListCompactionHeads[Message common.Versioned](ctx context.Context, topicName string) ([]*common.StoredMessage[Message], error) {
+	found, err := a.GetTopic(ctx, topicName)
+	if err != nil {
+		return nil, err
+	}
+	if found == nil {
+		return nil, topic.ErrTopicNotFound.With("topic", topicName)
+	}
+	return a.heads.ListHeads[Message](ctx, found.Id)
+}
+
 // ListKeyMessages returns messageKey's retained messages, newest first.
 // Returns ErrTopicNotFound when the topic isn't registered.
-func (a *MessageAdmin) ListKeyMessages[Message common.Versioned](ctx context.Context, topicName string, messageKey string, limit int) ([]*common.Message[Message], error) {
+func (a *MessageAdmin) ListKeyMessages[Message common.Versioned](ctx context.Context, topicName string, messageKey string, limit int) ([]*common.StoredMessage[Message], error) {
 	found, err := a.GetTopic(ctx, topicName)
 	if err != nil {
 		return nil, err

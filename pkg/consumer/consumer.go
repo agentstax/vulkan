@@ -3,6 +3,7 @@ package consumer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
@@ -52,6 +53,9 @@ func (c *Consumer) Register[Message common.Versioned](ctx context.Context, consu
 	}
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
+	}
+	if common.SchemaVersionOf[Message]() < 1 {
+		return nil, fmt.Errorf("Message.SchemaVersion must be >= 1, got %d", common.SchemaVersionOf[Message]())
 	}
 	if cfg == nil {
 		cfg = &ConsumerConfig{}

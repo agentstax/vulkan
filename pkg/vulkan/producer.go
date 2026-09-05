@@ -3,21 +3,21 @@ package vulkan
 import "context"
 
 // ProducerHandle is a topic's name plus the client, holding no row.
-type ProducerHandle struct {
+type ProducerHandle[Message Versioned] struct {
 	topicName string
 	client    *Client
 }
 
-// Producer names a topic to produce to. No I/O and no failure -- Register
-// resolves the topic when called.
-func (c *Client) Producer(topicName string) *ProducerHandle {
-	return &ProducerHandle{topicName: topicName, client: c}
+// Producer names this topic as a produce target. No I/O and no failure --
+// Register resolves the topic when called.
+func (t *TopicHandle[Message]) Producer() *ProducerHandle[Message] {
+	return &ProducerHandle[Message]{topicName: t.name, client: t.client}
 }
 
-// Register resolves the named topic and returns an instance that produces
-// Message to it. cfg may be nil or a sparse struct; a Logger or Retry left
-// nil takes the client's.
-func (p *ProducerHandle) Register[Message Versioned](ctx context.Context, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
+// Register resolves the topic and returns an instance that produces its
+// Message. cfg may be nil or a sparse struct; a Logger or Retry left nil
+// takes the client's.
+func (p *ProducerHandle[Message]) Register(ctx context.Context, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
 	if cfg == nil {
 		cfg = &ProducerConfig{}
 	}

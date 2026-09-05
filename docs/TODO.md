@@ -19,7 +19,7 @@ orders := client.Topic[OrderPlacedV1]("orders")   // type argument required
 
 orders.Register(ctx, cfg)                          // admin verbs ignore the type
 orders.Destroy(ctx, options)
-orders.CompactionHeads(ctx, limit)                 // []*Message[OrderPlacedV1]
+orders.CompactionHeads(ctx)                        // []*Message[OrderPlacedV1]
 orders.Key("order-42").CompactionHead(ctx)         // ErrCompactionHeadNotFound when absent
 orders.Key("order-42").Messages(ctx, limit)
 
@@ -46,11 +46,18 @@ Settled points, so the steps below do not reopen them:
 - Schedules stay system-rooted on `client.Scheduler(name)`; the
   topic-rooted shape was rejected (a redundant topic argument on seven
   of eight verbs and a CLI break).
-- Handle type parameter is `Message`; `common.Message[Payload]` keeps
-  its name.
-- `CompactionHeads` ships in the library with a limit and no CLI
-  command. A head read at a mismatched schema version stays as it is
-  (ROADMAP Later, beside the upcaster).
+- Handle type parameter is `Message`. A receiver's type parameter is
+  named per method, so the three methods returning the
+  `Message[Payload]` alias spell theirs `[Payload]`, the way
+  `ProducerInstance.GetCompactionHeadInTx` already does; every other
+  method and every declaration stays `Message`.
+- `CompactionHeads(ctx)` ships in the library with no CLI command and
+  NO limit: the controller's `ListHeads` has three built-in readers
+  that need every row, and a limit without a cursor is a peek, so a
+  second limited query would be two flavors of one read. Keyset
+  pagination is a later design if a workload asks. A head read at a
+  mismatched schema version stays as it is (ROADMAP Later, beside the
+  upcaster).
 - Supersedes the [0619] clause "a struct is generic only when it
   holds Message-typed state": the handle is generic to carry the type
   downward.
@@ -74,11 +81,12 @@ Steps, in order:
    requires a raise site, so `MessageAdmin.GetCompactionHead` raises it
    now and `AlertHandle.Get` / `MeasurementHandle.Get` already map it
    back to `(nil, nil)`.
-4. **The handle tree in pkg/vulkan.** `TopicHandle[Message]`,
+4. **The handle tree in pkg/vulkan.** DONE 2026-09-04 (root module
+   builds; nested modules are step 5). `TopicHandle[Message]`,
    `KeyHandle[Message]`, `GroupHandle[Message]` with Register,
    `ProducerHandle[Message]`; `ConsumerHandle` deleted; Alert and
    Measurement handles rewritten over `Topic[Alert](...).Key(k)`;
-   `CompactionHeads(ctx, limit)` through admin. The version-below-1
+   `CompactionHeads(ctx)` through admin. The version-below-1
    guard on the three Register verbs. The alias closure test in
    tools/conventions decides what else moves.
 5. **Call sites.** cmd/vulkan (`Topic[vulkan.RawPayload]`), labs,

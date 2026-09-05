@@ -24,19 +24,20 @@ import (
 )
 
 type (
-	Versioned                  = common.Versioned
-	Message[Payload Versioned] = common.Message[Payload]
-	MessageOptions             = common.MessageOptions
-	RetryPolicy                = common.RetryPolicy
-	ConcurrencyPolicy          = common.ConcurrencyPolicy
-	Owner                      = common.Owner
-	OwnerKind                  = common.OwnerKind
-	Logger                     = logging.Logger
-	DiagnosticError            = diagnostic.DiagnosticError
-	DiagnosticEvent            = diagnostic.DiagnosticEvent
-	DiagnosticQuery            = diagnostic.DiagnosticQuery
-	DiagnosticRecovery         = diagnostic.DiagnosticRecovery
-	DiagnosticKind             = diagnostic.DiagnosticKind
+	Versioned                        = common.Versioned
+	RawPayload                       = common.RawPayload
+	StoredMessage[Message Versioned] = common.StoredMessage[Message]
+	MessageOptions                   = common.MessageOptions
+	RetryPolicy                      = common.RetryPolicy
+	ConcurrencyPolicy                = common.ConcurrencyPolicy
+	Owner                            = common.Owner
+	OwnerKind                        = common.OwnerKind
+	Logger                           = logging.Logger
+	DiagnosticError                  = diagnostic.DiagnosticError
+	DiagnosticEvent                  = diagnostic.DiagnosticEvent
+	DiagnosticQuery                  = diagnostic.DiagnosticQuery
+	DiagnosticRecovery               = diagnostic.DiagnosticRecovery
+	DiagnosticKind                   = diagnostic.DiagnosticKind
 
 	PostgresDatastore = datastore.PostgresDatastore
 	Querier           = datastore.Querier
@@ -65,12 +66,12 @@ type (
 	Topic           = topic.Topic
 	DeliveryLogMode = topic.DeliveryLogMode
 
-	SchedulerConfig       = scheduler.SchedulerConfig
-	Schedule              = schedule.Schedule
-	ScheduleGroupSummary  = schedule.ScheduleGroupSummary
-	ScheduleMessageStatus = schedule.ScheduleMessageStatus
-	MessageOutcome        = schedule.MessageOutcome
-	StoredMessage         = schedule.StoredMessage
+	SchedulerConfig        = scheduler.SchedulerConfig
+	Schedule               = schedule.Schedule
+	ScheduleGroupSummary   = schedule.ScheduleGroupSummary
+	ScheduleMessageStatus  = schedule.ScheduleMessageStatus
+	ScheduleMessageOutcome = schedule.ScheduleMessageOutcome
+	ScheduleStoredMessage  = schedule.ScheduleStoredMessage
 
 	SystemConfig   = system.SystemConfig
 	System         = system.System
@@ -129,11 +130,11 @@ const (
 	BindingJoined           = consume.BindingJoined
 	BindingWaiting          = consume.BindingWaiting
 
-	MessagePending    = schedule.MessagePending
-	MessageDeferred   = schedule.MessageDeferred
-	MessageSucceeded  = schedule.MessageSucceeded
-	MessageFailed     = schedule.MessageFailed
-	MessageSuperseded = schedule.MessageSuperseded
+	ScheduleMessagePending    = schedule.ScheduleMessagePending
+	ScheduleMessageDeferred   = schedule.ScheduleMessageDeferred
+	ScheduleMessageSucceeded  = schedule.ScheduleMessageSucceeded
+	ScheduleMessageFailed     = schedule.ScheduleMessageFailed
+	ScheduleMessageSuperseded = schedule.ScheduleMessageSuperseded
 
 	NoInstanceTarget = worker.NoInstanceTarget
 

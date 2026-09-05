@@ -24,6 +24,9 @@ func (d *ProduceDatastore) runInsert[Message common.Versioned](ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
+	if err := checkSchemaVersion(payload); err != nil {
+		return nil, err
+	}
 
 	id, duplicate, err := d.insertProtected(ctx, tx, topicId, payload, data)
 	if err != nil {
@@ -42,6 +45,10 @@ func (d *ProduceDatastore) runInsertSavepoint[Message common.Versioned](ctx cont
 
 	payload, err := produceFunc(ctx, tx)
 	if err != nil {
+		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
+		return nil, err
+	}
+	if err := checkSchemaVersion(payload); err != nil {
 		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
 		return nil, err
 	}
@@ -104,6 +111,13 @@ func (d *ProduceDatastore) insertProtected[Message common.Versioned](ctx context
 // ***************
 // *** HELPERS ***
 // ***************
+
+func checkSchemaVersion[Message common.Versioned](payload *Message) error {
+	if (*payload).SchemaVersion() < 1 {
+		return fmt.Errorf("Message.SchemaVersion must be >= 1, got %d", (*payload).SchemaVersion())
+	}
+	return nil
+}
 
 func commitToSavepoint(ctx context.Context, q iDatastore.Querier, savepointName string) error {
 	_, err := q.Exec(ctx, "SAVEPOINT "+savepointName+";")

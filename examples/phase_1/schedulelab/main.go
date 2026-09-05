@@ -539,10 +539,10 @@ func supersedeSection(ctx context.Context) {
 		die(fmt.Sprintf("want 2 listed requests, got %d", len(requests)))
 	}
 	newest, oldest := requests[0], requests[1]
-	if newest.MessageId != head.Id || newest.Outcome != schedule.MessageSucceeded {
+	if newest.MessageId != head.Id || newest.Outcome != schedule.ScheduleMessageSucceeded {
 		die(fmt.Sprintf("newest request: want %d succeeded, got %d %s", head.Id, newest.MessageId, newest.Outcome))
 	}
-	if oldest.MessageId != pending.Id || oldest.Outcome != schedule.MessageSuperseded {
+	if oldest.MessageId != pending.Id || oldest.Outcome != schedule.ScheduleMessageSuperseded {
 		die(fmt.Sprintf("oldest request: want %d superseded, got %d %s", pending.Id, oldest.MessageId, oldest.Outcome))
 	}
 	if oldest.SupersededBy == nil || *oldest.SupersededBy != head.Id || oldest.SupersededAt == nil {
@@ -635,15 +635,15 @@ func statusSection(ctx context.Context) {
 	// the bindingless group ran neither
 	requests, err := client.Scheduler(jobName).Messages(ctx, 20)
 	must(err)
-	outcomes := map[string]schedule.MessageOutcome{}
+	outcomes := map[string]schedule.ScheduleMessageOutcome{}
 	for _, request := range requests {
 		outcomes[fmt.Sprintf("%s/%d", request.ConsumerGroup, request.MessageId)] = request.Outcome
 	}
-	want := map[string]schedule.MessageOutcome{
-		fmt.Sprintf("%s/%d", boundName, first.Id):        schedule.MessageSucceeded,
-		fmt.Sprintf("%s/%d", boundName, second.Id):       schedule.MessageFailed,
-		fmt.Sprintf("%s/%d", bindinglessName, first.Id):  schedule.MessageSuperseded,
-		fmt.Sprintf("%s/%d", bindinglessName, second.Id): schedule.MessagePending,
+	want := map[string]schedule.ScheduleMessageOutcome{
+		fmt.Sprintf("%s/%d", boundName, first.Id):        schedule.ScheduleMessageSucceeded,
+		fmt.Sprintf("%s/%d", boundName, second.Id):       schedule.ScheduleMessageFailed,
+		fmt.Sprintf("%s/%d", bindinglessName, first.Id):  schedule.ScheduleMessageSuperseded,
+		fmt.Sprintf("%s/%d", bindinglessName, second.Id): schedule.ScheduleMessagePending,
 	}
 	if len(requests) != len(want) {
 		die(fmt.Sprintf("want %d listed (request, group) rows, got %d", len(want), len(requests)))

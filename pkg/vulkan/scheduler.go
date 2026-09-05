@@ -61,7 +61,7 @@ func (s *SchedulerHandle) Unsuspend(ctx context.Context) error {
 
 // Run produces the schedule's stored message immediately, outside its
 // expression. cfg may be nil or a sparse struct.
-func (s *SchedulerHandle) Run(ctx context.Context, cfg *RunScheduleConfig) (*ProduceResult[StoredMessage], error) {
+func (s *SchedulerHandle) Run(ctx context.Context, cfg *RunScheduleConfig) (*ProduceResult[ScheduleStoredMessage], error) {
 	return s.client.admin.RunSchedule(ctx, s.name, cfg)
 }
 

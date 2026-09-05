@@ -53,7 +53,7 @@ func (a *MessageAdmin) UnsuspendSchedule(ctx context.Context, name string) error
 //     policy -- by default 'parallel', so it runs even while a previous
 //     message is still running.
 //   - It supersedes a pending message no consumer has claimed yet.
-func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunScheduleConfig) (*producer.ProduceResult[schedule.StoredMessage], error) {
+func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunScheduleConfig) (*producer.ProduceResult[schedule.ScheduleStoredMessage], error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}
@@ -80,7 +80,7 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 	if target == nil {
 		return nil, topic.ErrTopicNotFound.With("topic_id", found.TopicId)
 	}
-	instance, err := a.scheduleProducer.Register[schedule.StoredMessage](ctx, target.Name, &producer.ProducerConfig{
+	instance, err := a.scheduleProducer.Register[schedule.ScheduleStoredMessage](ctx, target.Name, &producer.ProducerConfig{
 		Logger: a.Logger,
 		Retry:  a.Retry,
 	})
@@ -88,7 +88,7 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 		return nil, err
 	}
 
-	stored, err := schedule.NewStoredMessage(found.Payload, found.SchemaVersion)
+	stored, err := schedule.NewScheduleStoredMessage(found.Payload, found.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}

@@ -99,6 +99,9 @@ func (c *ProduceController) AppendMessageBatch[Message common.Versioned](ctx con
 		if item.Options.IdempotencyKey == "" {
 			return nil, -1, errors.New("append Options.IdempotencyKey is required")
 		}
+		if (*item.Payload).SchemaVersion() < 1 {
+			return nil, -1, fmt.Errorf("append Payload.SchemaVersion must be >= 1, got %d", (*item.Payload).SchemaVersion())
+		}
 		resolved := resolveIdempotencyKey(item.Options.IdempotencyKey)
 		datastoreAppends = append(datastoreAppends, toAppend(resolved, item.Payload, item.Options))
 	}

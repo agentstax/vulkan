@@ -119,14 +119,14 @@ func (i *ScheduleProducerInstance) produceDue(ctx context.Context, id int64) err
 			scheduledTime = next
 		}
 
-		stored, err := schedule.NewStoredMessage(row.Payload, row.SchemaVersion)
+		stored, err := schedule.NewScheduleStoredMessage(row.Payload, row.SchemaVersion)
 		if err != nil {
 			return err
 		}
 
 		// registered per produce: the target topic is the row's, and a due
 		// row is minute-scale rare
-		target, err := i.producer.Register[schedule.StoredMessage](ctx, row.TopicName, &producer.ProducerConfig{
+		target, err := i.producer.Register[schedule.ScheduleStoredMessage](ctx, row.TopicName, &producer.ProducerConfig{
 			Logger: i.Config.Logger,
 			Retry:  i.Config.Retry,
 		})

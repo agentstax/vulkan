@@ -14,7 +14,7 @@ type AlertHandle struct {
 }
 
 // Alerts returns every current alert, ordered by message key.
-func (s *SystemHandle) Alerts(ctx context.Context) ([]*Message[Alert], error) {
+func (s *SystemHandle) Alerts(ctx context.Context) ([]*StoredMessage[Alert], error) {
 	return s.client.admin.ListAlerts(ctx)
 }
 
@@ -30,8 +30,8 @@ func (a *AlertHandle) MessageKey() string {
 
 // Get returns the alert's current value, or nil if no retained message has the
 // key.
-func (a *AlertHandle) Get(ctx context.Context) (*Message[Alert], error) {
-	head, err := a.client.Topic(alert.TopicName).CompactionHead[Alert](ctx, a.messageKey)
+func (a *AlertHandle) Get(ctx context.Context) (*StoredMessage[Alert], error) {
+	head, err := a.client.Topic[Alert](alert.TopicName).Key(a.messageKey).CompactionHead(ctx)
 	if errors.Is(err, ErrCompactionHeadNotFound) {
 		return nil, nil
 	}
@@ -39,6 +39,6 @@ func (a *AlertHandle) Get(ctx context.Context) (*Message[Alert], error) {
 }
 
 // Messages returns the alert's retained values, newest first.
-func (a *AlertHandle) Messages(ctx context.Context, limit int) ([]*Message[Alert], error) {
-	return a.client.Topic(alert.TopicName).KeyMessages[Alert](ctx, a.messageKey, limit)
+func (a *AlertHandle) Messages(ctx context.Context, limit int) ([]*StoredMessage[Alert], error) {
+	return a.client.Topic[Alert](alert.TopicName).Key(a.messageKey).Messages(ctx, limit)
 }

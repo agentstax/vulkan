@@ -16,7 +16,7 @@ type MeasurementHandle struct {
 
 // Measurements returns every current measurement series, ordered by message
 // key.
-func (s *SystemHandle) Measurements(ctx context.Context) ([]*Message[Measurement], error) {
+func (s *SystemHandle) Measurements(ctx context.Context) ([]*StoredMessage[Measurement], error) {
 	return s.client.admin.ListMeasurements(ctx)
 }
 
@@ -32,8 +32,8 @@ func (m *MeasurementHandle) MessageKey() string {
 
 // Get returns the measurement series' current value, or nil if no retained
 // message has the key.
-func (m *MeasurementHandle) Get(ctx context.Context) (*Message[Measurement], error) {
-	head, err := m.client.Topic(metrics.TopicName).CompactionHead[Measurement](ctx, m.messageKey)
+func (m *MeasurementHandle) Get(ctx context.Context) (*StoredMessage[Measurement], error) {
+	head, err := m.client.Topic[Measurement](metrics.TopicName).Key(m.messageKey).CompactionHead(ctx)
 	if errors.Is(err, ErrCompactionHeadNotFound) {
 		return nil, nil
 	}
@@ -41,6 +41,6 @@ func (m *MeasurementHandle) Get(ctx context.Context) (*Message[Measurement], err
 }
 
 // Messages returns the measurement series' retained values, newest first.
-func (m *MeasurementHandle) Messages(ctx context.Context, limit int) ([]*Message[Measurement], error) {
-	return m.client.Topic(metrics.TopicName).KeyMessages[Measurement](ctx, m.messageKey, limit)
+func (m *MeasurementHandle) Messages(ctx context.Context, limit int) ([]*StoredMessage[Measurement], error) {
+	return m.client.Topic[Measurement](metrics.TopicName).Key(m.messageKey).Messages(ctx, limit)
 }

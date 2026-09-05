@@ -12,7 +12,7 @@ import (
 // GetCompactionHeadInTx reads the head against the caller's tx, locking it
 // FOR UPDATE so a following produce on the same key is a race-free
 // compare-and-set.
-func (c *ProduceController) GetCompactionHeadInTx[Message common.Versioned](ctx context.Context, tx iDatastore.Tx, topicId int64, messageKey string) (*common.Message[Message], error) {
+func (c *ProduceController) GetCompactionHeadInTx[Message common.Versioned](ctx context.Context, tx iDatastore.Tx, topicId int64, messageKey string) (*common.StoredMessage[Message], error) {
 	if tx == nil {
 		return nil, errors.New("tx must not be nil")
 	}
@@ -27,5 +27,5 @@ func (c *ProduceController) GetCompactionHeadInTx[Message common.Versioned](ctx 
 	if err != nil || data == nil {
 		return nil, err
 	}
-	return toMessage[Message](data)
+	return toStoredMessage[Message](data)
 }

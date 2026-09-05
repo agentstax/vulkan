@@ -45,7 +45,7 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
-			filtered := make([]*vulkan.Message[metrics.Measurement], 0, len(heads))
+			filtered := make([]*vulkan.StoredMessage[metrics.Measurement], 0, len(heads))
 			for _, head := range heads {
 				fromCollector := strings.HasPrefix(head.Message.Name, metrics.MetricNameReservedPrefix)
 				if system && !fromCollector {
@@ -78,13 +78,13 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func printMeasurementKeys(w io.Writer, heads []*vulkan.Message[metrics.Measurement]) {
+func printMeasurementKeys(w io.Writer, heads []*vulkan.StoredMessage[metrics.Measurement]) {
 	for _, head := range heads {
 		fmt.Fprintln(w, head.MessageKey)
 	}
 }
 
-func printMeasurementsTable(w io.Writer, heads []*vulkan.Message[metrics.Measurement]) {
+func printMeasurementsTable(w io.Writer, heads []*vulkan.StoredMessage[metrics.Measurement]) {
 	if len(heads) == 0 {
 		fmt.Fprintln(w, "no measurements published")
 		return

@@ -40,7 +40,7 @@ func newAlertListCmd(g *globalFlags) *cobra.Command {
 
 			if g.jsonOutput() {
 				if heads == nil {
-					heads = make([]*vulkan.Message[alert.Alert], 0)
+					heads = make([]*vulkan.StoredMessage[alert.Alert], 0)
 				}
 				writeJSON(out, heads)
 				return nil
@@ -65,13 +65,13 @@ func ownerCell(owner *common.Owner) string {
 	return fmt.Sprintf("%s/%s", owner.Kind(), owner.Name)
 }
 
-func printAlertKeys(w io.Writer, heads []*vulkan.Message[alert.Alert]) {
+func printAlertKeys(w io.Writer, heads []*vulkan.StoredMessage[alert.Alert]) {
 	for _, head := range heads {
 		fmt.Fprintf(w, "%s %s\n", head.Message.Name, ownerCell(head.Message.Owner))
 	}
 }
 
-func printAlertsTable(w io.Writer, heads []*vulkan.Message[alert.Alert]) {
+func printAlertsTable(w io.Writer, heads []*vulkan.StoredMessage[alert.Alert]) {
 	if len(heads) == 0 {
 		fmt.Fprintln(w, "no alerts published")
 		return

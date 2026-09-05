@@ -22,7 +22,7 @@ func (s *SystemHandle) Bindings(ctx context.Context) ([]*Binding, error) {
 
 // Binding names this group's binding declaration. No I/O and
 // no failure -- Get resolves both names when called.
-func (g *GroupHandle) Binding() *BindingHandle {
+func (g *GroupHandle[Message]) Binding() *BindingHandle {
 	return &BindingHandle{topicName: g.topicName, groupName: g.name, client: g.client}
 }
 

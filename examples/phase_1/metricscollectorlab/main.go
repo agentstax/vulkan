@@ -190,7 +190,7 @@ func run() (err error) {
 			}
 		}
 	}
-	var heads []*vulkan.Message[metrics.Measurement]
+	var heads []*vulkan.StoredMessage[metrics.Measurement]
 	must(waitFor(30*time.Second, func() (bool, error) {
 		heads, err = client.System().Measurements(ctx)
 		if err != nil {

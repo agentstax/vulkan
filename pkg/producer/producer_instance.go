@@ -216,7 +216,7 @@ func (p *ProducerInstance[Message]) ProduceFuncInTx(ctx context.Context, tx iDat
 // or nil if nothing has been published under it.
 // It does so within the transaction and locks the found row in a FOR UPDATE
 // allowing for race-free compare and set.
-func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx iDatastore.Tx, messageKey string) (*common.Message[Message], error) {
+func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx iDatastore.Tx, messageKey string) (*common.StoredMessage[Message], error) {
 	return p.controller.GetCompactionHeadInTx[Message](ctx, tx, p.Topic.Id, messageKey)
 }
 

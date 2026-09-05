@@ -239,7 +239,7 @@ func printScheduleMessages(w io.Writer, statuses []*schedule.ScheduleMessageStat
 // messageOutcomeCell names the replacing message inline, where the reader is
 // already looking for it.
 func messageOutcomeCell(status *schedule.ScheduleMessageStatus) string {
-	if status.Outcome == schedule.MessageSuperseded && status.SupersededBy != nil {
+	if status.Outcome == schedule.ScheduleMessageSuperseded && status.SupersededBy != nil {
 		return fmt.Sprintf("superseded by %d at %s", *status.SupersededBy, timeCell(*status.SupersededAt))
 	}
 	return string(status.Outcome)

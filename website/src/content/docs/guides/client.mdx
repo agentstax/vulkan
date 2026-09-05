@@ -352,7 +352,7 @@ health, err := orders.Health(ctx)
 snapshot, err := orders.Metrics(ctx)
 renamed, err := orders.Rename(ctx, "payments.card-requested")
 err = orders.Destroy(ctx, nil) // refused unless ClientConfig.AllowDestroy
-heads, err := orders.CompactionHeads(ctx, 100)
+heads, err := orders.CompactionHeads(ctx)
 
 // a message key hangs off its topic
 device := orders.Key("device-7")
@@ -412,8 +412,9 @@ compaction: the lease facts belong on the same handle when they get a
 read. The head used to be read inside a transaction on the producer
 instance and outside one on a separate `CompactionController` keyed by
 topic id, two objects for one fact. `orders.CompactionHeads` lists
-every key's head on the topic, with a limit, since a topic can hold a
-million keys.
+every key's head on the topic, all of them: a topic can hold a million
+keys, and a limit without a cursor would only be a peek, so paging is
+left until a workload asks for it.
 
 The system is a singleton and a handle anyway — one schema is one
 installation, so there is only ever one row to name. The day that
@@ -549,7 +550,7 @@ it is much cheaper to create per test. Not built.
 The suffix says what a value does. A handle is the lazy identity plus
 client (`TopicHandle`, `GroupHandle`, `KeyHandle`, `SchedulerHandle`); the bare noun is
 the materialized domain value returned by `Get` (`Topic`, `Group`,
-`Schedule`). `Message[T]`, `Alert`, and `Measurement` follow the same rule:
+`Schedule`). `StoredMessage[T]`, `Alert`, and `Measurement` follow the same rule:
 they are values, not handles. JSON is unaffected; wire names live in field
 tags.
 
